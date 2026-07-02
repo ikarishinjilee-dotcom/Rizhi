@@ -1,0 +1,44 @@
+{
+  "name": "rizhi",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "api:dev": "tsx ./server/app/main.ts",
+    "start": "node ./scripts/start-production.mjs",
+    "start:api": "tsx ./server/app/main.ts",
+    "start:backup": "node ./scripts/backup-scheduler.mjs",
+    "dev": "vite",
+    "dev:full": "node ./scripts/dev-full.mjs",
+    "dev:http": "set VITE_DATA_SOURCE=http&& set VITE_API_BASE_URL=http://127.0.0.1:8797/api/v1&& vite",
+    "db:backup": "node ./scripts/backup-sqlite.mjs",
+    "db:restore": "node ./scripts/restore-sqlite.mjs",
+    "build": "vue-tsc -b && vite build",
+    "preview": "vite preview",
+    "test": "vitest run",
+    "test:e2e": "node ./scripts/run-e2e.mjs",
+    "typecheck": "vue-tsc -b"
+  },
+  "dependencies": {
+    "@lucide/vue": "^1.17.0",
+    "dexie": "^4.0.11",
+    "echarts": "^5.6.0",
+    "fastify": "^5.8.5",
+    "naive-ui": "^2.40.3",
+    "pinia": "^2.3.0",
+    "tsx": "^4.22.4",
+    "vue": "^3.5.13",
+    "vue-echarts": "^7.0.3",
+    "vue-router": "^4.5.0"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.61.1",
+    "@types/node": "^26.0.1",
+    "@vitejs/plugin-vue": "^5.2.1",
+    "fake-indexeddb": "^6.2.5",
+    "typescript": "^5.7.2",
+    "vite": "^6.0.5",
+    "vitest": "^4.1.9",
+    "vue-tsc": "^2.2.0"
+  }
+}

@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="480" height="360" viewBox="0 0 480 360">
+  <rect width="480" height="360" rx="28" fill="#111827"/>
+  <path d="M168 76h58l88 208h-58L168 76z" fill="#ef4444"/>
+  <path d="M254 76h58v208h-58z" fill="#b91c1c"/>
+  <text x="240" y="318" text-anchor="middle" font-family="Arial, sans-serif" font-size="32" font-weight="700" fill="#fff">Annual</text>
+</svg>
