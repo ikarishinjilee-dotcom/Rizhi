@@ -9,6 +9,7 @@
     "start:api": "tsx ./server/app/main.ts",
     "start:backup": "node ./scripts/backup-scheduler.mjs",
     "dev": "vite",
+    "dev:unicloud": "vite --mode unicloud",
     "dev:full": "node ./scripts/dev-full.mjs",
     "dev:http": "set VITE_DATA_SOURCE=http&& set VITE_API_BASE_URL=http://127.0.0.1:8797/api/v1&& vite",
     "db:backup": "node ./scripts/backup-sqlite.mjs",

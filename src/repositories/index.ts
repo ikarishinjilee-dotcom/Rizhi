@@ -42,7 +42,7 @@ import {
   httpTransactionRepository,
 } from "@/repositories/httpRepositories";
 
-const useHttpDataSource = import.meta.env.VITE_DATA_SOURCE === "http";
+const useHttpDataSource = ["http", "unicloud"].includes(import.meta.env.VITE_DATA_SOURCE ?? "");
 
 export const appDataRepository = useHttpDataSource ? httpAppDataRepository : indexedDbAppDataRepository;
 export const assetRepository = useHttpDataSource ? httpAssetRepository : indexedDbAssetRepository;

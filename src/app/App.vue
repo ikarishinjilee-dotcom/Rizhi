@@ -1,7 +1,8 @@
 <template>
   <n-config-provider :theme-overrides="themeOverrides">
     <n-message-provider>
-      <AppShell>
+      <router-view v-if="route.meta.public" />
+      <AppShell v-else>
         <router-view />
       </AppShell>
     </n-message-provider>
@@ -10,7 +11,10 @@
 
 <script setup lang="ts">
 import { NConfigProvider, NMessageProvider, type GlobalThemeOverrides } from "naive-ui";
+import { useRoute } from "vue-router";
 import AppShell from "@/components/layout/AppShell.vue";
+
+const route = useRoute();
 
 const themeOverrides: GlobalThemeOverrides = {
   common: {

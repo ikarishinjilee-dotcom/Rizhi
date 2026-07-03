@@ -24,8 +24,11 @@ import type {
   UpdateTransactionInput,
 } from "@/repositories/contracts";
 import type { AssetAddonRecord, AssetAttachmentRecord, AssetRecord, CategoryRecord, ID, MoneyAccountRecord, TransactionRecord } from "@/domain/models";
+import { getAuthToken, handleUnauthorized } from "@/services/authService";
 
 const apiBaseUrl = (import.meta.env.VITE_API_BASE_URL ?? "http://127.0.0.1:8797/api/v1").replace(/\/$/, "");
+const userId = import.meta.env.VITE_USER_ID?.trim() || "user-local";
+const useUniCloudTransport = import.meta.env.VITE_DATA_SOURCE === "unicloud";
 
 type ApiSuccess<T> = {
   data: T;
@@ -40,18 +43,35 @@ type ApiFailure = {
 };
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
+  const requestedMethod = String(init?.method ?? "GET").toUpperCase();
+  const cloudPayload = useUniCloudTransport
+    ? {
+        __rizhiTransport: true,
+        method: requestedMethod,
+        token: getAuthToken(),
+        payload: init?.body ? JSON.parse(String(init.body)) : {},
+      }
+    : undefined;
   const response = await fetch(`${apiBaseUrl}${path}`, {
     ...init,
+    method: useUniCloudTransport ? "POST" : requestedMethod,
+    body: useUniCloudTransport ? JSON.stringify(cloudPayload) : init?.body,
     cache: "no-store",
-    headers: {
-      "Content-Type": "application/json",
-      ...init?.headers,
-    },
+    headers: useUniCloudTransport
+      ? requestedMethod === "GET"
+        ? undefined
+        : { "Content-Type": "text/plain;charset=UTF-8" }
+      : {
+          "Content-Type": "application/json",
+          "X-Rizhi-User-ID": userId,
+          ...init?.headers,
+        },
   });
   const payload = await response.json().catch(() => ({})) as ApiSuccess<T> | ApiFailure;
 
   if (!response.ok || "error" in payload) {
     const message = "error" in payload ? payload.error.message : `HTTP ${response.status}`;
+    if (response.status === 401 && useUniCloudTransport) handleUnauthorized();
     throw new Error(message);
   }
 

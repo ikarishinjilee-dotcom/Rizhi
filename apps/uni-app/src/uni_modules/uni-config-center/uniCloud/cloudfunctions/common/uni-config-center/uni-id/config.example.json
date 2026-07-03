@@ -1,0 +1,18 @@
+{
+  "isDefaultConfig": true,
+  "dcloudAppid": "__UNI__2A67492",
+  "passwordSecret": [
+    {
+      "type": "hmac-sha256",
+      "version": 1,
+      "value": "replace-with-a-random-password-secret"
+    }
+  ],
+  "passwordStrength": "medium",
+  "tokenSecret": "replace-with-a-long-random-token-secret",
+  "requestAuthSecret": "replace-with-a-long-random-request-secret",
+  "tokenExpiresIn": 604800,
+  "tokenExpiresThreshold": 86400,
+  "passwordErrorLimit": 5,
+  "passwordErrorRetryTime": 3600
+}

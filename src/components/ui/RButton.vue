@@ -4,6 +4,7 @@
     :size="size"
     :disabled="disabled"
     :loading="loading"
+    :native-type="nativeType"
     :ghost="variant === 'secondary'"
     :text="variant === 'text'"
     class="r-button"
@@ -21,9 +22,11 @@ const props = withDefaults(defineProps<{
   size?: "tiny" | "small" | "medium" | "large";
   disabled?: boolean;
   loading?: boolean;
+  nativeType?: "button" | "submit" | "reset";
 }>(), {
   variant: "primary",
   size: "medium",
+  nativeType: "button",
 });
 
 const type = computed(() => {

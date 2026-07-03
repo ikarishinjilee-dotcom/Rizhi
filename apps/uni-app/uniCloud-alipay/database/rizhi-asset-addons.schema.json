@@ -1,0 +1,15 @@
+{
+  "bsonType": "object",
+  "required": ["id", "userId", "assetId", "name", "type", "amount", "purchaseDate"],
+  "permission": { "read": false, "create": false, "update": false, "delete": false },
+  "properties": {
+    "_id": { "description": "uniCloud document id" },
+    "id": { "bsonType": "string" },
+    "userId": { "bsonType": "string" },
+    "assetId": { "bsonType": "string" },
+    "name": { "bsonType": "string" },
+    "type": { "bsonType": "string" },
+    "amount": { "bsonType": ["double", "int", "long"] },
+    "purchaseDate": { "bsonType": "string" }
+  }
+}

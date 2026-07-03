@@ -1,5 +1,5 @@
 <template>
-  <n-input v-model:value="proxyValue" class="r-input" :placeholder="placeholder">
+  <n-input v-model:value="proxyValue" class="r-input" :type="type" :placeholder="placeholder">
     <template v-if="$slots.prefix" #prefix>
       <slot name="prefix" />
     </template>
@@ -13,8 +13,10 @@ import { NInput } from "naive-ui";
 const props = withDefaults(defineProps<{
   modelValue?: string;
   placeholder?: string;
+  type?: "text" | "password";
 }>(), {
   modelValue: "",
+  type: "text",
 });
 
 const emit = defineEmits<{

@@ -1,8 +1,10 @@
 import { createRouter, createWebHistory } from "vue-router";
+import { hasActiveSession, isUniCloudMode } from "@/services/authService";
 
 export const router = createRouter({
   history: createWebHistory(),
   routes: [
+    { path: "/login", component: () => import("@/features/auth/LoginPage.vue"), meta: { public: true } },
     { path: "/", redirect: "/dashboard" },
     { path: "/dashboard", component: () => import("@/features/dashboard/DashboardPage.vue") },
     { path: "/assets", component: () => import("@/features/assets/AssetListPage.vue") },
@@ -16,4 +18,16 @@ export const router = createRouter({
     { path: "/settings/data", component: () => import("@/features/settings/SettingsPage.vue"), meta: { title: "数据管理", section: "data" } },
     { path: "/help", component: () => import("@/features/help/HelpPage.vue"), meta: { title: "使用帮助" } },
   ],
+});
+
+router.beforeEach((to) => {
+  if (!isUniCloudMode()) return true;
+  if (to.meta.public) return hasActiveSession() ? { path: "/dashboard" } : true;
+  if (!hasActiveSession()) {
+    return {
+      path: "/login",
+      query: { redirect: to.fullPath },
+    };
+  }
+  return true;
 });

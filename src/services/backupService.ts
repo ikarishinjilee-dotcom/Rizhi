@@ -10,6 +10,7 @@ import type {
   TransactionRecord,
   UserSettingsRecord,
 } from "@/domain/models";
+import { getAuthToken, handleUnauthorized } from "@/services/authService";
 
 const BACKUP_FORMAT = "rizhi-local-backup";
 const BACKUP_VERSION = 1;
@@ -45,22 +46,39 @@ type ApiFailure = {
   };
 };
 
-function useHttpDataSource() {
-  return import.meta.env.VITE_DATA_SOURCE === "http";
+function useRemoteDataSource() {
+  return ["http", "unicloud"].includes(import.meta.env.VITE_DATA_SOURCE ?? "");
 }
 
 async function apiRequest<T>(path: string, init?: RequestInit): Promise<T> {
+  const useUniCloudTransport = import.meta.env.VITE_DATA_SOURCE === "unicloud";
+  const requestedMethod = String(init?.method ?? "GET").toUpperCase();
+  const cloudPayload = useUniCloudTransport
+    ? {
+        __rizhiTransport: true,
+        method: requestedMethod,
+        token: getAuthToken(),
+        payload: init?.body ? JSON.parse(String(init.body)) : {},
+      }
+    : undefined;
   const response = await fetch(`${apiBaseUrl}${path}`, {
     ...init,
-    headers: {
-      "Content-Type": "application/json",
-      ...init?.headers,
-    },
+    method: useUniCloudTransport ? "POST" : requestedMethod,
+    body: useUniCloudTransport ? JSON.stringify(cloudPayload) : init?.body,
+    headers: useUniCloudTransport
+      ? requestedMethod === "GET"
+        ? undefined
+        : { "Content-Type": "text/plain;charset=UTF-8" }
+      : {
+          "Content-Type": "application/json",
+          ...init?.headers,
+        },
   });
   const payload = await response.json().catch(() => ({})) as ApiSuccess<T> | ApiFailure;
 
   if (!response.ok || "error" in payload) {
     const message = "error" in payload ? payload.error.message : `HTTP ${response.status}`;
+    if (response.status === 401 && useUniCloudTransport) handleUnauthorized();
     throw new Error(message);
   }
 
@@ -103,7 +121,7 @@ export function validateBackupPayload(value: unknown): RizhiBackupPayload {
 }
 
 export async function createBackupPayload(): Promise<RizhiBackupPayload> {
-  if (useHttpDataSource()) {
+  if (useRemoteDataSource()) {
     const payload = await apiRequest<RizhiBackupPayload>("/export");
     return validateBackupPayload(payload);
   }
@@ -147,7 +165,7 @@ export async function exportBackupText() {
 export async function restoreBackupPayload(input: unknown) {
   const payload = validateBackupPayload(input);
 
-  if (useHttpDataSource()) {
+  if (useRemoteDataSource()) {
     await apiRequest("/import", {
       method: "POST",
       body: JSON.stringify(payload),
