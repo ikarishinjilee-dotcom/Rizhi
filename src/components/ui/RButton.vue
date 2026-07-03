@@ -4,7 +4,7 @@
     :size="size"
     :disabled="disabled"
     :loading="loading"
-    :native-type="nativeType"
+    :attr-type="nativeType"
     :ghost="variant === 'secondary'"
     :text="variant === 'text'"
     class="r-button"
