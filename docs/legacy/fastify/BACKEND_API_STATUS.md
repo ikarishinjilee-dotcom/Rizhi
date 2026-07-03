@@ -1,5 +1,7 @@
 # 日值当前 API 状态表
 
+> 历史文档：以下状态仅描述旧 Fastify API，不代表当前 uniCloud API 的实现状态。
+
 当前后端为 Fastify + TypeScript，代码位于 `server/app/`。
 
 ## 通用接口

@@ -1,5 +1,7 @@
 # SQLite 结构化表设计
 
+> 历史文档：SQLite 结构化方案已停止推进，仅保留为数据建模参考。
+
 本文档定义从当前 `app_state` JSON 存储迁移到 SQLite 结构化表的目标方案。当前运行时仍使用 `server/app/db/sqliteStore.ts` 的 JSON 状态存储；本方案用于下一步分阶段落地。
 
 ## 设计目标

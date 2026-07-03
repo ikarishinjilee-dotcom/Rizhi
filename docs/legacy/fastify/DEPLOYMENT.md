@@ -1,5 +1,7 @@
 # Backend deployment
 
+> Legacy document: this deployment guide applies only to the retired Fastify + SQLite runtime.
+
 ## Requirements
 
 - Node.js 24 or newer

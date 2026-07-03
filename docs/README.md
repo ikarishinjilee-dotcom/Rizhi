@@ -2,6 +2,14 @@
 
 这里集中存放产品、设计、技术、后端、前端验收和测试相关文档，避免项目根目录堆积过多 Markdown 文件。
 
+## 当前技术基线
+
+- PC Web：根目录 Vue 3 + Vite 应用。
+- 跨端客户端：`apps/uni-app/`，目标覆盖 Android、iOS 和小程序。
+- 正式后端：`apps/uni-app/uniCloud-alipay/`。
+- 用户体系：uni-id / uni-id-pages。
+- `server/` 为旧 Fastify + SQLite 实现，只用于迁移核对，不再新增业务能力。
+
 ## 产品规划
 
 - [PRD](./product/PRD.md)
@@ -17,15 +25,15 @@
 
 ## 技术架构
 
+- [V2 架构与目录边界](./architecture/V2_ARCHITECTURE.md)
 - [技术设计](./architecture/TECHNICAL_DESIGN.md)
 - [数据模型](./architecture/DATA_MODEL.md)
 - [API 设计](./architecture/API_DESIGN.md)
 
 ## 后端
 
-- [后端技术计划](./backend/BACKEND_TECH_PLAN.md)
-- [后端 API 状态](./backend/BACKEND_API_STATUS.md)
-- [后端验收清单](./backend/BACKEND_ACCEPTANCE.md)
+- [当前后端说明](./backend/README.md)
+- [uniCloud 迁移说明](./backend/UNICLOUD_MIGRATION.md)
 
 ## 前端
 
@@ -35,3 +43,7 @@
 ## 测试
 
 - [测试策略](./testing/TEST_STRATEGY.md)
+
+## 历史资料
+
+- [Fastify + SQLite 旧后端](./legacy/fastify/README.md)

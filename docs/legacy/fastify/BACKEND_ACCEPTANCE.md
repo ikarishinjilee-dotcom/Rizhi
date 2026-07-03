@@ -1,5 +1,7 @@
 # 日值后端验收清单
 
+> 历史文档：用于验收旧 Fastify + SQLite 后端。当前正式后端采用 uniCloud + uni-id。
+
 这份清单用于验收当前 Fastify + TypeScript 后端。后端入口统一到 `server/app/main.ts`。
 
 ## 当前后端形态
