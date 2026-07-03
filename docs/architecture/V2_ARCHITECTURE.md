@@ -35,7 +35,23 @@ rizhi/
 1. PC Web 已具备 uni-id 登录入口和 uniCloud HTTP 适配层。
 2. uni-app 已接入 uni-id-pages，H5 可以构建。
 3. `rizhi-api` 已改为从 token 获取 uid，不再信任客户端传入用户 ID。
-4. 下一阶段是部署 uni-id Schema、`uni-id-co` 和 `rizhi-api`，完成真实注册登录联调。
+4. 根项目已启用 npm workspaces，PC Web 与 uni-app 共用根 `package-lock.json`。
+5. 下一阶段是部署 uni-id Schema、`uni-id-co` 和 `rizhi-api`，完成真实注册登录联调。
+
+## 工作区命令
+
+```bash
+npm run dev                 # PC Web
+npm run dev:uni             # uni-app H5
+npm run typecheck:all       # 两端类型检查
+npm run build:all           # 两端生产构建
+```
+
+依赖统一从仓库根目录安装：
+
+```bash
+npm install
+```
 
 ## 后续目录演进
 

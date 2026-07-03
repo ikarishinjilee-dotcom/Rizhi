@@ -3,22 +3,31 @@
   "private": true,
   "version": "0.1.0",
   "type": "module",
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
   "scripts": {
     "api:dev": "tsx ./server/app/main.ts",
     "start": "node ./scripts/start-production.mjs",
     "start:api": "tsx ./server/app/main.ts",
     "start:backup": "node ./scripts/backup-scheduler.mjs",
     "dev": "vite",
+    "dev:uni": "npm run dev:h5 --workspace=@rizhi/uni-app",
     "dev:unicloud": "vite --mode unicloud",
     "dev:full": "node ./scripts/dev-full.mjs",
     "dev:http": "set VITE_DATA_SOURCE=http&& set VITE_API_BASE_URL=http://127.0.0.1:8797/api/v1&& vite",
     "db:backup": "node ./scripts/backup-sqlite.mjs",
     "db:restore": "node ./scripts/restore-sqlite.mjs",
     "build": "vue-tsc -b && vite build",
+    "build:uni": "npm run build:h5 --workspace=@rizhi/uni-app",
+    "build:all": "npm run build && npm run build:uni",
     "preview": "vite preview",
     "test": "vitest run",
     "test:e2e": "node ./scripts/run-e2e.mjs",
-    "typecheck": "vue-tsc -b"
+    "typecheck": "vue-tsc -b",
+    "typecheck:uni": "npm run type-check --workspace=@rizhi/uni-app",
+    "typecheck:all": "npm run typecheck && npm run typecheck:uni"
   },
   "dependencies": {
     "@lucide/vue": "^1.17.0",
