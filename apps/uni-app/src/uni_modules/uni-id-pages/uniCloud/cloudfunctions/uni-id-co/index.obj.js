@@ -106,6 +106,11 @@ module.exports = {
     universal.call(this)
 
     const clientInfo = this.getUniversalClientInfo()
+    // Alipay strips appId and may omit platform in server-to-server calls.
+    if (clientInfo.source !== 'http') {
+      clientInfo.appId ||= '__UNI__2A67492'
+      clientInfo.uniPlatform ||= 'web'
+    }
     /**
      * 检查clientInfo，无appId和uniPlatform时本云对象无法正常运行
      * 此外需要保证用到的clientInfo字段均经过类型检查

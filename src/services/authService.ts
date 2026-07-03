@@ -3,8 +3,6 @@ import { reactive } from "vue";
 const TOKEN_KEY = "rizhi_uni_id_token";
 const TOKEN_EXPIRED_KEY = "rizhi_uni_id_token_expired";
 const USERNAME_KEY = "rizhi_uni_id_username";
-const appId = import.meta.env.VITE_DCLOUD_APP_ID || "__UNI__2A67492";
-const uniIdBaseUrl = (import.meta.env.VITE_UNI_ID_BASE_URL || "").replace(/\/$/, "");
 const apiBaseUrl = (import.meta.env.VITE_API_BASE_URL || "").replace(/\/$/, "");
 
 type UniIdResponse = {
@@ -57,30 +55,30 @@ function saveSession(username: string, token: string, tokenExpired: number) {
   localStorage.setItem(TOKEN_EXPIRED_KEY, String(tokenExpired));
 }
 
-async function callUniId(method: string, params: Record<string, unknown>, token = "") {
-  if (!uniIdBaseUrl) throw new Error("尚未配置 uni-id URL 化地址");
-  const response = await fetch(`${uniIdBaseUrl}/${method}`, {
+async function callAuthApi(method: string, params: Record<string, unknown>) {
+  if (!apiBaseUrl) throw new Error("尚未配置业务 API 地址");
+  const response = await fetch(`${apiBaseUrl}/auth/${method}`, {
     method: "POST",
     headers: { "Content-Type": "text/plain;charset=UTF-8" },
     body: JSON.stringify({
-      clientInfo: {
-        uniPlatform: "web",
-        appId,
-        appLanguage: "zh-Hans",
-      },
-      uniIdToken: token,
-      params,
+      __rizhiTransport: true,
+      method: "POST",
+      token: getAuthToken(),
+      payload: params,
     }),
   });
-  const result = await response.json().catch(() => ({})) as UniIdResponse;
-  if (!response.ok || result.errCode) {
-    throw new Error(result.errMsg || `登录服务请求失败（${response.status}）`);
+  const result = await response.json().catch(() => ({})) as {
+    data?: UniIdResponse;
+    error?: { message?: string };
+  };
+  if (!response.ok || result.error || result.data?.errCode) {
+    throw new Error(result.error?.message || result.data?.errMsg || `登录服务请求失败（${response.status}）`);
   }
-  return result;
+  return result.data || {};
 }
 
 export async function login(username: string, password: string) {
-  const result = await callUniId("login", { username, password });
+  const result = await callAuthApi("login", { username, password });
   if (!result.newToken?.token) throw new Error("登录成功但未返回 Token");
   saveSession(username, result.newToken.token, Number(result.newToken.tokenExpired || 0));
 }
@@ -109,12 +107,7 @@ export async function claimLocalData() {
 }
 
 export async function logout() {
-  const token = getAuthToken();
-  try {
-    if (token) await callUniId("logout", {}, token);
-  } finally {
-    clearSession();
-  }
+  clearSession();
 }
 
 export function handleUnauthorized() {

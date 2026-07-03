@@ -97,6 +97,27 @@ async function authenticate(event, token) {
   return result;
 }
 
+async function loginWithPassword(body) {
+  const username = String(body.username || "").trim();
+  const password = String(body.password || "");
+  if (!username || !password) throw new Error("请输入用户名和密码");
+  const invocation = await uniCloud.callFunction({
+    name: "uni-id-co",
+    data: {
+      method: "login",
+      params: [{ username, password }],
+    },
+  });
+  const result = invocation.result;
+  if (!result || result.errCode) {
+    const error = new Error(result?.errMsg || "登录失败");
+    error.statusCode = 401;
+    error.code = result?.errCode || "LOGIN_FAILED";
+    throw error;
+  }
+  return result;
+}
+
 async function claimLocalData(userId) {
   let claimed = 0;
   for (const name of collectionNames) {
@@ -805,6 +826,9 @@ async function route(event) {
 
   if (method === "GET" && path === "/health") {
     return ok({ status: "ok", storage: "unicloud", timestamp: now() });
+  }
+  if (method === "POST" && path === "/auth/login") {
+    return ok(await loginWithPassword(body));
   }
   const auth = await authenticate(event, token);
   const userId = auth.uid;

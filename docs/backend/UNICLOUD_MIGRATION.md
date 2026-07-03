@@ -12,20 +12,21 @@
 - 分类增删改、占用检查和交易分类迁移。
 - 完整快照导入、导出和读取，为本地数据首次迁移提供入口。
 
-当前云端实现覆盖现有主要数据入口，但仍属于迁移验证版本。正式公开前还需要接入 uni-id、云存储图片和数据库事务补偿。
+当前云端实现已接入 uni-id，业务数据所属用户由服务端校验 token 后确定。仍需完成真实账号联调、云存储图片和数据库事务补偿。
 
 ## 部署
 
 1. 使用 HBuilderX 打开 `apps/uni-app`，将其中的 `uniCloud-alipay` 关联到现有支付宝云免费服务空间。
-2. 在 `apps/uni-app/uniCloud-alipay/database` 上执行“上传所有 DB Schema”。
-3. 上传部署云函数 `apps/uni-app/uniCloud-alipay/cloudfunctions/rizhi-api`。
-4. 在 uniCloud Web 控制台为该云函数配置 URL 化路径 `/rizhi-api`。
-5. 复制 `.env.unicloud.example` 为 `.env.unicloud.local`，填写 URL 化域名。
-6. 使用 `npm run dev:unicloud` 本地验证。
+2. 上传业务 Schema，以及 `uni-id-pages`、`uni-captcha` 等插件提供的 Schema。
+3. 上传 `uni-captcha`、`uni-cloud-s2s`、`uni-config-center`、`uni-id-common` 和 `uni-open-bridge-common` 公共模块。
+4. 上传部署 `uni-id-co`、`uni-captcha-co` 和 `rizhi-api`。
+5. 在 uniCloud Web 控制台为 `rizhi-api` 配置 URL 化路径 `/rizhi-api`；`uni-id-co` 不需要单独 URL 化。
+6. 复制 `.env.unicloud.example` 为 `.env.unicloud.local`，填写 `rizhi-api/api/v1` 地址。
+7. 使用 `npm run dev:unicloud` 本地验证。
 
 ## 安全边界
 
-`VITE_USER_ID` 只是迁移期间的数据隔离标识，不是身份认证。当前 URL 不应公开。正式发布前必须接入 `uni-id`，由登录令牌确定用户，不能继续信任请求头中的用户 ID。
+uniCloud 模式必须携带 uni-id token，`rizhi-api` 从 token 获取 uid，拒绝客户端指定数据所属用户。`VITE_USER_ID` 仅保留给旧 HTTP/Fastify 兼容模式，uniCloud 模式不使用它。
 
 支付宝云默认域名会拦截浏览器 OPTIONS 预检。前端的 `unicloud` 传输层因此使用简单请求，并通过 `__method` 恢复 PATCH/DELETE 语义；接入正式身份认证或自定义域名时应重新评估该兼容层。
 

@@ -23,7 +23,7 @@ rizhi/
 ## 边界
 
 - PC Web 不导入 uni-app 页面组件。
-- PC Web 通过 URL 化接口调用 `uni-id-co` 和 `rizhi-api`。
+- PC Web 只调用 URL 化的 `rizhi-api`；登录由 `rizhi-api` 在云端桥接 `uni-id-co`。
 - uni-app 通过 `uniCloud.importObject` 调用相同云对象。
 - `uni-id-pages` 只负责 uni-app 端现成登录页面。
 - 资产、账户、交易等业务规则必须保留在云端，不能散落在各客户端。

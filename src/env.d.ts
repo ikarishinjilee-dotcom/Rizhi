@@ -4,8 +4,6 @@ interface ImportMetaEnv {
   readonly VITE_DATA_SOURCE?: "indexeddb" | "http" | "unicloud";
   readonly VITE_API_BASE_URL?: string;
   readonly VITE_USER_ID?: string;
-  readonly VITE_UNI_ID_BASE_URL?: string;
-  readonly VITE_DCLOUD_APP_ID?: string;
 }
 
 interface ImportMeta {

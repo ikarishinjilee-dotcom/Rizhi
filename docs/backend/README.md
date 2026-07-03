@@ -27,6 +27,15 @@ apps/uni-app/src/uni_modules/
 - uni-app 优先通过 uniCloud 云对象访问云端。
 - `server/` 目录中的 Fastify 后端不再作为正式部署目标。
 
+## uni-id 定制
+
+`uni-id-pages` 包含两项项目级定制，升级插件时必须复核：
+
+- `common/universal.js`：允许 PC Web 使用 `text/plain` 请求，避免支付宝云默认网关的 OPTIONS 预检限制。
+- `uni-id-co/index.obj.js`：支付宝云内部 `callFunction` 缺少 AppID 时，补充本项目唯一的 DCloud AppID。
+
+PC Web 不直接 URL 化 `uni-id-co`。登录统一经过 `rizhi-api/api/v1/auth/login`，再由云函数内部调用 `uni-id-co`。
+
 ## 相关文档
 
 - [V2 架构](../architecture/V2_ARCHITECTURE.md)
