@@ -32,7 +32,7 @@ apps/uni-app/src/uni_modules/
 `uni-id-pages` 包含两项项目级定制，升级插件时必须复核：
 
 - `common/universal.js`：允许 PC Web 使用 `text/plain` 请求，避免支付宝云默认网关的 OPTIONS 预检限制。
-- `uni-id-co/index.obj.js`：支付宝云内部 `callFunction` 缺少 AppID 时，补充本项目唯一的 DCloud AppID。
+- `uni-id-co/index.obj.js`：支付宝云内部 `callFunction` 上下文的 AppID 不可靠，内部调用统一使用本项目唯一的 DCloud AppID。
 
 PC Web 不直接 URL 化 `uni-id-co`。登录统一经过 `rizhi-api/api/v1/auth/login`，再由云函数内部调用 `uni-id-co`。
 
