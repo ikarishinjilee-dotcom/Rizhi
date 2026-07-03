@@ -53,6 +53,8 @@ npm run build:all           # 两端生产构建
 npm install
 ```
 
+仓库通过根 `.npmrc` 使用 `install-strategy=nested`。这是 HBuilderX 的兼容要求：仍共用根锁文件，但 uni-app 依赖会安装到 `apps/uni-app/node_modules/`。根 `postinstall` 还会为 HBuilderX 硬编码查找的 `@dcloudio/uni-components` 建立目录联接。
+
 ## 后续目录演进
 
 - 认证和业务 API 稳定后，再将根目录 PC Web 迁入 `apps/web/`。

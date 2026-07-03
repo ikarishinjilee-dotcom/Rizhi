@@ -8,6 +8,7 @@
     "packages/*"
   ],
   "scripts": {
+    "postinstall": "node ./scripts/ensure-uni-hbuilder-deps.mjs",
     "api:dev": "tsx ./server/app/main.ts",
     "start": "node ./scripts/start-production.mjs",
     "start:api": "tsx ./server/app/main.ts",
