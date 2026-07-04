@@ -8,7 +8,7 @@ test("filters, sorts, disables, and restores asset categories consistently", asy
     if (message.type() === "error") consoleErrors.push(message.text());
   });
 
-  await page.goto("/me");
+  await page.goto("/settings/categories");
   const toolbar = page.locator(".asset-category-toolbar");
   const digitalItem = page.getByTestId("category-item-asset-digital");
   const digitalToggle = page.getByTestId("asset-category-toggle-asset-digital");
@@ -30,7 +30,7 @@ test("filters, sorts, disables, and restores asset categories consistently", asy
   await expect(page.getByTestId("asset-category-option-asset-digital")).toBeVisible();
   await page.getByTestId("asset-upsert-cancel").click();
 
-  await page.goto("/me");
+  await page.goto("/settings/categories");
   await page.getByTestId("asset-category-status-active").click();
   await expect(digitalToggle).toBeVisible();
   await digitalToggle.click();
@@ -41,7 +41,7 @@ test("filters, sorts, disables, and restores asset categories consistently", asy
   await expect(page.getByTestId("asset-category-option-asset-digital")).toHaveCount(0);
   await page.getByTestId("asset-upsert-cancel").click();
 
-  await page.goto("/me");
+  await page.goto("/settings/categories");
   await page.getByTestId("asset-category-status-disabled").click();
   await expect(digitalItem).toBeVisible();
   await digitalToggle.click();

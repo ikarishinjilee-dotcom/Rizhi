@@ -144,21 +144,58 @@
           </template>
         </div>
       </div>
-      <div class="topbar__avatar">
-        <img v-if="profile.avatarDataUrl" :src="profile.avatarDataUrl" alt="" />
-        <span v-else>{{ profileInitial }}</span>
+      <div ref="accountRoot" class="account-menu">
+        <button
+          class="account-menu__trigger"
+          type="button"
+          :aria-expanded="accountMenuOpen"
+          aria-label="打开账户菜单"
+          @click="accountMenuOpen = !accountMenuOpen"
+        >
+          <span class="topbar__avatar">
+            <img v-if="profile.avatarDataUrl" :src="profile.avatarDataUrl" alt="" />
+            <span v-else>{{ profileInitial }}</span>
+          </span>
+          <span>{{ profile.displayName }}</span>
+          <ChevronDown :size="14" />
+        </button>
+        <div v-if="accountMenuOpen" class="account-menu__panel">
+          <div class="account-menu__identity">
+            <strong>{{ profile.displayName }}</strong>
+            <span>{{ authSession.username || "日值账户" }}</span>
+          </div>
+          <button type="button" @click="openProfile">
+            <UserRound :size="16" />
+            个人资料
+          </button>
+          <button class="danger" type="button" @click="showLogoutConfirm = true; accountMenuOpen = false">
+            <LogOut :size="16" />
+            退出登录
+          </button>
+        </div>
       </div>
-      <span>{{ profile.displayName }}</span>
     </div>
+
+    <DeleteConfirmModal
+      v-model:show="showLogoutConfirm"
+      eyebrow="账户操作"
+      title="确认退出当前账户？"
+      description="退出后，本机将清除登录凭证。重新登录后仍可继续访问云端数据。"
+      confirm-text="确认退出"
+      :loading="loggingOut"
+      @confirm="confirmLogout"
+    />
   </header>
 </template>
 
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } from "vue";
 import { useRouter } from "vue-router";
-import { Bell, BellRing, Box, CalendarClock, ChevronRight, CreditCard, EyeOff, NotebookText, PackageOpen, Search, SearchX, Settings2, ShieldAlert, X } from "@lucide/vue";
+import { Bell, BellRing, Box, CalendarClock, ChevronDown, ChevronRight, CreditCard, EyeOff, LogOut, NotebookText, PackageOpen, Search, SearchX, Settings2, ShieldAlert, UserRound, X } from "@lucide/vue";
+import DeleteConfirmModal from "@/components/business/DeleteConfirmModal.vue";
 import RInput from "@/components/ui/RInput.vue";
 import type { UserSettingsRecord } from "@/domain/models";
+import { authSession, logout } from "@/services/authService";
 import { SETTINGS_UPDATED_EVENT, settingsService } from "@/services/settingsService";
 import { useAppDataStore } from "@/stores/appDataStore";
 
@@ -188,9 +225,13 @@ const router = useRouter();
 const store = useAppDataStore();
 const searchRoot = ref<HTMLElement | null>(null);
 const notificationRoot = ref<HTMLElement | null>(null);
+const accountRoot = ref<HTMLElement | null>(null);
 const query = ref("");
 const searchOpen = ref(false);
 const notificationOpen = ref(false);
+const accountMenuOpen = ref(false);
+const showLogoutConfirm = ref(false);
+const loggingOut = ref(false);
 const notificationSettingsOpen = ref(false);
 const notificationView = ref<"unread" | "all">("unread");
 const readNotificationIds = ref(new Set<string>());
@@ -487,6 +528,25 @@ function closeSearch() {
 function handlePointerDown(event: PointerEvent) {
   if (!searchRoot.value?.contains(event.target as Node)) searchOpen.value = false;
   if (!notificationRoot.value?.contains(event.target as Node)) notificationOpen.value = false;
+  if (!accountRoot.value?.contains(event.target as Node)) accountMenuOpen.value = false;
+}
+
+async function openProfile() {
+  accountMenuOpen.value = false;
+  await router.push("/settings/profile");
+}
+
+async function confirmLogout() {
+  if (loggingOut.value) return;
+  loggingOut.value = true;
+  try {
+    await logout();
+    store.clearSessionData();
+    showLogoutConfirm.value = false;
+    await router.replace("/login");
+  } finally {
+    loggingOut.value = false;
+  }
 }
 
 function applySettings(settings: UserSettingsRecord) {
@@ -1065,5 +1125,88 @@ onBeforeUnmount(() => {
   width: 100%;
   height: 100%;
   object-fit: cover;
+}
+
+.account-menu {
+  position: relative;
+}
+
+.account-menu__trigger {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: 4px 6px;
+  color: var(--color-text-secondary);
+  background: transparent;
+  border: 0;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+}
+
+.account-menu__trigger:hover,
+.account-menu__trigger[aria-expanded="true"] {
+  color: var(--color-text-primary);
+  background: var(--color-bg-hover);
+}
+
+.account-menu__panel {
+  position: absolute;
+  z-index: 1200;
+  top: calc(100% + 10px);
+  right: 0;
+  width: 210px;
+  padding: var(--space-2);
+  background: var(--color-bg-card);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-popover);
+}
+
+.account-menu__identity {
+  display: grid;
+  gap: 2px;
+  margin-bottom: var(--space-2);
+  padding: var(--space-3);
+  border-bottom: 1px solid var(--color-border);
+}
+
+.account-menu__identity strong {
+  overflow: hidden;
+  color: var(--color-text-primary);
+  font-size: 13px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.account-menu__identity span {
+  overflow: hidden;
+  color: var(--color-text-tertiary);
+  font-size: 11px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.account-menu__panel > button {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  width: 100%;
+  padding: 9px 10px;
+  color: var(--color-text-secondary);
+  background: transparent;
+  border: 0;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  font-size: 12px;
+  text-align: left;
+}
+
+.account-menu__panel > button:hover {
+  color: var(--color-text-primary);
+  background: var(--color-bg-hover);
+}
+
+.account-menu__panel > button.danger {
+  color: var(--color-danger);
 }
 </style>

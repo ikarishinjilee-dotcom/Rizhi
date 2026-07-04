@@ -23,7 +23,7 @@
         </RButton>
       </form>
 
-      <p class="login-footnote">首次账户请先在 uni-app 注册页面完成创建。</p>
+      <p class="login-footnote">还没有账户？<RouterLink to="/register">立即创建</RouterLink></p>
     </section>
   </main>
 </template>
@@ -34,7 +34,7 @@ import { useRoute, useRouter } from "vue-router";
 import RButton from "@/components/ui/RButton.vue";
 import RInlineFeedback from "@/components/ui/RInlineFeedback.vue";
 import RInput from "@/components/ui/RInput.vue";
-import { claimLocalData, login } from "@/services/authService";
+import { login } from "@/services/authService";
 import { useAppDataStore } from "@/stores/appDataStore";
 
 const route = useRoute();
@@ -52,7 +52,7 @@ async function submit() {
   errorMessage.value = "";
   try {
     await login(username.value.trim(), password.value);
-    await claimLocalData();
+    store.clearSessionData();
     await store.init();
     const redirect = typeof route.query.redirect === "string" ? route.query.redirect : "/dashboard";
     await router.replace(redirect);
@@ -114,6 +114,11 @@ async function submit() {
   margin: 0;
   color: var(--color-text-tertiary);
   line-height: 1.7;
+}
+
+.login-footnote a {
+  color: var(--color-primary);
+  text-decoration: none;
 }
 
 .login-form {

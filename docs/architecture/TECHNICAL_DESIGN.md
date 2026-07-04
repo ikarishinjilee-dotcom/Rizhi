@@ -100,12 +100,12 @@ Dexie
 
 职责划分：
 
-- `src/services`：承载业务动作命名，例如创建资产、编辑附加项、资金转账。
-- `src/repositories/contracts.ts`：定义数据访问接口和输入输出类型，是未来 HTTP API 的对接契约。
-- `src/repositories/indexedDbRepositories.ts`：当前本地 IndexedDB 实现。
-- `src/db/actions.ts`：IndexedDB 事务细节，后续接后端后可以逐步收缩为本地兼容层。
+- `apps/web/src/services`：承载业务动作命名，例如创建资产、编辑附加项、资金转账。
+- `apps/web/src/repositories/contracts.ts`：定义数据访问接口和输入输出类型，是未来 HTTP API 的对接契约。
+- `apps/web/src/repositories/indexedDbRepositories.ts`：当前本地 IndexedDB 实现。
+- `apps/web/src/db/actions.ts`：IndexedDB 事务细节，后续接后端后可以逐步收缩为本地兼容层。
 
-后续接后端时，优先新增 `httpRepositories`，并在 `src/repositories/index.ts` 切换导出实现。页面和大部分 service 不应该直接感知 IndexedDB 或 HTTP。
+后续接后端时，优先新增 `httpRepositories`，并在 `apps/web/src/repositories/index.ts` 切换导出实现。页面和大部分 service 不应该直接感知 IndexedDB 或 HTTP。
 
 ### 2.5 UI 与样式
 
@@ -138,7 +138,7 @@ ECharts 或 vue-echarts
 推荐目录：
 
 ```text
-src/
+apps/web/src/
   app/
     App.vue
     router.ts

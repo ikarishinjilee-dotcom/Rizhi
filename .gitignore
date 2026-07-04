@@ -1,7 +1,10 @@
 node_modules/
 dist/
+apps/*/dist/
 test-results/
+apps/*/test-results/
 playwright-report/
+apps/*/playwright-report/
 *.tsbuildinfo
 .data/
 .logs/

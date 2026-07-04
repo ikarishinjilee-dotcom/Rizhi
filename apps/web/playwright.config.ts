@@ -5,7 +5,7 @@ const useFastify = process.env.RIZHI_E2E_FASTIFY === "1";
 const webServer = useFastify
   ? [
       {
-        command: "node ./node_modules/tsx/dist/cli.mjs ./server/app/main.ts",
+        command: "node ../../node_modules/tsx/dist/cli.mjs ../../server/app/main.ts",
         env: { ...process.env, RIZHI_FASTIFY_PORT: "18977" },
         url: "http://127.0.0.1:18977/api/v1/health",
         reuseExistingServer: false,

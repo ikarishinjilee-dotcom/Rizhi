@@ -19,12 +19,12 @@ MVP 使用 `Dexie + IndexedDB`，数据库名为 `rizhi-local-db`。
 
 主要文件：
 
-- `src/domain/models.ts`：领域模型，定义前端和未来后端都应遵守的数据形状。
-- `src/domain/assetCalculations.ts`：资产派生计算，包括附加项成本、总成本、图片附件读取等。
-- `src/data/mock.ts`：开发期正式 mock 数据，字段结构尽量贴近后端 API。
-- `src/db/seed.ts`：把 mock 数据写入 IndexedDB。
-- `src/db/actions.ts`：跨模块联动写入，例如资产购买、附加项、转让、资金转账。
-- `src/stores/appDataStore.ts`：Pinia 数据读取与汇总。
+- `apps/web/src/domain/models.ts`：领域模型，定义前端和未来后端都应遵守的数据形状。
+- `apps/web/src/domain/assetCalculations.ts`：资产派生计算，包括附加项成本、总成本、图片附件读取等。
+- `apps/web/src/data/mock.ts`：开发期正式 mock 数据，字段结构尽量贴近后端 API。
+- `apps/web/src/db/seed.ts`：把 mock 数据写入 IndexedDB。
+- `apps/web/src/db/actions.ts`：跨模块联动写入，例如资产购买、附加项、转让、资金转账。
+- `apps/web/src/stores/appDataStore.ts`：Pinia 数据读取与汇总。
 
 ## 2. 核心原则
 
@@ -354,7 +354,7 @@ type AssetStatus = "using" | "idle" | "transferred" | "disposed";
 
 [当前已实现]
 
-统一通过 `src/domain/assetCalculations.ts` 计算：
+统一通过 `apps/web/src/domain/assetCalculations.ts` 计算：
 
 ```ts
 includedAddonCost = sum(assetAddons where assetId = asset.id and direction = expense and includedInCost)

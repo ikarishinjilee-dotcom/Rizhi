@@ -1,10 +1,17 @@
 import { spawn, spawnSync } from "node:child_process";
 import http from "node:http";
+import { createRequire } from "node:module";
+import path from "node:path";
 import process from "node:process";
 
 const host = "127.0.0.1";
 const port = 5173;
 const baseUrl = `http://${host}:${port}`;
+const rootDir = process.cwd();
+const webDir = path.join(rootDir, "apps", "web");
+const webRequire = createRequire(path.join(webDir, "package.json"));
+const viteCli = path.join(path.dirname(webRequire.resolve("vite/package.json")), "bin", "vite.js");
+const playwrightCli = path.join(path.dirname(webRequire.resolve("@playwright/test/package.json")), "cli.js");
 
 function waitForServer(url, timeoutMs = 60_000) {
   const startedAt = Date.now();
@@ -46,10 +53,10 @@ function stopProcessTree(child) {
   child.kill("SIGTERM");
 }
 
-function runCommand(command, args, env) {
+function runCommand(command, args, env, cwd = process.cwd()) {
   return new Promise((resolve) => {
     const child = spawn(command, args, {
-      cwd: process.cwd(),
+      cwd,
       env,
       stdio: "inherit",
       shell: false,
@@ -67,9 +74,9 @@ function runCommand(command, args, env) {
 
 const vite = spawn(
   process.execPath,
-  ["./node_modules/vite/bin/vite.js", "--host", host, "--port", String(port), "--strictPort"],
+  [viteCli, "--host", host, "--port", String(port), "--strictPort"],
   {
-    cwd: process.cwd(),
+    cwd: webDir,
     env: process.env,
     stdio: ["ignore", "pipe", "pipe"],
     shell: false,
@@ -85,11 +92,12 @@ try {
   await waitForServer(`${baseUrl}/assets`);
   exitCode = await runCommand(
     process.execPath,
-    ["./node_modules/@playwright/test/cli.js", "test"],
+    [playwrightCli, "test"],
     {
       ...process.env,
       RIZHI_E2E_EXTERNAL_SERVER: "1",
     },
+    webDir,
   );
 } finally {
   stopProcessTree(vite);

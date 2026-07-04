@@ -81,6 +81,19 @@ export const useAppDataStore = defineStore("appData", () => {
     }
   }
 
+  function clearSessionData() {
+    assets.value = [];
+    assetAddons.value = [];
+    accounts.value = [];
+    transactions.value = [];
+    accountFlows.value = [];
+    categories.value = [];
+    initialized.value = false;
+    loading.value = false;
+    error.value = null;
+    initPromise = null;
+  }
+
   return {
     initialized,
     loading,
@@ -100,5 +113,6 @@ export const useAppDataStore = defineStore("appData", () => {
     init,
     refresh,
     resetLocalData,
+    clearSessionData,
   };
 });

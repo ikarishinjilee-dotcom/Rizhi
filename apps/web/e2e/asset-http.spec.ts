@@ -1,5 +1,7 @@
 import { expect, test, type Locator } from "@playwright/test";
 
+test.skip(process.env.RIZHI_E2E_FASTIFY !== "1", "Fastify HTTP integration test");
+
 test("creates an asset through the Fastify HTTP backend", async ({ page }) => {
   const assetName = `HTTP Asset ${Date.now()}`;
   const consoleErrors: string[] = [];

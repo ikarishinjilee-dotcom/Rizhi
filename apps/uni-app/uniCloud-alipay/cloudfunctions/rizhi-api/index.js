@@ -97,25 +97,62 @@ async function authenticate(event, token) {
   return result;
 }
 
-async function loginWithPassword(body) {
-  const username = String(body.username || "").trim();
-  const password = String(body.password || "");
-  if (!username || !password) throw new Error("请输入用户名和密码");
+async function invokeUniId(event, method, params, deviceId) {
+  const headers = event.headers || {};
+  const bridgeClientInfo = {
+    deviceId: String(deviceId || ""),
+    clientIP: headers["x-forwarded-for"] || headers["x-real-ip"] || "",
+    userAgent: headers["user-agent"] || "",
+  };
   const invocation = await uniCloud.callFunction({
     name: "uni-id-co",
     data: {
-      method: "login",
-      params: [{ username, password }],
+      method,
+      params: [
+        {
+          ...params,
+          __rizhiClientInfo: bridgeClientInfo,
+        },
+        {
+          __rizhiClientInfo: bridgeClientInfo,
+        },
+      ],
     },
   });
   const result = invocation.result;
   if (!result || result.errCode) {
-    const error = new Error(result?.errMsg || "登录失败");
-    error.statusCode = 401;
-    error.code = result?.errCode || "LOGIN_FAILED";
+    const error = new Error(result?.errMsg || "账户服务请求失败");
+    error.statusCode = method === "login" ? 401 : 400;
+    error.code = result?.errCode || "AUTH_REQUEST_FAILED";
     throw error;
   }
   return result;
+}
+
+async function loginWithPassword(event, body) {
+  const username = String(body.username || "").trim();
+  const password = String(body.password || "");
+  if (!username || !password) throw new Error("请输入用户名和密码");
+  return invokeUniId(event, "login", { username, password }, body.deviceId);
+}
+
+async function createRegisterCaptcha(event, body) {
+  if (!body.deviceId) throw new Error("缺少客户端设备标识");
+  return invokeUniId(event, "createCaptcha", { scene: "register" }, body.deviceId);
+}
+
+async function registerWithPassword(event, body) {
+  const username = String(body.username || "").trim();
+  const nickname = String(body.nickname || "").trim();
+  const password = String(body.password || "");
+  const captcha = String(body.captcha || "").trim();
+  if (!username || !password || !captcha || !body.deviceId) throw new Error("请完整填写注册信息");
+  return invokeUniId(event, "registerUser", {
+    username,
+    nickname,
+    password,
+    captcha,
+  }, body.deviceId);
 }
 
 async function claimLocalData(userId) {
@@ -821,14 +858,20 @@ async function handleTransactions(method, path, body, userId) {
 
 async function route(event) {
   const { method, body, token, query } = parseTransportRequest(event);
-  const path = String(event.path || "/").replace(/^\/api\/v1/, "") || "/";
+  const path = String(event.path || "/").replace(/^.*\/api\/v1/, "") || "/";
   if (method === "OPTIONS") return response(200, { ok: true });
 
   if (method === "GET" && path === "/health") {
     return ok({ status: "ok", storage: "unicloud", timestamp: now() });
   }
   if (method === "POST" && path === "/auth/login") {
-    return ok(await loginWithPassword(body));
+    return ok(await loginWithPassword(event, body));
+  }
+  if (method === "POST" && path === "/auth/captcha") {
+    return ok(await createRegisterCaptcha(event, body));
+  }
+  if (method === "POST" && path === "/auth/register") {
+    return ok(await registerWithPassword(event, body), 201);
   }
   const auth = await authenticate(event, token);
   const userId = auth.uid;

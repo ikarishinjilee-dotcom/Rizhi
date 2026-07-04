@@ -21,7 +21,7 @@
 3. 上传 `uni-captcha`、`uni-cloud-s2s`、`uni-config-center`、`uni-id-common` 和 `uni-open-bridge-common` 公共模块。
 4. 上传部署 `uni-id-co`、`uni-captcha-co` 和 `rizhi-api`。
 5. 在 uniCloud Web 控制台为 `rizhi-api` 配置 URL 化路径 `/rizhi-api`；`uni-id-co` 不需要单独 URL 化。
-6. 复制 `.env.unicloud.example` 为 `.env.unicloud.local`，填写 `rizhi-api/api/v1` 地址。
+6. 复制 `apps/web/.env.unicloud.example` 为 `apps/web/.env.unicloud.local`，填写 `rizhi-api/api/v1` 地址。
 7. 使用 `npm run dev:unicloud` 本地验证。
 
 ## 安全边界

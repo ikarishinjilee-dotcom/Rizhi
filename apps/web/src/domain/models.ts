@@ -171,7 +171,7 @@ export type CategoryRecord = {
 };
 
 export type UserSettingsRecord = TimestampFields & {
-  id: "default";
+  id: ID;
   currency: "CNY";
   locale: "zh-CN";
   theme: "light" | "dark" | "system";

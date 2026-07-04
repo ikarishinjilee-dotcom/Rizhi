@@ -11,8 +11,8 @@
 
 ```text
 rizhi/
-├─ src/                         当前 PC Web，认证稳定前保持原位
 ├─ apps/
+│  ├─ web/                     PC Web Vue3/Vite 应用
 │  └─ uni-app/                 DCloud 官方 Vue3/Vite/TypeScript 项目
 │     └─ uniCloud-alipay/      唯一云端源码目录
 ├─ packages/                   后续共享领域模型和 API 客户端
@@ -57,7 +57,7 @@ npm install
 
 ## 后续目录演进
 
-- 认证和业务 API 稳定后，再将根目录 PC Web 迁入 `apps/web/`。
+- PC Web 已迁入 `apps/web/`，根目录只负责工作区调度。
 - 两个客户端出现真实重复代码后，再建立 `packages/domain/` 和 `packages/api-client/`。
 - 在迁移完成前，不为追求目录整齐提前抽取共享包。
 

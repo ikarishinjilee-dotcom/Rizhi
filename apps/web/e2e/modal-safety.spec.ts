@@ -155,7 +155,7 @@ test("fund account deletion asks for confirmation and blocks accounts with flows
 });
 
 test("category deletion is blocked when transactions still use the category", async ({ page }) => {
-  await page.goto("/me");
+  await page.goto("/settings/categories");
   await expect(page.getByText("Rizhi")).toBeVisible();
 
   await page.getByTestId("category-domain-transaction").click();

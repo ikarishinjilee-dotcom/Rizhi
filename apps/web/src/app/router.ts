@@ -5,6 +5,7 @@ export const router = createRouter({
   history: createWebHistory(),
   routes: [
     { path: "/login", component: () => import("@/features/auth/LoginPage.vue"), meta: { public: true } },
+    { path: "/register", component: () => import("@/features/auth/RegisterPage.vue"), meta: { public: true } },
     { path: "/", redirect: "/dashboard" },
     { path: "/dashboard", component: () => import("@/features/dashboard/DashboardPage.vue") },
     { path: "/assets", component: () => import("@/features/assets/AssetListPage.vue") },

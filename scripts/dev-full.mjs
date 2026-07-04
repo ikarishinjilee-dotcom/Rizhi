@@ -1,14 +1,20 @@
 import { spawn } from "node:child_process";
 import http from "node:http";
+import { createRequire } from "node:module";
+import path from "node:path";
 import process from "node:process";
 
 const children = [];
+const rootDir = process.cwd();
+const webDir = path.join(rootDir, "apps", "web");
+const webRequire = createRequire(path.join(webDir, "package.json"));
+const viteCli = path.join(path.dirname(webRequire.resolve("vite/package.json")), "bin", "vite.js");
 const apiHealthUrl = "http://127.0.0.1:8797/api/v1/health";
 const frontendUrl = "http://127.0.0.1:5173/";
 
-function start(name, command, args, env = {}) {
+function start(name, command, args, env = {}, cwd = rootDir) {
   const child = spawn(command, args, {
-    cwd: process.cwd(),
+    cwd,
     env: {
       ...process.env,
       ...env,
@@ -56,11 +62,12 @@ if (await isReachable(frontendUrl)) {
   start(
     "frontend",
     process.execPath,
-    ["./node_modules/vite/bin/vite.js", "--host", "127.0.0.1", "--port", "5173"],
+    [viteCli, "--host", "127.0.0.1", "--port", "5173"],
     {
       VITE_DATA_SOURCE: "http",
       VITE_API_BASE_URL: "http://127.0.0.1:8797/api/v1",
     },
+    webDir,
   );
 }
 
