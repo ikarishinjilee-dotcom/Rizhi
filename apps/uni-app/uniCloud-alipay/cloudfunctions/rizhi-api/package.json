@@ -1,0 +1,10 @@
+{
+  "name": "rizhi-api",
+  "version": "1.0.0",
+  "description": "Rizhi HTTP API for uniCloud",
+  "main": "index.js",
+  "dependencies": {
+    "uni-id-common": "file:../../../src/uni_modules/uni-id-common/uniCloud/cloudfunctions/common/uni-id-common",
+    "uni-config-center": "file:../../../src/uni_modules/uni-config-center/uniCloud/cloudfunctions/common/uni-config-center"
+  }
+}

@@ -1,9 +1,14 @@
 node_modules/
 dist/
+apps/*/dist/
 test-results/
+apps/*/test-results/
 playwright-report/
+apps/*/playwright-report/
 *.tsbuildinfo
 .data/
 .logs/
 undefined
 *.sqlite
+.env.*.local
+apps/uni-app/src/uni_modules/uni-config-center/uniCloud/cloudfunctions/common/uni-config-center/uni-id/config.json

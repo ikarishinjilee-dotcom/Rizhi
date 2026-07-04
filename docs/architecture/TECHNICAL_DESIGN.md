@@ -1,5 +1,7 @@
 # Rizhi 技术设计
 
+> 版本说明：本文记录 V1 PC 本地版技术设计。当前跨端与云端架构以 [V2 架构](./V2_ARCHITECTURE.md) 为准。
+
 ## 1. 技术目标
 
 Rizhi 第一版的技术目标是：先做一个可靠的 PC 网页端本地应用，把“物品资产、记账、资金账户”的核心联动跑通。
@@ -98,12 +100,12 @@ Dexie
 
 职责划分：
 
-- `src/services`：承载业务动作命名，例如创建资产、编辑附加项、资金转账。
-- `src/repositories/contracts.ts`：定义数据访问接口和输入输出类型，是未来 HTTP API 的对接契约。
-- `src/repositories/indexedDbRepositories.ts`：当前本地 IndexedDB 实现。
-- `src/db/actions.ts`：IndexedDB 事务细节，后续接后端后可以逐步收缩为本地兼容层。
+- `apps/web/src/services`：承载业务动作命名，例如创建资产、编辑附加项、资金转账。
+- `apps/web/src/repositories/contracts.ts`：定义数据访问接口和输入输出类型，是未来 HTTP API 的对接契约。
+- `apps/web/src/repositories/indexedDbRepositories.ts`：当前本地 IndexedDB 实现。
+- `apps/web/src/db/actions.ts`：IndexedDB 事务细节，后续接后端后可以逐步收缩为本地兼容层。
 
-后续接后端时，优先新增 `httpRepositories`，并在 `src/repositories/index.ts` 切换导出实现。页面和大部分 service 不应该直接感知 IndexedDB 或 HTTP。
+后续接后端时，优先新增 `httpRepositories`，并在 `apps/web/src/repositories/index.ts` 切换导出实现。页面和大部分 service 不应该直接感知 IndexedDB 或 HTTP。
 
 ### 2.5 UI 与样式
 
@@ -136,7 +138,7 @@ ECharts 或 vue-echarts
 推荐目录：
 
 ```text
-src/
+apps/web/src/
   app/
     App.vue
     router.ts
