@@ -48,6 +48,7 @@
       </div>
     </div>
     <div class="topbar__actions">
+      <span v-if="isTestEnvironment" class="environment-badge">测试环境</span>
       <div ref="notificationRoot" class="notification-center">
         <button
           class="topbar__icon-button"
@@ -223,6 +224,7 @@ type NotificationItem = {
 
 const router = useRouter();
 const store = useAppDataStore();
+const isTestEnvironment = import.meta.env.VITE_APP_ENV === "test";
 const searchRoot = ref<HTMLElement | null>(null);
 const notificationRoot = ref<HTMLElement | null>(null);
 const accountRoot = ref<HTMLElement | null>(null);
@@ -751,6 +753,15 @@ onBeforeUnmount(() => {
   gap: var(--space-4);
   color: var(--color-text-secondary);
   font-size: 12px;
+}
+
+.environment-badge {
+  padding: 4px 8px;
+  color: #b54708;
+  font-weight: 600;
+  background: #fffaeb;
+  border: 1px solid #fedf89;
+  border-radius: 999px;
 }
 
 .topbar::after {

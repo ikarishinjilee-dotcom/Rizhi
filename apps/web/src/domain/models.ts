@@ -32,6 +32,7 @@ export type AssetAttachmentRecord = {
   type: AssetAttachmentType;
   name: string;
   url: string;
+  storageFileId?: string;
   sort: number;
   isCover?: boolean;
   createdAt: string;
@@ -178,6 +179,7 @@ export type UserSettingsRecord = TimestampFields & {
   firstDayOfWeek: 0 | 1;
   displayName?: string;
   avatarDataUrl?: string;
+  avatarFileId?: string;
   notificationReadIds?: string[];
   notificationIgnoredIds?: string[];
   warrantyReminderDays?: number;

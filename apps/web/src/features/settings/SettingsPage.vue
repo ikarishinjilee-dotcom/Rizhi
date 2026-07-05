@@ -449,6 +449,7 @@ import { backupService } from "@/services/backupService";
 import { categoryService } from "@/services/categoryService";
 import { settingsService } from "@/services/settingsService";
 import { useAppDataStore } from "@/stores/appDataStore";
+import { imageFileToPersistentUrl } from "@/utils/imageFiles";
 
 const store = useAppDataStore();
 const route = useRoute();
@@ -735,7 +736,9 @@ async function saveProfile() {
     });
     profileDraft.displayName = displayName;
     profileMessageTone.value = "success";
-    profileMessage.value = "个人资料已保存到本地。";
+    profileMessage.value = import.meta.env.VITE_DATA_SOURCE === "unicloud"
+      ? "个人资料已同步到云端。"
+      : "个人资料已保存到本地。";
   } catch (error) {
     profileMessageTone.value = "danger";
     profileMessage.value = error instanceof Error ? error.message : "保存失败，请稍后重试。";
@@ -744,7 +747,7 @@ async function saveProfile() {
   }
 }
 
-function selectAvatar(event: Event) {
+async function selectAvatar(event: Event) {
   const input = event.target as HTMLInputElement;
   const file = input.files?.[0];
   input.value = "";
@@ -755,16 +758,13 @@ function selectAvatar(event: Event) {
     return;
   }
 
-  const reader = new FileReader();
-  reader.onload = () => {
-    profileDraft.avatarDataUrl = typeof reader.result === "string" ? reader.result : undefined;
+  try {
+    profileDraft.avatarDataUrl = await imageFileToPersistentUrl(file);
     profileMessage.value = "";
-  };
-  reader.onerror = () => {
+  } catch (error) {
     profileMessageTone.value = "danger";
-    profileMessage.value = "图片读取失败，请重新选择。";
-  };
-  reader.readAsDataURL(file);
+    profileMessage.value = error instanceof Error ? error.message : "图片读取失败，请重新选择。";
+  }
 }
 
 function resetData() {

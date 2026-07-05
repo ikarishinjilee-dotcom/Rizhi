@@ -25,6 +25,7 @@ import type {
 } from "@/repositories/contracts";
 import type { AssetAddonRecord, AssetAttachmentRecord, AssetRecord, CategoryRecord, ID, MoneyAccountRecord, TransactionRecord } from "@/domain/models";
 import { getAuthToken, handleUnauthorized } from "@/services/authService";
+import { uploadImageDataUrl } from "@/services/cloudApiService";
 
 const apiBaseUrl = (import.meta.env.VITE_API_BASE_URL ?? "http://127.0.0.1:8797/api/v1").replace(/\/$/, "");
 const userId = import.meta.env.VITE_USER_ID?.trim() || "user-local";
@@ -84,8 +85,14 @@ function jsonBody(input: unknown): RequestInit {
   };
 }
 
-function withImageAttachments<T extends { imageUrl?: string; imageUrls?: string[]; attachments?: AssetAttachmentRecord[] }>(input: T) {
-  if (input.attachments || (!("imageUrl" in input) && !("imageUrls" in input))) return input;
+async function withImageAttachments<T extends { imageUrl?: string; imageUrls?: string[]; attachments?: AssetAttachmentRecord[] }>(
+  input: T,
+  purpose: "asset" | "addon",
+) {
+  let prepared: T | (Omit<T, "imageUrl" | "imageUrls"> & { attachments: AssetAttachmentRecord[] }) = input;
+  if (input.attachments || (!("imageUrl" in input) && !("imageUrls" in input))) {
+    prepared = input;
+  } else {
   const urls = [input.imageUrl, ...(input.imageUrls ?? [])]
     .filter((url): url is string => Boolean(url))
     .filter((url, index, items) => items.indexOf(url) === index);
@@ -99,12 +106,25 @@ function withImageAttachments<T extends { imageUrl?: string; imageUrls?: string[
     createdAt: new Date().toISOString(),
   }));
   const { imageUrl: _imageUrl, imageUrls: _imageUrls, ...rest } = input;
-  return { ...rest, attachments };
+    prepared = { ...rest, attachments };
+  }
+
+  const attachments = prepared.attachments;
+  if (!attachments?.some((attachment) => attachment.url.startsWith("data:image/"))) return prepared;
+  const uploadedAttachments = await Promise.all(attachments.map(async (attachment) => {
+    if (!attachment.url.startsWith("data:image/")) return attachment;
+    const uploaded = await uploadImageDataUrl(attachment.url, purpose);
+    return { ...attachment, url: uploaded.url, storageFileId: uploaded.fileId };
+  }));
+  return { ...prepared, attachments: uploadedAttachments };
 }
 
 export const httpAppDataRepository: AppDataRepository = {
   async initialize() {
     await request("/health");
+    if (useUniCloudTransport) {
+      await request("/files/migrate-images", { method: "POST" });
+    }
   },
 
   async reset() {
@@ -117,13 +137,13 @@ export const httpAppDataRepository: AppDataRepository = {
 };
 
 export const httpAssetRepository: AssetRepository = {
-  create(input: CreateAssetInput) {
-    return request<AssetRecord>("/assets", { method: "POST", ...jsonBody(withImageAttachments(input)) });
+  async create(input: CreateAssetInput) {
+    return request<AssetRecord>("/assets", { method: "POST", ...jsonBody(await withImageAttachments(input, "asset")) });
   },
 
-  update(input: UpdateAssetInput) {
+  async update(input: UpdateAssetInput) {
     const { id, ...body } = input;
-    return request<AssetRecord>(`/assets/${encodeURIComponent(id)}`, { method: "PATCH", ...jsonBody(withImageAttachments(body)) });
+    return request<AssetRecord>(`/assets/${encodeURIComponent(id)}`, { method: "PATCH", ...jsonBody(await withImageAttachments(body, "asset")) });
   },
 
   async delete(id: ID) {
@@ -141,14 +161,14 @@ export const httpAssetRepository: AssetRepository = {
 };
 
 export const httpAssetAddonRepository: AssetAddonRepository = {
-  create(input: CreateAddonInput) {
+  async create(input: CreateAddonInput) {
     const { assetId, ...body } = input;
-    return request<AssetAddonRecord>(`/assets/${encodeURIComponent(assetId)}/addons`, { method: "POST", ...jsonBody(withImageAttachments(body)) });
+    return request<AssetAddonRecord>(`/assets/${encodeURIComponent(assetId)}/addons`, { method: "POST", ...jsonBody(await withImageAttachments(body, "addon")) });
   },
 
-  update(input: UpdateAddonInput) {
+  async update(input: UpdateAddonInput) {
     const { id, ...body } = input;
-    return request<AssetAddonRecord>(`/addons/${encodeURIComponent(id)}`, { method: "PATCH", ...jsonBody(withImageAttachments(body)) });
+    return request<AssetAddonRecord>(`/addons/${encodeURIComponent(id)}`, { method: "PATCH", ...jsonBody(await withImageAttachments(body, "addon")) });
   },
 
   async delete(id: ID) {

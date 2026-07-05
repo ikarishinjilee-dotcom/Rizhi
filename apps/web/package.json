@@ -6,8 +6,12 @@
   "scripts": {
     "dev": "vite",
     "dev:unicloud": "vite --mode unicloud",
+    "dev:test": "vite --mode staging",
     "dev:http": "vite --mode http",
     "build": "vue-tsc -b && vite build",
+    "build:unicloud": "vue-tsc -b && vite build --mode unicloud",
+    "build:test": "vue-tsc -b && vite build --mode staging",
+    "build:production": "vue-tsc -b && vite build --mode production",
     "preview": "vite preview",
     "test": "vitest run",
     "test:e2e": "playwright test",

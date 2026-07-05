@@ -13,7 +13,7 @@ const app = createApp(App);
 app.use(pinia).use(router).mount("#app");
 
 if (hasActiveSession()) {
-  useAppDataStore(pinia).init().catch((error) => {
-    console.error("[Rizhi] 数据初始化失败", error);
-  });
+	useAppDataStore(pinia).init().catch((error) => {
+		console.error("[Rizhi] 数据初始化失败", error);
+	});
 }

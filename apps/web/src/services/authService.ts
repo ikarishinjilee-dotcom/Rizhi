@@ -158,7 +158,18 @@ export async function logout() {
 
 export function handleUnauthorized() {
   clearSession();
-  if (location.pathname !== "/login") {
+  if (import.meta.env.VITE_ROUTER_MODE === "hash") {
+    const isPublicAuthRoute = location.hash.startsWith("#/login")
+      || location.hash.startsWith("#/register");
+    if (!isPublicAuthRoute) {
+      const redirect = location.hash.startsWith("#")
+        ? location.hash.slice(1)
+        : "/";
+      location.assign(`${location.pathname}#/login?redirect=${encodeURIComponent(redirect)}`);
+    }
+    return;
+  }
+  if (location.pathname !== "/login" && location.pathname !== "/register") {
     const redirect = `${location.pathname}${location.search}`;
     location.assign(`/login?redirect=${encodeURIComponent(redirect)}`);
   }

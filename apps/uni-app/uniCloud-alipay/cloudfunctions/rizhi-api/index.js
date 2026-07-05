@@ -3,6 +3,7 @@
 const uniIdCommon = require("uni-id-common");
 const db = uniCloud.database();
 const command = db.command;
+const userProfiles = db.collection("rizhi-user-profiles");
 
 const collections = {
   assets: db.collection("rizhi-assets"),
@@ -174,6 +175,119 @@ function now() {
   return new Date().toISOString();
 }
 
+async function getTemporaryFileUrls(fileIds) {
+  const uniqueIds = [...new Set((fileIds || []).filter(Boolean))];
+  if (!uniqueIds.length) return new Map();
+  const result = await uniCloud.getTempFileURL({ fileList: uniqueIds });
+  const files = result.fileList || result.files || [];
+  return new Map(files.map((item) => [
+    item.fileID || item.fileId,
+    item.tempFileURL || item.fileURL || item.download_url || item.fileID || item.fileId,
+  ]));
+}
+
+async function resolveRecordAttachmentUrls(records) {
+  const fileIds = records.flatMap((record) =>
+    (record.attachments || []).map((attachment) => attachment.storageFileId).filter(Boolean));
+  const urls = await getTemporaryFileUrls(fileIds);
+  return records.map((record) => ({
+    ...record,
+    attachments: (record.attachments || []).map((attachment) => ({
+      ...attachment,
+      url: urls.get(attachment.storageFileId) || attachment.url,
+    })),
+  }));
+}
+
+async function uploadImage(userId, body) {
+  const dataUrl = String(body.dataUrl || "");
+  const match = dataUrl.match(/^data:(image\/(?:jpeg|png|webp));base64,([A-Za-z0-9+/=]+)$/);
+  if (!match) throw new Error("仅支持 JPEG、PNG 或 WebP 图片");
+  const fileContent = Buffer.from(match[2], "base64");
+  if (!fileContent.length || fileContent.length > 1536 * 1024) {
+    throw new Error("图片压缩后不能超过 1.5 MB");
+  }
+  const extension = {
+    "image/jpeg": "jpg",
+    "image/png": "png",
+    "image/webp": "webp",
+  }[match[1]];
+  const purpose = ["asset", "addon", "avatar"].includes(body.purpose) ? body.purpose : "asset";
+  const cloudPath = `rizhi/${userId}/${purpose}/${Date.now()}-${Math.random().toString(36).slice(2, 10)}.${extension}`;
+  const uploaded = await uniCloud.uploadFile({ cloudPath, fileContent });
+  const fileId = uploaded.fileID || uploaded.fileId;
+  const urls = await getTemporaryFileUrls([fileId]);
+  return { fileId, url: urls.get(fileId) || fileId };
+}
+
+async function migrateLegacyImages(userId) {
+  let migrated = 0;
+  let failed = 0;
+  for (const name of ["assets", "assetAddons"]) {
+    const result = await collections[name].where({ userId }).limit(1000).get();
+    for (const record of result.data) {
+      let changed = false;
+      const attachments = [];
+      for (const attachment of record.attachments || []) {
+        if (!attachment.storageFileId && String(attachment.url || "").startsWith("data:image/")) {
+          try {
+            const uploaded = await uploadImage(userId, {
+              dataUrl: attachment.url,
+              purpose: name === "assets" ? "asset" : "addon",
+            });
+            attachments.push({
+              ...attachment,
+              url: uploaded.url,
+              storageFileId: uploaded.fileId,
+            });
+            migrated += 1;
+            changed = true;
+          } catch {
+            attachments.push(attachment);
+            failed += 1;
+          }
+        } else {
+          attachments.push(attachment);
+        }
+      }
+      if (changed) {
+        await collections[name].doc(record._id).update({ attachments, updatedAt: now() });
+      }
+    }
+  }
+  return { migrated, failed };
+}
+
+async function getUserProfile(userId) {
+  const result = await userProfiles.where({ userId }).limit(1).get();
+  const profile = result.data[0];
+  if (!profile) return null;
+  const urls = await getTemporaryFileUrls([profile.avatarFileId]);
+  return {
+    displayName: profile.displayName,
+    avatarFileId: profile.avatarFileId,
+    avatarUrl: urls.get(profile.avatarFileId) || "",
+  };
+}
+
+async function updateUserProfile(userId, body) {
+  const displayName = String(body.displayName || "").trim();
+  if (!displayName || displayName.length > 64) throw new Error("显示名称长度应为 1 至 64 个字符");
+  const avatarFileId = body.avatarFileId ? String(body.avatarFileId) : undefined;
+  const existingResult = await userProfiles.where({ userId }).limit(1).get();
+  const existing = existingResult.data[0];
+  const record = {
+    userId,
+    displayName,
+    createdAt: existing?.createdAt || now(),
+    updatedAt: now(),
+  };
+  if (avatarFileId) record.avatarFileId = avatarFileId;
+  if (existing) await userProfiles.doc(existing._id).set(record);
+  else await userProfiles.add(record);
+  return getUserProfile(userId);
+}
+
 function withoutInternalFields(record) {
   if (!record) return record;
   const { _id, userId, ...result } = record;
@@ -214,13 +328,17 @@ async function remove(name, userId, id) {
 }
 
 async function getSnapshot(userId) {
-  const [assets, assetAddons, accounts, transactions, accountFlows, categories] = await Promise.all([
+  const [rawAssets, rawAssetAddons, accounts, transactions, accountFlows, categories] = await Promise.all([
     findAll("assets", userId),
     findAll("assetAddons", userId),
     findAll("accounts", userId, "createdAt", "asc"),
     findAll("transactions", userId, "occurredAt", "desc"),
     findAll("accountFlows", userId, "occurredAt", "desc"),
     findAll("categories", userId, "sort", "asc"),
+  ]);
+  const [assets, assetAddons] = await Promise.all([
+    resolveRecordAttachmentUrls(rawAssets),
+    resolveRecordAttachmentUrls(rawAssetAddons),
   ]);
   return { assets, assetAddons, accounts, transactions, accountFlows, categories };
 }
@@ -875,6 +993,18 @@ async function route(event) {
   }
   const auth = await authenticate(event, token);
   const userId = auth.uid;
+  if (method === "POST" && path === "/files/images") {
+    return ok(await uploadImage(userId, body), 201);
+  }
+  if (method === "POST" && path === "/files/migrate-images") {
+    return ok(await migrateLegacyImages(userId));
+  }
+  if (method === "GET" && path === "/profile") {
+    return ok(await getUserProfile(userId));
+  }
+  if (method === "PATCH" && path === "/profile") {
+    return ok(await updateUserProfile(userId, body));
+  }
   if (method === "POST" && path === "/auth/claim-local-data") {
     return ok(await claimLocalData(userId));
   }

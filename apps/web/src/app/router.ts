@@ -1,8 +1,12 @@
-import { createRouter, createWebHistory } from "vue-router";
+import { createRouter, createWebHashHistory, createWebHistory } from "vue-router";
 import { hasActiveSession, isUniCloudMode } from "@/services/authService";
 
+const history = import.meta.env.VITE_ROUTER_MODE === "hash"
+  ? createWebHashHistory()
+  : createWebHistory();
+
 export const router = createRouter({
-  history: createWebHistory(),
+  history,
   routes: [
     { path: "/login", component: () => import("@/features/auth/LoginPage.vue"), meta: { public: true } },
     { path: "/register", component: () => import("@/features/auth/RegisterPage.vue"), meta: { public: true } },
