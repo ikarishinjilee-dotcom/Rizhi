@@ -1,5 +1,6 @@
 import { rizhiDb } from "@/db/rizhiDb";
 import { accountFlowDelta } from "@/domain/accountCalculations";
+import { categoryHasScope, transactionTypeToScope } from "@/domain/categoryScopes";
 import type {
   AccountFlowRecord,
   AssetAttachmentRecord,
@@ -195,8 +196,8 @@ function addonTypeToTransactionCategory(type: AssetAddonRecord["type"]): ID {
   )[type];
 }
 
-function addonTransactionCategory(direction: AssetAddonRecord["direction"], type: AssetAddonRecord["type"]): ID {
-  return direction === "income" ? "tx-asset-addon-income" : addonTypeToTransactionCategory(type);
+function addonTransactionCategory(direction: AssetAddonRecord["direction"], type: AssetAddonRecord["type"], asset?: Pick<AssetRecord, "categoryId">): ID {
+  return direction === "income" ? "tx-asset-addon-income" : asset?.categoryId ?? addonTypeToTransactionCategory(type);
 }
 
 function assertPositiveAmount(amount: number) {
@@ -339,19 +340,18 @@ async function transactionCategorySnapshot(categoryId: ID, subCategoryId?: ID): 
 async function assertUsableTransactionCategory(categoryId: ID, type: TransactionType, subCategoryId?: ID) {
   const category = await rizhiDb.categories.get(categoryId);
   if (!category) throw new Error("交易分类不存在");
-  if (category.domain !== "transaction") throw new Error("请选择交易分类");
   if (category.deletedAt || category.enabled === false) throw new Error("该分类已停用");
-  if ((type === "expense" || type === "income") && category.type !== type) {
-    throw new Error(type === "expense" ? "请选择支出分类" : "请选择收入分类");
+  const scope = transactionTypeToScope(type);
+  if (scope && !categoryHasScope(category, scope)) {
+    throw new Error(scope === "expense" ? "请选择支出分类" : "请选择收入分类");
   }
 
   if (!subCategoryId) return;
   const subCategory = await rizhiDb.categories.get(subCategoryId);
   if (!subCategory) throw new Error("交易子分类不存在");
-  if (subCategory.domain !== "transaction") throw new Error("请选择交易子分类");
   if (subCategory.deletedAt || subCategory.enabled === false) throw new Error("该子分类已停用");
   if (subCategory.parentId !== categoryId) throw new Error("子分类不属于当前一级分类");
-  if (subCategory.type !== category.type) throw new Error("子分类类型和一级分类不一致");
+  if (scope && !categoryHasScope(subCategory, scope)) throw new Error("子分类用途和一级分类不一致");
 }
 
 async function withTransactionCategoryMeta<T extends Pick<TransactionRecord, "categoryId" | "type"> & Partial<Pick<TransactionRecord, "subCategoryId" | "businessType" | "categorySnapshot">>>(
@@ -876,7 +876,7 @@ export async function createAssetWithExpense(input: CreateAssetInput) {
       const transaction: TransactionRecord = await withTransactionCategoryMeta({
         id: createId("tx"),
         type: "asset_purchase",
-        categoryId: "tx-asset-purchase",
+        categoryId: input.categoryId,
         businessType: "asset_purchase",
         amount: input.originalCost,
         occurredAt: dateWithReferenceTimeIso(input.purchaseDate),
@@ -992,7 +992,7 @@ export async function updateAsset(input: UpdateAssetInput) {
           const syncedTransaction: TransactionRecord = await withTransactionCategoryMeta({
             ...purchaseTransaction,
             type: "asset_purchase",
-            categoryId: "tx-asset-purchase",
+            categoryId: updated.categoryId,
             businessType: "asset_purchase",
             amount: updated.originalCost,
             occurredAt: dateWithReferenceTimeIso(updated.purchaseDate, new Date(purchaseTransaction.createdAt)),
@@ -1056,7 +1056,7 @@ export async function updateAsset(input: UpdateAssetInput) {
       const purchaseTransaction: TransactionRecord = await withTransactionCategoryMeta({
         id: createId("tx"),
         type: "asset_purchase",
-        categoryId: "tx-asset-purchase",
+        categoryId: updated.categoryId,
         businessType: "asset_purchase",
         amount: updated.originalCost,
         occurredAt: dateWithReferenceTimeIso(updated.purchaseDate),
@@ -1214,7 +1214,7 @@ export async function createAssetAddonWithExpense(input: CreateAddonInput) {
       const transaction: TransactionRecord = await withTransactionCategoryMeta({
         id: createId("tx"),
         type: direction,
-        categoryId: addonTransactionCategory(direction, input.type),
+        categoryId: addonTransactionCategory(direction, input.type, asset),
         businessType: "asset_addon",
         amount: input.amount,
         occurredAt: dateWithReferenceTimeIso(input.purchaseDate),
@@ -1325,7 +1325,7 @@ export async function updateAssetAddonWithExpense(input: UpdateAddonInput) {
         const updatedTransaction: TransactionRecord = await withTransactionCategoryMeta({
           ...oldTransaction,
           type: direction,
-          categoryId: addonTransactionCategory(direction, input.type),
+          categoryId: addonTransactionCategory(direction, input.type, asset),
           businessType: "asset_addon",
           amount: input.amount,
           occurredAt: dateWithReferenceTimeIso(input.purchaseDate, new Date(oldTransaction.createdAt)),
@@ -1390,7 +1390,7 @@ export async function updateAssetAddonWithExpense(input: UpdateAddonInput) {
       const transaction: TransactionRecord = await withTransactionCategoryMeta({
         id: createId("tx"),
         type: direction,
-        categoryId: addonTransactionCategory(direction, input.type),
+        categoryId: addonTransactionCategory(direction, input.type, asset),
         businessType: "asset_addon",
         amount: input.amount,
         occurredAt: dateWithReferenceTimeIso(input.purchaseDate),

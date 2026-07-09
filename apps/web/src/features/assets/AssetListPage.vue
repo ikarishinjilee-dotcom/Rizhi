@@ -117,6 +117,7 @@ import RSelect from "@/components/ui/RSelect.vue";
 import RTag from "@/components/ui/RTag.vue";
 import RDataGate from "@/components/ui/RDataGate.vue";
 import { assetCategoryKind, assetImageUrls, assetTotalCost } from "@/domain/assetCalculations";
+import { categoryHasScope } from "@/domain/categoryScopes";
 import type { AssetRecord } from "@/domain/models";
 import { assetService } from "@/services/assetService";
 import { useAppDataStore } from "@/stores/appDataStore";
@@ -143,7 +144,7 @@ const deletingAsset = computed(() => deletingAssetId.value ? store.assets.find((
 const deletingAssetTotalCost = computed(() => deletingAsset.value ? assetTotalCost(deletingAsset.value, store.assetAddons) : 0);
 const deletingAddonCount = computed(() => deletingAssetId.value ? store.assetAddons.filter((addon) => addon.assetId === deletingAssetId.value).length : 0);
 const assetCategories = computed(() => store.categories
-  .filter((category) => category.domain === "asset" && !category.deletedAt && category.enabled !== false)
+  .filter((category) => categoryHasScope(category, "asset") && !category.deletedAt && category.enabled !== false)
   .sort((left, right) => left.sort - right.sort || left.name.localeCompare(right.name, "zh-CN")));
 const tabs = computed(() => [
   { label: `全部 (${store.assets.length})`, value: "all" },

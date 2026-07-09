@@ -59,18 +59,12 @@
               <label><span>型号 / 规格</span><RInput v-model="draft.model" placeholder="例如 256GB / 黑色 / M2" /></label>
               <label><span>购买渠道</span><RInput v-model="draft.channel" placeholder="Apple 官网 / 京东 / 线下门店" /></label>
             </div>
-            <div class="category-picker">
-              <button
-                v-for="category in assetCategories"
-                :key="category.id"
-                :data-testid="`asset-category-option-${category.id}`"
-                :class="{ active: draft.categoryId === category.id }"
-                type="button"
-                @click="draft.categoryId = category.id"
-              >
-                {{ category.name }}
-              </button>
-            </div>
+            <CategoryCascadePicker
+              v-model:category-id="draft.categoryId"
+              scope="asset"
+              title="资产分类"
+              selection-mode="final"
+            />
           </section>
 
           <section class="form-section">
@@ -130,6 +124,7 @@
 <script setup lang="ts">
 import { computed, reactive, ref, watch } from "vue";
 import { NModal } from "naive-ui";
+import CategoryCascadePicker from "@/components/business/CategoryCascadePicker.vue";
 import DeleteConfirmModal from "@/components/business/DeleteConfirmModal.vue";
 import RButton from "@/components/ui/RButton.vue";
 import RDatePicker from "@/components/ui/RDatePicker.vue";
@@ -137,6 +132,7 @@ import RInput from "@/components/ui/RInput.vue";
 import RSelect from "@/components/ui/RSelect.vue";
 import RInlineFeedback from "@/components/ui/RInlineFeedback.vue";
 import { assetImageUrls } from "@/domain/assetCalculations";
+import { categoryHasScope } from "@/domain/categoryScopes";
 import type { AssetRecord } from "@/domain/models";
 import { useAppDataStore } from "@/stores/appDataStore";
 import { imageFileToPersistentUrl } from "@/utils/imageFiles";
@@ -184,7 +180,7 @@ const pendingRemoveImageIndex = ref<number | null>(null);
 const initialDraftSnapshot = ref("");
 
 const assetCategories = computed(() => store.categories
-  .filter((category) => category.domain === "asset" && !category.deletedAt && category.enabled !== false)
+  .filter((category) => categoryHasScope(category, "asset") && !category.deletedAt && category.enabled !== false)
   .sort((left, right) => left.sort - right.sort || left.name.localeCompare(right.name, "zh-CN")));
 const accountOptions = computed(() => store.accounts.map((account) => ({ label: account.name, value: account.id })));
 const lifeOptions = [1, 2, 3, 5, 8].map((year) => ({ label: `${year} 年`, value: year }));
@@ -563,29 +559,6 @@ watch([() => props.asset, assetCategories, () => store.accounts.length], () => {
   border: 1px solid #ffccc7;
   border-radius: var(--radius-lg);
   font-size: var(--font-caption);
-  font-weight: 700;
-}
-
-.category-picker {
-  display: flex;
-  flex-wrap: wrap;
-  gap: var(--space-2);
-}
-
-.category-picker button {
-  height: 32px;
-  padding: 0 var(--space-4);
-  color: var(--color-text-secondary);
-  background: var(--color-bg-card);
-  border: 1px solid var(--color-border);
-  border-radius: 999px;
-  cursor: pointer;
-}
-
-.category-picker button.active {
-  color: var(--color-primary);
-  background: var(--color-primary-light);
-  border-color: #bbd5ff;
   font-weight: 700;
 }
 

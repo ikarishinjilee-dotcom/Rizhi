@@ -5,6 +5,7 @@ import type {
   AssetRecord,
   CategoryRecord,
   CategoryDomain,
+  CategoryScope,
   CurrencyCode,
   CurrentValueSource,
   ID,
@@ -134,6 +135,7 @@ export type TransferAssetInput = {
 
 export type CreateAccountInput = {
   name: string;
+  accountTypeId?: ID;
   type: MoneyAccountRecord["type"];
   direction: MoneyAccountRecord["direction"];
   balance: number;
@@ -143,6 +145,10 @@ export type CreateAccountInput = {
   repaymentDay?: number;
   color?: string;
   icon?: string;
+  iconUrl?: string;
+  iconFileId?: string;
+  bankName?: string;
+  bankId?: ID;
   note?: string;
   enabled?: boolean;
 };
@@ -159,9 +165,16 @@ export type CreateCategoryInput = {
   parentId?: ID;
   color?: string;
   icon?: string;
+  iconUrl?: string;
+  iconFileId?: string;
+  scopes?: CategoryRecord["scopes"];
+  bankName?: string;
+  bankId?: ID;
   monthlyBudget?: number;
   enabled?: boolean;
   isSystem?: boolean;
+  accountGroup?: CategoryRecord["accountGroup"];
+  accountDirection?: CategoryRecord["accountDirection"];
   deletedAt?: string;
 };
 
@@ -172,6 +185,7 @@ export type UpdateCategoryInput = Partial<CreateCategoryInput> & {
 export type ListCategoriesInput = {
   domain?: CategoryDomain;
   type?: CategoryRecord["type"];
+  scope?: CategoryScope;
   enabled?: boolean;
 };
 

@@ -164,6 +164,7 @@
           <div class="account-menu__identity">
             <strong>{{ profile.displayName }}</strong>
             <span>{{ authSession.username || "日值账户" }}</span>
+            <em v-if="isAdmin()" class="account-role-badge">{{ isSuperAdmin() ? "超级管理员" : "管理员" }}</em>
           </div>
           <button type="button" @click="openProfile">
             <UserRound :size="16" />
@@ -196,7 +197,7 @@ import { Bell, BellRing, Box, CalendarClock, ChevronDown, ChevronRight, CreditCa
 import DeleteConfirmModal from "@/components/business/DeleteConfirmModal.vue";
 import RInput from "@/components/ui/RInput.vue";
 import type { UserSettingsRecord } from "@/domain/models";
-import { authSession, logout } from "@/services/authService";
+import { authSession, isAdmin, isSuperAdmin, logout } from "@/services/authService";
 import { SETTINGS_UPDATED_EVENT, settingsService } from "@/services/settingsService";
 import { useAppDataStore } from "@/stores/appDataStore";
 
@@ -1195,6 +1196,18 @@ onBeforeUnmount(() => {
   font-size: 11px;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.account-role-badge {
+  width: fit-content;
+  margin-top: 6px;
+  padding: 3px 7px;
+  color: var(--color-primary);
+  background: var(--color-primary-light);
+  border-radius: 999px;
+  font-size: 10px;
+  font-style: normal;
+  font-weight: 700;
 }
 
 .account-menu__panel > button {

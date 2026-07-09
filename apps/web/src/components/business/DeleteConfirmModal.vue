@@ -25,7 +25,16 @@
 
       <footer class="delete-modal__footer">
         <RButton data-testid="confirm-modal-cancel" variant="secondary" :disabled="loading" @click="$emit('update:show', false)">{{ cancelText }}</RButton>
-        <RButton v-if="showConfirm" data-testid="confirm-modal-confirm" variant="danger" :loading="loading" @click="$emit('confirm')">{{ confirmText }}</RButton>
+        <RButton
+          v-if="showConfirm"
+          data-testid="confirm-modal-confirm"
+          variant="danger"
+          :disabled="confirmDisabled"
+          :loading="loading"
+          @click="$emit('confirm')"
+        >
+          {{ confirmText }}
+        </RButton>
       </footer>
     </section>
   </n-modal>
@@ -44,12 +53,14 @@ withDefaults(defineProps<{
   cancelText?: string;
   showConfirm?: boolean;
   loading?: boolean;
+  confirmDisabled?: boolean;
 }>(), {
   eyebrow: "危险操作",
   confirmText: "确认删除",
   cancelText: "取消",
   showConfirm: true,
   loading: false,
+  confirmDisabled: false,
 });
 
 defineEmits<{

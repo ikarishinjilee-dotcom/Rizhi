@@ -4,6 +4,7 @@ const uniIdCommon = require("uni-id-common");
 const db = uniCloud.database();
 const command = db.command;
 const userProfiles = db.collection("rizhi-user-profiles");
+const uniIdUsers = db.collection("uni-id-users");
 
 const collections = {
   assets: db.collection("rizhi-assets"),
@@ -15,6 +16,88 @@ const collections = {
 };
 
 const collectionNames = Object.keys(collections);
+const SYSTEM_USER_ID = "__system__";
+function categoryScopes(category) {
+  if (Array.isArray(category.scopes) && category.scopes.length) return [...new Set(category.scopes)];
+  if (category.domain === "asset") return ["asset", "expense"];
+  if (category.domain === "transaction" && category.type === "income") return ["income"];
+  if (category.domain === "transaction" && category.type === "refund") return ["income"];
+  if (category.domain === "transaction") return ["expense"];
+  return [];
+}
+
+function categoryHasScope(category, scope) {
+  return categoryScopes(category).includes(scope);
+}
+
+function normalizeCategory(record) {
+  return { ...record, scopes: categoryScopes(record) };
+}
+
+const systemCategoryDefaults = [
+  { id: "asset-digital", domain: "asset", type: "digital", name: "数码设备", sort: 10, color: "#1677FF" },
+  { id: "asset-clothing", domain: "asset", type: "clothing", name: "衣物鞋子", sort: 20, color: "#8B5CF6" },
+  { id: "asset-home", domain: "asset", type: "home", name: "家居用品", sort: 30, color: "#F59E0B" },
+  { id: "asset-sports", domain: "asset", type: "sports", name: "运动器材", sort: 40, color: "#16A36A" },
+  { id: "asset-subscription", domain: "asset", type: "subscription", name: "订阅服务", sort: 50, color: "#111827" },
+  { id: "asset-other", domain: "asset", type: "other", name: "其他物品", sort: 90, color: "#64748B" },
+  { id: "bank-icbc", domain: "bank", name: "中国工商银行", sort: 10, color: "#E60012", icon: "工" },
+  { id: "bank-abc", domain: "bank", name: "中国农业银行", sort: 20, color: "#009882", icon: "农" },
+  { id: "bank-boc", domain: "bank", name: "中国银行", sort: 30, color: "#B40A19", icon: "中" },
+  { id: "bank-ccb", domain: "bank", name: "中国建设银行", sort: 40, color: "#0066B3", icon: "建" },
+  { id: "bank-bocom", domain: "bank", name: "交通银行", sort: 50, color: "#003B7C", icon: "交" },
+  { id: "bank-cmb", domain: "bank", name: "招商银行", sort: 60, color: "#D71920", icon: "招" },
+  { id: "bank-psbc", domain: "bank", name: "中国邮政储蓄银行", sort: 70, color: "#008A45", icon: "邮" },
+  { id: "bank-other", domain: "bank", name: "其他银行", sort: 999, color: "#64748B", icon: "银" },
+  { id: "account-cash", domain: "account", type: "cash", name: "现金", icon: "现", color: "#3B82F6", sort: 510, accountGroup: "asset", accountDirection: "asset" },
+  { id: "account-wechat", domain: "account", type: "wallet", name: "微信", icon: "微", color: "#22C55E", sort: 520, accountGroup: "asset", accountDirection: "asset" },
+  { id: "account-alipay", domain: "account", type: "wallet", name: "支付宝", icon: "支", color: "#1677FF", sort: 530, accountGroup: "asset", accountDirection: "asset" },
+  { id: "account-bank-card", domain: "account", type: "debit_card", name: "银行卡", icon: "卡", color: "#38BDF8", sort: 540, accountGroup: "asset", accountDirection: "asset" },
+  { id: "account-other-asset", domain: "account", type: "other", name: "其他", icon: "其", color: "#94A3B8", sort: 590, accountGroup: "asset", accountDirection: "asset" },
+  { id: "account-credit-card", domain: "account", type: "credit_card", name: "信用卡", icon: "信", color: "#F97316", sort: 610, accountGroup: "credit", accountDirection: "liability" },
+  { id: "account-huabei", domain: "account", type: "consumer_credit", name: "花呗", icon: "花", color: "#3B82F6", sort: 620, accountGroup: "credit", accountDirection: "liability" },
+  { id: "account-jiebei", domain: "account", type: "consumer_credit", name: "借呗", icon: "借", color: "#0EA5E9", sort: 630, accountGroup: "credit", accountDirection: "liability" },
+  { id: "account-jd", domain: "account", type: "consumer_credit", name: "京东白条", icon: "京", color: "#EF4444", sort: 640, accountGroup: "credit", accountDirection: "liability" },
+  { id: "account-mobile", domain: "account", type: "wallet", name: "话费充值", icon: "话", color: "#06B6D4", sort: 710, accountGroup: "stored_value", accountDirection: "asset" },
+  { id: "account-food", domain: "account", type: "wallet", name: "餐饮卡", icon: "餐", color: "#14B8A6", sort: 720, accountGroup: "stored_value", accountDirection: "asset" },
+  { id: "account-transport", domain: "account", type: "wallet", name: "交通卡", icon: "交", color: "#0EA5E9", sort: 730, accountGroup: "stored_value", accountDirection: "asset" },
+];
+
+async function ensureSystemCategories() {
+  const existing = await collections.categories.where({ userId: SYSTEM_USER_ID }).get();
+  const ids = new Set(existing.data.map((item) => item.id));
+  const missing = systemCategoryDefaults
+    .filter((item) => !ids.has(item.id))
+    .map((item) => ({ ...normalizeCategory(item), userId: SYSTEM_USER_ID, enabled: true, isSystem: true }));
+  if (missing.length) await collections.categories.add(missing);
+}
+
+async function clearUserBusinessData(userId) {
+  const [assetResult, addonResult] = await Promise.all([
+    collections.assets.where({ userId }).get(),
+    collections.assetAddons.where({ userId }).get(),
+  ]);
+  const records = [...(assetResult.data || []), ...(addonResult.data || [])];
+  const fileIds = [...new Set(records.flatMap((record) =>
+    (record.attachments || [])
+      .map((attachment) => attachment.storageFileId)
+      .filter(Boolean)))];
+
+  if (fileIds.length) {
+    await uniCloud.deleteFile({ fileList: fileIds });
+  }
+
+  const deleted = {};
+  for (const name of collectionNames) {
+    const result = await collections[name].where({ userId }).remove();
+    deleted[name] = result.deleted || 0;
+  }
+
+  return {
+    deleted,
+    deletedFiles: fileIds.length,
+  };
+}
 
 function response(statusCode, body) {
   return {
@@ -93,6 +176,14 @@ async function authenticate(event, token) {
     const error = new Error(result?.errMsg || "登录状态已失效");
     error.statusCode = 401;
     error.code = result?.errCode || "UNAUTHORIZED";
+    throw error;
+  }
+  const userResult = await uniIdUsers.doc(result.uid).field({ status: true }).get();
+  const user = userResult.data?.[0];
+  if (!user || Number(user.status || 0) !== 0) {
+    const error = new Error(Number(user?.status) === 1 ? "账户已被停用" : "账户当前不可用");
+    error.statusCode = 401;
+    error.code = Number(user?.status) === 1 ? "ACCOUNT_DISABLED" : "ACCOUNT_UNAVAILABLE";
     throw error;
   }
   return result;
@@ -175,6 +266,88 @@ function now() {
   return new Date().toISOString();
 }
 
+function requireAdmin(auth) {
+  if (Array.isArray(auth?.role) && (auth.role.includes("admin") || auth.role.includes("super_admin"))) return;
+  const error = new Error("需要管理员权限");
+  error.statusCode = 403;
+  error.code = "FORBIDDEN";
+  throw error;
+}
+
+function requireSuperAdmin(auth) {
+  if (Array.isArray(auth?.role) && auth.role.includes("super_admin")) return;
+  const error = new Error("需要超级管理员权限");
+  error.statusCode = 403;
+  error.code = "SUPER_ADMIN_REQUIRED";
+  throw error;
+}
+
+async function listAdminUsers(auth) {
+  requireAdmin(auth);
+  const [result, profileResult] = await Promise.all([uniIdUsers
+    .field({ username: true, nickname: true, avatar: true, role: true, status: true, register_date: true })
+    .orderBy("register_date", "desc")
+    .limit(200)
+    .get(), userProfiles.limit(200).get()]);
+  const profileByUserId = new Map(profileResult.data.map((profile) => [profile.userId, profile]));
+  const avatarUrls = await getTemporaryFileUrls(profileResult.data.map((profile) => profile.avatarFileId).filter(Boolean));
+  return result.data.map((user) => {
+    const profile = profileByUserId.get(user._id);
+    return ({
+    id: user._id,
+    username: user.username || "",
+    nickname: profile?.displayName || user.nickname || "",
+    avatar: avatarUrls.get(profile?.avatarFileId) || user.avatar || "",
+    roles: Array.isArray(user.role) ? user.role : [],
+    status: user.status,
+    isCurrent: user._id === auth.uid,
+    registeredAt: user.register_date,
+    });
+  });
+}
+
+async function updateUserStatus(auth, targetUserId, enabled) {
+  requireAdmin(auth);
+  if (!targetUserId) throw new Error("缺少用户 ID");
+  if (targetUserId === auth.uid) throw new Error("不能停用自己的账户");
+  const targetResult = await uniIdUsers.doc(targetUserId).get();
+  const target = targetResult.data?.[0];
+  if (!target) throw new Error("用户不存在");
+  const targetRoles = Array.isArray(target.role) ? target.role : [];
+  if (targetRoles.includes("super_admin")) throw new Error("超级管理员账户不能被停用");
+  const operatorIsSuperAdmin = Array.isArray(auth.role) && auth.role.includes("super_admin");
+  if (targetRoles.includes("admin") && !operatorIsSuperAdmin) {
+    throw new Error("只有超级管理员可以停用管理员账户");
+  }
+  const status = enabled ? 0 : 1;
+  await uniIdUsers.doc(targetUserId).update({ status });
+  return { id: targetUserId, status };
+}
+
+async function updateAdminRole(auth, targetUserId, enabled) {
+  requireSuperAdmin(auth);
+  if (!targetUserId) throw new Error("缺少用户 ID");
+  if (!enabled && targetUserId === auth.uid) throw new Error("不能取消自己的管理员身份");
+  const targetResult = await uniIdUsers.doc(targetUserId).get();
+  const target = targetResult.data?.[0];
+  if (!target) throw new Error("用户不存在");
+  const roles = Array.isArray(target.role) ? target.role.filter(Boolean) : [];
+  if (roles.includes("super_admin")) throw new Error("超级管理员身份不能在此页面修改");
+  const nextRoles = enabled
+    ? [...new Set([...roles, "admin"])]
+    : roles.filter((role) => role !== "admin");
+  if (!enabled) {
+    const privilegedUsers = await uniIdUsers.field({ role: true }).limit(500).get();
+    const managerCount = privilegedUsers.data.filter((user) => {
+      const userRoles = Array.isArray(user.role) ? user.role : [];
+      return userRoles.includes("admin") || userRoles.includes("super_admin");
+    }).length;
+    if (managerCount <= 1) throw new Error("系统必须至少保留一名管理员或超级管理员");
+  }
+  await uniIdUsers.doc(targetUserId).update({ role: nextRoles });
+  return { id: targetUserId, roles: nextRoles };
+}
+
 async function getTemporaryFileUrls(fileIds) {
   const uniqueIds = [...new Set((fileIds || []).filter(Boolean))];
   if (!uniqueIds.length) return new Map();
@@ -199,6 +372,14 @@ async function resolveRecordAttachmentUrls(records) {
   }));
 }
 
+async function resolveCategoryIconUrls(records) {
+  const urls = await getTemporaryFileUrls(records.map((record) => record.iconFileId).filter(Boolean));
+  return records.map((record) => ({
+    ...record,
+    iconUrl: urls.get(record.iconFileId) || record.iconUrl,
+  }));
+}
+
 async function uploadImage(userId, body) {
   const dataUrl = String(body.dataUrl || "");
   const match = dataUrl.match(/^data:(image\/(?:jpeg|png|webp));base64,([A-Za-z0-9+/=]+)$/);
@@ -212,7 +393,7 @@ async function uploadImage(userId, body) {
     "image/png": "png",
     "image/webp": "webp",
   }[match[1]];
-  const purpose = ["asset", "addon", "avatar"].includes(body.purpose) ? body.purpose : "asset";
+  const purpose = ["asset", "addon", "avatar", "category_icon"].includes(body.purpose) ? body.purpose : "asset";
   const cloudPath = `rizhi/${userId}/${purpose}/${Date.now()}-${Math.random().toString(36).slice(2, 10)}.${extension}`;
   const uploaded = await uniCloud.uploadFile({ cloudPath, fileContent });
   const fileId = uploaded.fileID || uploaded.fileId;
@@ -328,19 +509,26 @@ async function remove(name, userId, id) {
 }
 
 async function getSnapshot(userId) {
+  await ensureSystemCategories();
   const [rawAssets, rawAssetAddons, accounts, transactions, accountFlows, categories] = await Promise.all([
     findAll("assets", userId),
     findAll("assetAddons", userId),
     findAll("accounts", userId, "createdAt", "asc"),
     findAll("transactions", userId, "occurredAt", "desc"),
     findAll("accountFlows", userId, "occurredAt", "desc"),
-    findAll("categories", userId, "sort", "asc"),
+    Promise.all([
+      findAll("categories", SYSTEM_USER_ID, "sort", "asc"),
+      findAll("categories", userId, "sort", "asc"),
+    ]).then(([systemCategories, userCategories]) => [
+      ...systemCategories,
+      ...userCategories.filter((item) => item.domain === "transaction"),
+    ]),
   ]);
   const [assets, assetAddons] = await Promise.all([
     resolveRecordAttachmentUrls(rawAssets),
     resolveRecordAttachmentUrls(rawAssetAddons),
   ]);
-  return { assets, assetAddons, accounts, transactions, accountFlows, categories };
+  return { assets, assetAddons, accounts, transactions, accountFlows, categories: await resolveCategoryIconUrls(categories.map(normalizeCategory)) };
 }
 
 async function importSnapshot(userId, snapshot) {
@@ -351,7 +539,9 @@ async function importSnapshot(userId, snapshot) {
 
   for (const name of collectionNames) {
     await collections[name].where({ userId }).remove();
-    const records = source[name];
+    const records = name === "categories"
+      ? source[name].filter((record) => record.domain === "transaction")
+      : source[name];
     for (let index = 0; index < records.length; index += 100) {
       const batch = records.slice(index, index + 100).map((record) => ({ ...record, userId }));
       if (batch.length) await collections[name].add(batch);
@@ -566,7 +756,7 @@ async function createAsset(userId, body) {
     const transaction = {
       id: newId("txn"),
       type: "asset_purchase",
-      categoryId: "cat-asset-purchase",
+      categoryId: asset.categoryId,
       businessType: "asset_purchase",
       amount: cost,
       occurredAt: body.purchaseDate || timestamp,
@@ -607,7 +797,7 @@ async function createAddon(userId, assetId, body) {
     const transaction = {
       id: newId("txn"),
       type: direction === "income" ? "income" : "expense",
-      categoryId: direction === "income" ? "cat-asset-addon-income" : "cat-asset-addon",
+      categoryId: direction === "income" ? "cat-asset-addon-income" : asset.categoryId,
       businessType: "asset_addon",
       amount,
       occurredAt: body.purchaseDate || timestamp,
@@ -799,8 +989,9 @@ async function revokeAssetTransfer(userId, assetId) {
 }
 
 async function categoryUsage(userId, id) {
-  const [assets, directTransactions, subTransactions, children] = await Promise.all([
-    collections.assets.where({ userId, categoryId: id }).count(),
+  const [assets, accounts, directTransactions, subTransactions, children] = await Promise.all([
+    collections.assets.where({ categoryId: id }).count(),
+    collections.accounts.where({ accountTypeId: id }).count(),
     collections.transactions.where({ userId, categoryId: id }).count(),
     collections.transactions.where({ userId, subCategoryId: id }).count(),
     collections.categories.where({ userId, parentId: id }).count(),
@@ -809,8 +1000,8 @@ async function categoryUsage(userId, id) {
     assets: assets.total,
     transactions: directTransactions.total + subTransactions.total,
     childCategories: children.total,
-    accounts: 0,
-    total: assets.total + directTransactions.total + subTransactions.total + children.total,
+    accounts: accounts.total,
+    total: assets.total + accounts.total + directTransactions.total + subTransactions.total + children.total,
   };
 }
 
@@ -866,18 +1057,26 @@ async function handleAddons(method, path, body, userId) {
   return null;
 }
 
-async function handleCategories(method, path, body, userId, query) {
+async function handleCategories(method, path, body, userId, query, auth) {
   if (method === "GET" && path === "/categories") {
-    const all = await findAll("categories", userId, "sort", "asc");
+    await ensureSystemCategories();
+    const [systemCategories, userCategories] = await Promise.all([
+      findAll("categories", SYSTEM_USER_ID, "sort", "asc"),
+      findAll("categories", userId, "sort", "asc"),
+    ]);
+    const all = await resolveCategoryIconUrls([...systemCategories, ...userCategories.filter((item) => item.domain === "transaction")].map(normalizeCategory));
     return ok(all
       .filter((item) => !query.domain || item.domain === query.domain)
       .filter((item) => !query.type || item.type === query.type)
+      .filter((item) => !query.scope || categoryHasScope(item, query.scope))
       .filter((item) => query.enabled === undefined || String(item.enabled !== false) === query.enabled));
   }
   if (method === "POST" && path === "/categories") {
+    requireAdmin(auth);
+    const ownerId = SYSTEM_USER_ID;
     if (!String(body.name || "").trim()) throw new Error("分类名称不能为空");
-    return ok(await insert("categories", userId, {
-      ...body,
+    return ok(await insert("categories", ownerId, {
+      ...normalizeCategory(body),
       id: newId("cat"),
       name: String(body.name).trim(),
       sort: Number(body.sort || 999),
@@ -914,18 +1113,38 @@ async function handleCategories(method, path, body, userId, query) {
   if (!match) return null;
   const id = decodeURIComponent(match[1]);
   if (method === "PATCH") {
-    const existing = await findOne("categories", userId, id);
+    const existing = await findOne("categories", SYSTEM_USER_ID, id)
+      || await findOne("categories", userId, id);
+    requireAdmin(auth);
     if (!existing) throw new Error("分类不存在");
-    return ok(await replace("categories", userId, id, {
-      ...withoutInternalFields(existing),
-      ...body,
+    const ownerId = existing.userId === SYSTEM_USER_ID ? SYSTEM_USER_ID : userId;
+    const nextCategory = normalizeCategory({ ...withoutInternalFields(existing), ...body });
+    if (nextCategory.parentId && nextCategory.enabled !== false) {
+      const parent = await findOne("categories", SYSTEM_USER_ID, nextCategory.parentId)
+        || await findOne("categories", userId, nextCategory.parentId);
+      if (parent?.enabled === false) throw new Error("一级分类已停用，不能单独启用子分类");
+    }
+    const saved = await replace("categories", ownerId, id, {
+      ...nextCategory,
       id,
-    }));
+    });
+    if (!saved.parentId && saved.enabled === false) {
+      const children = await collections.categories.where({ userId: ownerId, parentId: id }).get();
+      for (const child of children.data) {
+        if (child.enabled !== false) {
+          await collections.categories.doc(child._id).update({ enabled: false, updatedAt: now() });
+        }
+      }
+    }
+    return ok(saved);
   }
   if (method === "DELETE") {
+    const existing = await findOne("categories", SYSTEM_USER_ID, id)
+      || await findOne("categories", userId, id);
+    requireAdmin(auth);
     const usage = await categoryUsage(userId, id);
     if (usage.total > 0) throw new Error("分类仍有业务记录或子分类，不能删除");
-    await remove("categories", userId, id);
+    await remove("categories", existing.userId === SYSTEM_USER_ID ? SYSTEM_USER_ID : userId, id);
     return ok(null);
   }
   return null;
@@ -942,12 +1161,18 @@ async function handleAccounts(method, path, body, userId) {
   if (method === "PATCH") {
     const existing = await findOne("accounts", userId, id);
     if (!existing) throw new Error("账户不存在");
-    return ok(await replace("accounts", userId, id, {
+    const updatedAccount = {
       ...withoutInternalFields(existing),
       ...body,
       id,
       updatedAt: now(),
-    }));
+    };
+    if (updatedAccount.direction === "asset") {
+      delete updatedAccount.creditLimit;
+      delete updatedAccount.billDay;
+      delete updatedAccount.repaymentDay;
+    }
+    return ok(await replace("accounts", userId, id, updatedAccount));
   }
   if (method === "DELETE") return ok(await deleteAccount(userId, id));
   return null;
@@ -993,6 +1218,20 @@ async function route(event) {
   }
   const auth = await authenticate(event, token);
   const userId = auth.uid;
+  if (method === "POST" && path === "/auth/me") {
+    return ok({ uid: userId, role: auth.role || [], permission: auth.permission || [] });
+  }
+  if (method === "GET" && path === "/admin/users") {
+    return ok(await listAdminUsers(auth));
+  }
+  const adminRoleMatch = path.match(/^\/admin\/users\/([^/]+)\/admin-role$/);
+  if (method === "PATCH" && adminRoleMatch) {
+    return ok(await updateAdminRole(auth, decodeURIComponent(adminRoleMatch[1]), body.enabled === true));
+  }
+  const userStatusMatch = path.match(/^\/admin\/users\/([^/]+)\/status$/);
+  if (method === "PATCH" && userStatusMatch) {
+    return ok(await updateUserStatus(auth, decodeURIComponent(userStatusMatch[1]), body.enabled === true));
+  }
   if (method === "POST" && path === "/files/images") {
     return ok(await uploadImage(userId, body), 201);
   }
@@ -1012,8 +1251,7 @@ async function route(event) {
   if (method === "GET" && path === "/export") return ok(await exportBackup(userId));
   if (method === "POST" && path === "/import") return ok(await importSnapshot(userId, body));
   if (method === "POST" && path === "/reset") {
-    for (const name of collectionNames) await collections[name].where({ userId }).remove();
-    return ok(null);
+    return ok(await clearUserBusinessData(userId));
   }
 
   const accountResult = await handleAccounts(method, path, body, userId);
@@ -1024,7 +1262,7 @@ async function route(event) {
   if (assetResult) return assetResult;
   const addonResult = await handleAddons(method, path, body, userId);
   if (addonResult) return addonResult;
-  const categoryResult = await handleCategories(method, path, body, userId, query);
+  const categoryResult = await handleCategories(method, path, body, userId, query, auth);
   if (categoryResult) return categoryResult;
 
   return fail(501, "NOT_MIGRATED", "该业务接口尚未迁移到 uniCloud");

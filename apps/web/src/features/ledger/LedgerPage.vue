@@ -136,7 +136,7 @@
           <tr v-for="entry in filteredEntries" :key="entry.id" data-testid="ledger-row">
             <td>{{ formatDateTime(displayOccurredAt(entry)) }}</td>
             <td><RTag :tone="tagTone(entry.type)">{{ transactionTypeLabel(entry.type) }}</RTag></td>
-            <td>{{ categoryLabel(entry) }}</td>
+            <td><span class="ledger-category-cell"><CategoryIcon :category="categoryForEntry(entry)" :size="18" /><span>{{ categoryLabel(entry) }}</span></span></td>
             <td>{{ entry.merchant || entry.note || "-" }}</td>
             <td>{{ accountRelationLabel(entry) }}</td>
             <td>{{ assetName(entry) }}</td>
@@ -264,8 +264,15 @@
               <h3>交易信息</h3>
               <div class="form-grid">
                 <label :class="{ invalid: draftErrors.date }"><span>发生日期</span><RDatePicker v-model="transactionDate" type="datetime" placeholder="选择日期时间" /><em>{{ draftErrors.date }}</em></label>
-                <label :class="{ invalid: draftErrors.categoryId }"><span>一级分类</span><RSelect v-model="draftCategoryId" :options="currentCategoryOptions" placeholder="选择一级分类" /><em>{{ draftErrors.categoryId }}</em></label>
-                <label><span>子分类</span><RSelect v-model="draftSubCategoryId" :options="currentSubCategoryOptions" placeholder="可选，例如 午餐 / 地铁" /></label>
+                <div class="category-field" :class="{ invalid: draftErrors.categoryId }">
+                  <CategoryCascadePicker
+                    v-model:category-id="draftCategoryId"
+                    v-model:sub-category-id="draftSubCategoryId"
+                    :scope="draftType"
+                    :title="draftType === 'income' ? '收入分类' : '支出分类'"
+                  />
+                  <em>{{ draftErrors.categoryId }}</em>
+                </div>
                 <label :class="{ invalid: draftErrors.accountId }"><span>{{ draftType === "income" ? "收款账户" : "付款账户" }}</span><RSelect v-model="draftAccountId" :options="accountCreateOptions" placeholder="选择账户" /><em>{{ draftErrors.accountId }}</em></label>
                 <label><span>{{ draftType === "income" ? "来源" : "商家" }}</span><RInput v-model="draftMerchant" :placeholder="draftType === 'income' ? '例如 工资 / 副业' : '例如 麦当劳 / 京东'" /></label>
               </div>
@@ -357,6 +364,8 @@
 import { computed, onMounted, reactive, ref, watch } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import { NModal } from "naive-ui";
+import CategoryCascadePicker from "@/components/business/CategoryCascadePicker.vue";
+import CategoryIcon from "@/components/business/CategoryIcon.vue";
 import DeleteConfirmModal from "@/components/business/DeleteConfirmModal.vue";
 import RButton from "@/components/ui/RButton.vue";
 import RCard from "@/components/ui/RCard.vue";
@@ -367,6 +376,7 @@ import RTag from "@/components/ui/RTag.vue";
 import RDataGate from "@/components/ui/RDataGate.vue";
 import RInlineFeedback from "@/components/ui/RInlineFeedback.vue";
 import REmptyState from "@/components/ui/REmptyState.vue";
+import { categoryHasScope } from "@/domain/categoryScopes";
 import type { AssetAddonRecord, TransactionRecord, TransactionType } from "@/domain/models";
 import { assetAddonService } from "@/services/assetAddonService";
 import { transactionService } from "@/services/transactionService";
@@ -415,10 +425,10 @@ const calendarMonth = ref(startOfMonth(new Date()).getTime());
 const selectedDateKey = ref(toDateKey(new Date()));
 const initialLedgerDraftSnapshot = ref("");
 
-const transactionCategories = computed(() => store.categories.filter((category) => category.domain === "transaction"));
+const transactionCategories = computed(() => store.categories.filter((category) => categoryHasScope(category, "expense") || categoryHasScope(category, "income")));
 const activeTransactionCategories = computed(() => transactionCategories.value.filter((category) => category.enabled !== false && !category.deletedAt));
-const expenseCategories = computed(() => activeTransactionCategories.value.filter((category) => category.type === "expense" && !category.parentId));
-const incomeCategories = computed(() => activeTransactionCategories.value.filter((category) => category.type === "income" && !category.parentId));
+const expenseCategories = computed(() => activeTransactionCategories.value.filter((category) => categoryHasScope(category, "expense") && !category.parentId));
+const incomeCategories = computed(() => activeTransactionCategories.value.filter((category) => categoryHasScope(category, "income") && !category.parentId));
 const typeOptions = [
   { label: "全部类型", value: "all" },
   { label: "支出", value: "expense" },
@@ -427,7 +437,7 @@ const typeOptions = [
 const categoryOptions = computed(() => [
   { label: "全部一级分类", value: "all" },
   ...activeTransactionCategories.value
-    .filter((category) => !category.parentId && (category.type === "expense" || category.type === "income"))
+    .filter((category) => !category.parentId)
     .map((category) => ({ label: category.name, value: category.id })),
 ]);
 const subCategoryFilterOptions = computed(() => [
@@ -446,14 +456,6 @@ const accountOptions = computed(() => [
 ]);
 const accountCreateOptions = computed(() => store.accounts.map((account) => ({ label: account.name, value: account.id })));
 const assetCreateOptions = computed(() => store.assets.map((asset) => ({ label: asset.name, value: asset.id })));
-const currentCategoryOptions = computed(() => (draftType.value === "income" ? incomeCategories.value : expenseCategories.value)
-  .map((category) => ({ label: category.name, value: category.id })));
-const currentSubCategoryOptions = computed(() => [
-  { label: "不选择子分类", value: "none" },
-  ...activeTransactionCategories.value
-    .filter((category) => category.parentId === draftCategoryId.value)
-    .map((category) => ({ label: category.name, value: category.id })),
-]);
 const ledgerEntries = computed(() => store.transactions
   .filter((entry) => entry.type !== "transfer" && entry.businessType !== "balance_adjustment")
   .sort((left, right) =>
@@ -523,7 +525,7 @@ const budgetInsights = computed(() => {
   if (!currentKey) return [];
   const spending = expenseByCategoryForMonth(currentKey);
   return store.categories
-    .filter((category) => category.domain === "transaction" && category.type === "expense" && !category.parentId && !category.deletedAt && category.monthlyBudget && category.monthlyBudget > 0)
+    .filter((category) => categoryHasScope(category, "expense") && !category.parentId && !category.deletedAt && category.monthlyBudget && category.monthlyBudget > 0)
     .map((category) => {
       const used = spending.get(category.id) ?? 0;
       const budget = category.monthlyBudget ?? 0;
@@ -735,6 +737,11 @@ function categoryLabel(entry: TransactionRecord) {
   return subCategory && subCategory !== "-" ? `${category} / ${subCategory}` : category;
 }
 
+function categoryForEntry(entry: TransactionRecord) {
+  return store.categories.find((item) => item.id === (entry.subCategoryId || entry.categoryId))
+    || store.categories.find((item) => item.id === entry.categoryId);
+}
+
 function matchesLedgerFilters(entry: TransactionRecord, q: string, includeDate: boolean) {
   const direction = ledgerDirection(entry);
   const matchesType = isAllFilter(typeFilter.value) || direction === typeFilter.value;
@@ -816,7 +823,7 @@ function categoryIdFromBreakdownKey(key: string) {
 function categoryMonthlyBudget(key: string) {
   const categoryId = categoryIdFromBreakdownKey(key);
   const category = store.categories.find((item) => item.id === categoryId);
-  if (category?.domain !== "transaction" || category.type !== "expense" || category.parentId) return undefined;
+  if (!category || !categoryHasScope(category, "expense") || category.parentId) return undefined;
   return category.monthlyBudget && category.monthlyBudget > 0 ? category.monthlyBudget : undefined;
 }
 
@@ -1567,6 +1574,17 @@ async function saveDraft() {
   font-weight: 700;
 }
 
+.ledger-category-cell {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--color-text-secondary);
+}
+
+.ledger-category-cell svg {
+  color: var(--color-primary);
+}
+
 .ledger-calendar {
   display: grid;
   gap: var(--space-3);
@@ -1998,6 +2016,7 @@ async function saveDraft() {
 }
 
 .form-grid label.invalid,
+.category-field.invalid,
 .asset-link-box.invalid,
 .amount-panel.invalid {
   color: var(--color-danger);
@@ -2012,6 +2031,7 @@ async function saveDraft() {
 }
 
 .form-grid label em,
+.category-field em,
 .asset-link-box em,
 .amount-panel em {
   min-height: 16px;
@@ -2019,6 +2039,19 @@ async function saveDraft() {
   font-style: normal;
   font-weight: 600;
   line-height: 16px;
+}
+
+.category-field {
+  display: grid;
+  grid-column: 1 / -1;
+  gap: var(--space-2);
+}
+
+.category-field.invalid :deep(.category-cascade) {
+  padding: var(--space-3);
+  background: #fff1f0;
+  border: 1px solid #ffccc7;
+  border-radius: 12px;
 }
 
 .form-error {

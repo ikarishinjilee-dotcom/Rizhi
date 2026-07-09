@@ -7,11 +7,13 @@ const targets = {
     buildScript: "build:test",
     label: "TEST",
     spaceId: "env-00jy6jwd2ddo",
+    projectName: "rizhi",
   },
   production: {
     buildScript: "build:production",
     label: "PRODUCTION",
     spaceId: "env-00jy6jt1yyje",
+    projectName: "rizhi",
   },
 };
 
@@ -32,12 +34,13 @@ if (!cliPath || !existsSync(cliPath)) {
 }
 
 const npmCommand = process.platform === "win32" ? "npm.cmd" : "npm";
-const distPath = resolve("apps/web/dist");
+const distPath = "apps/web/dist";
 
 console.log(`[Rizhi] Building ${target.label} web bundle...`);
 const build = spawnSync(npmCommand, ["run", target.buildScript], {
   cwd: resolve("."),
   stdio: "inherit",
+  shell: process.platform === "win32",
 });
 
 if (build.status !== 0) process.exit(build.status ?? 1);
@@ -46,6 +49,8 @@ console.log(`[Rizhi] Deploying ${target.label} to ${target.spaceId}...`);
 const deploy = spawnSync(cliPath, [
   "hosting",
   "deploy",
+  "--prj",
+  target.projectName,
   "--provider",
   "alipay",
   "--space",

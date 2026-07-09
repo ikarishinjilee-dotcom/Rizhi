@@ -35,7 +35,7 @@ export function isCloudDataSource() {
   return import.meta.env.VITE_DATA_SOURCE === "unicloud";
 }
 
-export function uploadImageDataUrl(dataUrl: string, purpose: "asset" | "addon" | "avatar") {
+export function uploadImageDataUrl(dataUrl: string, purpose: "asset" | "addon" | "avatar" | "category_icon") {
   return request<{ fileId: string; url: string }>("/files/images", "POST", { dataUrl, purpose });
 }
 

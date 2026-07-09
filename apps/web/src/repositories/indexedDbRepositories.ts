@@ -21,6 +21,7 @@ import {
 } from "@/db/actions";
 import { rizhiDb } from "@/db/rizhiDb";
 import { resetSeedDatabase, seedDatabaseIfNeeded } from "@/db/seed";
+import { categoryHasScope, transactionTypeToScope } from "@/domain/categoryScopes";
 import type {
   AccountRepository,
   AppDataRepository,
@@ -33,7 +34,7 @@ import type {
   TransactionRepository,
   UpdateCategoryInput,
 } from "@/repositories/contracts";
-import type { CategoryRecord, ID, TransactionRecord } from "@/domain/models";
+import type { CategoryRecord, CategoryScope, ID, TransactionRecord } from "@/domain/models";
 
 function createId(prefix: string) {
   const randomId = globalThis.crypto?.randomUUID?.() ?? `${Date.now()}-${Math.random().toString(36).slice(2)}`;
@@ -57,14 +58,22 @@ async function validateCategoryParent(input: Pick<CreateCategoryInput, "domain" 
   if (parent.deletedAt || parent.enabled === false) throw new Error("父级分类已停用，不能新增子分类");
 }
 
+function inputScopes(input: Pick<CreateCategoryInput, "domain" | "type" | "scopes">): CategoryScope[] | undefined {
+  if (input.scopes?.length) return [...new Set(input.scopes)];
+  if (input.domain === "asset") return ["asset", "expense"];
+  if (input.domain === "transaction" && input.type === "income") return ["income"];
+  if (input.domain === "transaction") return ["expense"];
+  return undefined;
+}
+
 async function getCategoryUsage(id: ID) {
   const category = await rizhiDb.categories.get(id);
   if (!category) throw new Error("分类不存在");
 
   const [assets, transactions, subTransactions, childCategories, accounts] = await Promise.all([
-    category.domain === "asset" ? rizhiDb.assets.where("categoryId").equals(id).count() : Promise.resolve(0),
-    category.domain === "transaction" ? rizhiDb.transactions.where("categoryId").equals(id).count() : Promise.resolve(0),
-    category.domain === "transaction" ? rizhiDb.transactions.where("subCategoryId").equals(id).count() : Promise.resolve(0),
+    categoryHasScope(category, "asset") ? rizhiDb.assets.where("categoryId").equals(id).count() : Promise.resolve(0),
+    categoryHasScope(category, "expense") || categoryHasScope(category, "income") ? rizhiDb.transactions.where("categoryId").equals(id).count() : Promise.resolve(0),
+    categoryHasScope(category, "expense") || categoryHasScope(category, "income") ? rizhiDb.transactions.where("subCategoryId").equals(id).count() : Promise.resolve(0),
     rizhiDb.categories.where("parentId").equals(id).count(),
     category.domain === "account" && category.type ? rizhiDb.accounts.where("type").equals(category.type).count() : Promise.resolve(0),
   ]);
@@ -95,15 +104,16 @@ async function validateMigrationTarget(input: MigrateCategoryTransactionsInput) 
   ]);
   if (!source) throw new Error("来源分类不存在");
   if (!target) throw new Error("目标分类不存在");
-  if (source.domain !== "transaction" || target.domain !== "transaction") throw new Error("只能迁移记账分类");
+  const sourceScope = categoryHasScope(source, "income") ? "income" : categoryHasScope(source, "expense") ? "expense" : undefined;
+  const targetScope = categoryHasScope(target, "income") ? "income" : categoryHasScope(target, "expense") ? "expense" : undefined;
+  if (!sourceScope || !targetScope) throw new Error("只能迁移记账分类");
   if (target.parentId) throw new Error("目标一级分类不能是子分类");
   if (target.deletedAt || target.enabled === false) throw new Error("目标分类已停用");
-  if (source.type !== target.type) throw new Error("只能迁移到同类型分类");
+  if (sourceScope !== targetScope) throw new Error("只能迁移到同类型分类");
   if (input.toSubCategoryId) {
     if (!targetSub) throw new Error("目标子分类不存在");
-    if (targetSub.domain !== "transaction") throw new Error("目标子分类必须是记账分类");
     if (targetSub.parentId !== target.id) throw new Error("目标子分类不属于目标一级分类");
-    if (targetSub.type !== target.type) throw new Error("目标子分类类型不一致");
+    if (!categoryHasScope(targetSub, targetScope)) throw new Error("目标子分类类型不一致");
     if (targetSub.deletedAt || targetSub.enabled === false) throw new Error("目标子分类已停用");
   }
   return { source, target, targetSub };
@@ -177,6 +187,7 @@ export const indexedDbCategoryRepository: CategoryRepository = {
     return categories
       .filter((category) => !input.domain || category.domain === input.domain)
       .filter((category) => !input.type || category.type === input.type)
+      .filter((category) => !input.scope || categoryHasScope(category, input.scope))
       .filter((category) => input.enabled === undefined || (category.enabled !== false) === input.enabled)
       .sort((left, right) => left.sort - right.sort || left.name.localeCompare(right.name, "zh-CN"));
   },
@@ -194,9 +205,15 @@ export const indexedDbCategoryRepository: CategoryRepository = {
       parentId: input.parentId,
       color: input.color,
       icon: input.icon,
+      iconUrl: input.iconUrl,
+      iconFileId: input.iconFileId,
+      scopes: inputScopes(input),
       monthlyBudget: input.monthlyBudget,
       enabled: input.enabled ?? true,
       isSystem: input.isSystem ?? false,
+      accountGroup: input.accountGroup,
+      accountDirection: input.accountDirection,
+      bankId: input.bankId,
       deletedAt: input.deletedAt,
     };
 
@@ -208,11 +225,17 @@ export const indexedDbCategoryRepository: CategoryRepository = {
     const category = await rizhiDb.categories.get(input.id);
     if (!category) throw new Error("分类不存在");
     if (input.name !== undefined && !input.name.trim()) throw new Error("分类名称不能为空");
+    const nextParentId = input.parentId ?? category.parentId;
+    const nextEnabled = input.enabled ?? category.enabled ?? true;
     await validateCategoryParent({
       domain: input.domain ?? category.domain,
       type: input.type ?? category.type,
-      parentId: input.parentId ?? category.parentId,
+      parentId: nextParentId,
     });
+    if (nextParentId && nextEnabled) {
+      const parent = await rizhiDb.categories.get(nextParentId);
+      if (parent?.enabled === false) throw new Error("一级分类已停用，不能单独启用子分类");
+    }
 
     const updated: CategoryRecord = {
       ...category,
@@ -220,16 +243,28 @@ export const indexedDbCategoryRepository: CategoryRepository = {
       type: input.type ?? category.type,
       name: input.name?.trim() ?? category.name,
       sort: input.sort ?? category.sort,
-      parentId: input.parentId ?? category.parentId,
+      parentId: nextParentId,
       color: input.color ?? category.color,
       icon: input.icon ?? category.icon,
+      iconUrl: "iconUrl" in input ? input.iconUrl : category.iconUrl,
+      iconFileId: "iconFileId" in input ? input.iconFileId : category.iconFileId,
+      scopes: "scopes" in input ? input.scopes : category.scopes,
       monthlyBudget: "monthlyBudget" in input ? input.monthlyBudget : category.monthlyBudget,
-      enabled: input.enabled ?? category.enabled ?? true,
+      enabled: nextEnabled,
       isSystem: input.isSystem ?? category.isSystem ?? false,
+      accountGroup: input.accountGroup ?? category.accountGroup,
+      accountDirection: input.accountDirection ?? category.accountDirection,
+      bankId: "bankId" in input ? input.bankId : category.bankId,
       deletedAt: input.deletedAt ?? category.deletedAt,
     };
 
     await rizhiDb.categories.put(updated);
+    if (!updated.parentId && updated.enabled === false) {
+      const children = await rizhiDb.categories.where("parentId").equals(updated.id).toArray();
+      await Promise.all(children
+        .filter((child) => child.enabled !== false)
+        .map((child) => rizhiDb.categories.update(child.id, { enabled: false })));
+    }
     return updated;
   },
 
@@ -237,7 +272,7 @@ export const indexedDbCategoryRepository: CategoryRepository = {
     const category = await rizhiDb.categories.get(id);
     if (!category) throw new Error("分类不存在");
 
-    if (category.domain === "transaction") {
+    if (categoryHasScope(category, "expense") || categoryHasScope(category, "income")) {
       const children = await rizhiDb.categories.where("parentId").equals(id).toArray();
       const childIds = children.map((child) => child.id);
       const [directTransactions, subTransactions, childCategoryTransactions, childSubTransactions] = await Promise.all([
@@ -255,11 +290,9 @@ export const indexedDbCategoryRepository: CategoryRepository = {
         throw new Error(`该分类已有 ${transactionCount} 条记账记录，不能删除。请先把对应记账改到其他分类。`);
       }
 
-      if (children.length) {
+      if (children.length && !categoryHasScope(category, "asset")) {
         await rizhiDb.categories.bulkDelete(childIds);
       }
-      await rizhiDb.categories.delete(id);
-      return;
     }
 
     const usage = await getCategoryUsage(id);

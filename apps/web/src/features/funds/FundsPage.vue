@@ -39,7 +39,7 @@
             <span>{{ assetAccounts.length }}个账户</span>
           </div>
           <button v-for="account in assetAccounts.slice(0, 6)" :key="account.id" class="account-line" data-testid="fund-account-line" type="button" @click="openAccount(account.id)">
-            <span class="account-icon" :style="{ background: account.color || '#1677ff' }">{{ account.icon || account.name.slice(0, 1) }}</span>
+            <span class="account-icon" :style="{ background: accountVisual(account).color }"><img v-if="accountVisual(account).iconUrl" :src="accountVisual(account).iconUrl" alt="" /><template v-else>{{ accountVisual(account).icon }}</template></span>
             <strong>{{ account.name }}</strong>
             <em>{{ formatAmount(account.balance) }}</em>
             <svg v-if="accountSparklinePoints(account.id)" viewBox="0 0 72 24" aria-hidden="true">
@@ -61,7 +61,7 @@
             <span>{{ liabilityAccounts.length }}个账户</span>
           </div>
           <button v-for="account in liabilityAccounts.slice(0, 4)" :key="account.id" class="debt-line" data-testid="fund-account-line" type="button" @click="openAccount(account.id)">
-            <span class="account-icon" :style="{ background: account.color || '#ef4444' }">{{ account.icon || account.name.slice(0, 1) }}</span>
+            <span class="account-icon" :style="{ background: accountVisual(account).color }"><img v-if="accountVisual(account).iconUrl" :src="accountVisual(account).iconUrl" alt="" /><template v-else>{{ accountVisual(account).icon }}</template></span>
             <div>
               <strong>{{ account.name }}</strong>
               <small>剩余额度 {{ formatAmount(Math.max((account.creditLimit ?? 0) - account.balance, 0)) }}</small>
@@ -85,7 +85,7 @@
             <span>{{ repaymentReminders.length }}条待还</span>
           </div>
           <button v-for="item in repaymentReminders" :key="item.id" class="reminder-line" type="button" @click="openAccount(item.id)">
-            <span class="account-icon danger-bg">{{ item.icon }}</span>
+            <span class="account-icon" :style="{ background: accountVisualById(item.id).color }"><img v-if="accountVisualById(item.id).iconUrl" :src="accountVisualById(item.id).iconUrl" alt="" /><template v-else>{{ accountVisualById(item.id).icon }}</template></span>
             <div>
               <strong>{{ item.name }}</strong>
               <small>还款日 {{ item.date }}</small>
@@ -165,7 +165,7 @@
                   :title="accountTypeDisabledTitle(item)"
                   @click="selectAccountType(item)"
                 >
-                  <span :style="{ background: item.color }">{{ item.icon }}</span>
+                  <span :style="{ background: item.color }"><img v-if="item.iconUrl" :src="item.iconUrl" alt="" /><template v-else>{{ item.icon }}</template></span>
                   <small>{{ item.label }}</small>
                 </button>
               </div>
@@ -189,15 +189,15 @@
                 <RInput v-model="accountDraft.balance" placeholder="1,256.00" />
                 <em>{{ accountErrors.balance }}</em>
               </label>
-              <label>
+              <label v-if="selectedAccountUsesCreditFields">
                 <span>总额度</span>
                 <RInput v-model="accountDraft.creditLimit" placeholder="5,000.00" />
               </label>
-              <label>
+              <label v-if="selectedAccountUsesCreditFields">
                 <span>出账日</span>
                 <RSelect v-model="accountDraft.billDay" :options="dayOptions" placeholder="每月10日" />
               </label>
-              <label>
+              <label v-if="selectedAccountUsesCreditFields">
                 <span>还款日</span>
                 <RSelect v-model="accountDraft.repaymentDay" :options="dayOptions" placeholder="每月10日" />
               </label>
@@ -398,7 +398,7 @@
             type="button"
             @click="openAccountFromList(account.id)"
           >
-            <span class="account-icon" :style="{ background: account.color || (account.direction === 'liability' ? '#ef4444' : '#1677ff') }">{{ account.icon || account.name.slice(0, 1) }}</span>
+            <span class="account-icon" :style="{ background: accountVisual(account).color }"><img v-if="accountVisual(account).iconUrl" :src="accountVisual(account).iconUrl" alt="" /><template v-else>{{ accountVisual(account).icon }}</template></span>
             <div>
               <strong>{{ account.name }}</strong>
               <small>{{ account.institution || accountTypeLabel(account.type) }} · {{ account.enabled === false ? "已停用" : "启用中" }}</small>
@@ -430,7 +430,7 @@
             type="button"
             @click="openAccountFromList(item.id)"
           >
-            <span class="account-icon danger-bg">{{ item.icon }}</span>
+            <span class="account-icon" :style="{ background: accountVisualById(item.id).color }"><img v-if="accountVisualById(item.id).iconUrl" :src="accountVisualById(item.id).iconUrl" alt="" /><template v-else>{{ accountVisualById(item.id).icon }}</template></span>
             <div>
               <strong>{{ item.name }}</strong>
               <small>还款日 {{ item.date }} · {{ item.daysText }}</small>
@@ -552,9 +552,13 @@ type AccountTypeItem = {
   key: string;
   label: string;
   icon: string;
+  iconUrl?: string;
+  bankName?: string;
+  bankId?: string;
   color: string;
   type: AccountType;
   direction: MoneyAccountRecord["direction"];
+  group?: "asset" | "credit" | "stored_value";
 };
 type AccountListMode = "asset" | "liability" | "repayment";
 
@@ -590,7 +594,7 @@ const initialAccountDraftSnapshot = ref("");
 const initialTransferDraftSnapshot = ref("");
 const initialRepaymentDraftSnapshot = ref("");
 
-const accountTypeSections: Array<{ title: string; items: AccountTypeItem[] }> = [
+const fallbackAccountTypeSections: Array<{ title: string; items: AccountTypeItem[] }> = [
   {
     title: "资金账户",
     items: [
@@ -619,9 +623,37 @@ const accountTypeSections: Array<{ title: string; items: AccountTypeItem[] }> = 
     ] satisfies AccountTypeItem[],
   },
 ];
-const allAccountTypeItems: AccountTypeItem[] = accountTypeSections.flatMap((section) => section.items);
-
-const selectedAccountType = ref<AccountTypeItem>(accountTypeSections[0].items[0]);
+const accountGroupLabels = { asset: "资金账户", credit: "信用账户", stored_value: "充值账户" } as const;
+const accountTypeSections = computed(() => {
+  const categories = store.categories.filter((item) => item.domain === "account" && item.enabled !== false);
+  if (!categories.length) return fallbackAccountTypeSections;
+  return (["asset", "credit", "stored_value"] as const).map((group) => ({
+    title: accountGroupLabels[group],
+    items: categories
+      .filter((item) => item.accountGroup === group)
+      .sort((left, right) => left.sort - right.sort)
+      .map((item) => {
+        const bank = item.bankId ? store.categories.find((candidate) => candidate.id === item.bankId) : undefined;
+        return {
+          key: item.id,
+          label: item.name,
+          icon: item.icon || bank?.icon || item.name.slice(0, 1),
+          iconUrl: item.iconUrl || bank?.iconUrl,
+          bankName: bank?.name,
+          bankId: item.bankId,
+          color: bank?.color || item.color || "#1677FF",
+          type: item.type as AccountType,
+          direction: item.accountDirection || (group === "credit" ? "liability" : "asset"),
+          group,
+        };
+      }),
+  })).filter((section) => section.items.length);
+});
+const allAccountTypeItems = computed(() => accountTypeSections.value.flatMap((section) => section.items));
+const selectedAccountType = ref<AccountTypeItem>(fallbackAccountTypeSections[0].items[0]);
+const selectedAccountUsesCreditFields = computed(() =>
+  selectedAccountType.value.group === "credit"
+  || (!selectedAccountType.value.group && selectedAccountType.value.direction === "liability"));
 const accountDraft = reactive({
   name: "",
   note: "",
@@ -806,6 +838,11 @@ function selectAccountType(item: AccountTypeItem) {
   if (isAccountTypeDisabled(item)) return;
   const previousType = selectedAccountType.value;
   selectedAccountType.value = item;
+  if (item.group !== "credit") {
+    accountDraft.creditLimit = "";
+    accountDraft.billDay = null;
+    accountDraft.repaymentDay = null;
+  }
   const currentName = accountDraft.name.trim();
   const previousInstitution = editingAccount.value?.institution?.trim();
   if (!currentName || currentName === previousType.label || currentName === previousInstitution) {
@@ -815,15 +852,30 @@ function selectAccountType(item: AccountTypeItem) {
 
 function matchAccountType(account: MoneyAccountRecord) {
   const institution = account.institution?.trim();
-  const exactPreset = allAccountTypeItems.find((item) =>
+  const exactPreset = allAccountTypeItems.value.find((item) =>
+    item.key === account.accountTypeId ||
     item.direction === account.direction
     && item.type === account.type
     && (item.label === institution || item.label === account.name || item.icon === account.icon || item.color === account.color)
   );
   if (exactPreset) return exactPreset;
 
-  const sameType = allAccountTypeItems.find((item) => item.type === account.type && item.direction === account.direction);
-  return sameType ?? accountTypeSections[0].items[0];
+  const sameType = allAccountTypeItems.value.find((item) => item.type === account.type && item.direction === account.direction);
+  return sameType ?? accountTypeSections.value[0]?.items[0] ?? fallbackAccountTypeSections[0].items[0];
+}
+
+function accountVisual(account: MoneyAccountRecord) {
+  const type = matchAccountType(account);
+  return {
+    icon: type.icon || account.icon || account.name.slice(0, 1),
+    iconUrl: type.iconUrl,
+    color: type.color || account.color || (account.direction === "liability" ? "#ef4444" : "#1677ff"),
+  };
+}
+
+function accountVisualById(accountId: string) {
+  const account = store.accounts.find((item) => item.id === accountId);
+  return account ? accountVisual(account) : { icon: "账", iconUrl: undefined, color: "#1677ff" };
 }
 
 function isAccountTypeDisabled(item: AccountTypeItem) {
@@ -970,7 +1022,7 @@ function transactionTypeLabel(type?: string) {
 
 function resetAccountForm() {
   editingAccountId.value = null;
-  selectedAccountType.value = accountTypeSections[0].items[0];
+  selectedAccountType.value = accountTypeSections.value[0]?.items[0] ?? fallbackAccountTypeSections[0].items[0];
   accountDraft.name = "";
   accountDraft.note = "";
   accountDraft.balance = "";
@@ -1078,13 +1130,14 @@ async function submitAccount() {
     const type = selectedAccountType.value;
     const payload = {
       name: accountDraft.name.trim(),
+      accountTypeId: type.key,
       type: type.type,
       direction: type.direction,
       balance: parseAmount(accountDraft.balance || "0"),
-      institution: type.label,
-      creditLimit: accountDraft.creditLimit ? parseAmount(accountDraft.creditLimit) : undefined,
-      billDay: Number(accountDraft.billDay) || undefined,
-      repaymentDay: Number(accountDraft.repaymentDay) || undefined,
+      institution: type.bankName || type.label,
+      creditLimit: selectedAccountUsesCreditFields.value && accountDraft.creditLimit ? parseAmount(accountDraft.creditLimit) : undefined,
+      billDay: selectedAccountUsesCreditFields.value ? Number(accountDraft.billDay) || undefined : undefined,
+      repaymentDay: selectedAccountUsesCreditFields.value ? Number(accountDraft.repaymentDay) || undefined : undefined,
       color: type.color,
       icon: type.icon,
       note: accountDraft.note.trim() || undefined,
@@ -1377,6 +1430,7 @@ function goLedger() {
 .debt-line, .reminder-line { grid-template-columns: 34px 1fr auto; }
 .account-line:hover, .debt-line:hover, .reminder-line:hover { background: var(--color-bg-hover); }
 .account-icon { display: grid; width: 30px; height: 30px; place-items: center; color: #fff; border-radius: 9px; font-size: 12px; font-weight: 800; }
+.account-icon img { width: 100%; height: 100%; object-fit: cover; border-radius: inherit; }
 .account-line strong, .debt-line strong, .reminder-line strong { font-weight: 800; }
 .account-line em, .debt-line em, .reminder-line em { font-style: normal; font-weight: 800; }
 .account-line small, .debt-line small, .reminder-line small { display: block; margin-top: 3px; color: var(--color-text-tertiary); font-size: 11px; }
@@ -1409,6 +1463,7 @@ function goLedger() {
 .type-grid button.active { background: #eef5ff; border-color: var(--color-primary); }
 .type-grid button:disabled { cursor: not-allowed; opacity: .72; }
 .type-grid span { display: grid; width: 32px; height: 32px; place-items: center; color: #fff; border-radius: 50%; font-size: 11px; font-weight: 800; }
+.type-grid span img { width: 100%; height: 100%; object-fit: cover; border-radius: inherit; }
 .account-form { padding: var(--space-5); }
 .form-grid, .transfer-body { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--space-4); }
 .transfer-body .full { grid-column: 1 / -1; }

@@ -4,6 +4,7 @@ import { rizhiDb } from "@/db/rizhiDb";
 const TOKEN_KEY = "rizhi_uni_id_token";
 const TOKEN_EXPIRED_KEY = "rizhi_uni_id_token_expired";
 const USERNAME_KEY = "rizhi_uni_id_username";
+const ROLES_KEY = "rizhi_uni_id_roles";
 const DEVICE_ID_KEY = "rizhi_device_id";
 const apiBaseUrl = (import.meta.env.VITE_API_BASE_URL || "").replace(/\/$/, "");
 const browserStorage = typeof window === "undefined" ? null : window.localStorage;
@@ -16,13 +17,23 @@ type UniIdResponse = {
     tokenExpired: number;
   };
   captchaBase64?: string;
+  role?: string[];
 };
 
 export const authSession = reactive({
   token: browserStorage?.getItem(TOKEN_KEY) || "",
   tokenExpired: Number(browserStorage?.getItem(TOKEN_EXPIRED_KEY) || 0),
   username: browserStorage?.getItem(USERNAME_KEY) || "",
+  roles: JSON.parse(browserStorage?.getItem(ROLES_KEY) || "[]") as string[],
 });
+
+export function isAdmin() {
+  return authSession.roles.includes("admin") || authSession.roles.includes("super_admin");
+}
+
+export function isSuperAdmin() {
+  return authSession.roles.includes("super_admin");
+}
 
 export function isUniCloudMode() {
   return import.meta.env.VITE_DATA_SOURCE === "unicloud";
@@ -45,18 +56,22 @@ export function clearSession() {
   authSession.token = "";
   authSession.tokenExpired = 0;
   authSession.username = "";
+  authSession.roles = [];
   browserStorage?.removeItem(TOKEN_KEY);
   browserStorage?.removeItem(TOKEN_EXPIRED_KEY);
   browserStorage?.removeItem(USERNAME_KEY);
+  browserStorage?.removeItem(ROLES_KEY);
 }
 
-function saveSession(username: string, token: string, tokenExpired: number) {
+function saveSession(username: string, token: string, tokenExpired: number, roles: string[] = []) {
   authSession.username = username;
   authSession.token = token;
   authSession.tokenExpired = tokenExpired;
+  authSession.roles = roles;
   browserStorage?.setItem(USERNAME_KEY, username);
   browserStorage?.setItem(TOKEN_KEY, token);
   browserStorage?.setItem(TOKEN_EXPIRED_KEY, String(tokenExpired));
+  browserStorage?.setItem(ROLES_KEY, JSON.stringify(roles));
 }
 
 function getDeviceId() {
@@ -95,7 +110,8 @@ async function callAuthApi(method: string, params: Record<string, unknown>) {
 export async function login(username: string, password: string) {
   const result = await callAuthApi("login", { username, password });
   if (!result.newToken?.token) throw new Error("登录成功但未返回 Token");
-  saveSession(username, result.newToken.token, Number(result.newToken.tokenExpired || 0));
+  saveSession(username, result.newToken.token, Number(result.newToken.tokenExpired || 0), result.role || []);
+  await refreshCurrentIdentity();
 }
 
 export async function loadRegisterCaptcha() {
@@ -112,7 +128,15 @@ export async function registerAccount(input: {
 }) {
   const result = await callAuthApi("register", input);
   if (!result.newToken?.token) throw new Error("注册成功但未返回 Token");
-  saveSession(input.username, result.newToken.token, Number(result.newToken.tokenExpired || 0));
+  saveSession(input.username, result.newToken.token, Number(result.newToken.tokenExpired || 0), result.role || []);
+  await refreshCurrentIdentity();
+}
+
+export async function refreshCurrentIdentity() {
+  if (!getAuthToken()) return;
+  const result = await callAuthApi("me", {});
+  authSession.roles = result.role || [];
+  browserStorage?.setItem(ROLES_KEY, JSON.stringify(authSession.roles));
 }
 
 export async function claimLocalData() {

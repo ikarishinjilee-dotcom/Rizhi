@@ -120,6 +120,29 @@ export class RizhiDatabase extends Dexie {
         } : undefined);
       });
     });
+
+    this.version(6).stores({
+      assets: "&id, userId, name, categoryId, status, purchaseDate, firstUseDate, lastUsedAt, idleSince, warrantyEndDate, paymentAccountId, purchaseTransactionId, transferTransactionId, createdAt, updatedAt",
+      assetAddons: "&id, assetId, direction, type, purchaseDate, paymentAccountId, transactionId, createdAt, updatedAt",
+      assetPartEvents: "&id, assetId, type, occurredAt, accountId, transactionId, createdAt, updatedAt",
+      accounts: "&id, name, type, direction, institution, createdAt, updatedAt",
+      transactions: "&id, type, categoryId, subCategoryId, businessType, accountId, relatedAccountId, assetId, addonId, partEventId, occurredAt, createdAt, updatedAt",
+      accountFlows: "&id, accountId, transactionId, direction, occurredAt, createdAt",
+      categories: "&id, domain, type, sort, parentId, enabled, isSystem, deletedAt",
+      settings: "&id",
+      metadata: "&key",
+    }).upgrade(async (tx) => {
+      await tx.table("categories").toCollection().modify((category) => {
+        if (category.scopes?.length) return;
+        if (category.domain === "asset") {
+          category.scopes = ["asset", "expense"];
+        } else if (category.domain === "transaction" && category.type === "income") {
+          category.scopes = ["income"];
+        } else if (category.domain === "transaction" && ["expense", "asset_purchase", "refund"].includes(category.type)) {
+          category.scopes = category.type === "refund" ? ["income"] : ["expense"];
+        }
+      });
+    });
   }
 }
 

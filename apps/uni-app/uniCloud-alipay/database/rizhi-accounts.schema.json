@@ -12,6 +12,7 @@
     "id": { "bsonType": "string" },
     "userId": { "bsonType": "string" },
     "name": { "bsonType": "string" },
+    "accountTypeId": { "bsonType": "string" },
     "type": { "bsonType": "string" },
     "direction": { "bsonType": "string" },
     "balance": { "bsonType": ["double", "int", "long"] },

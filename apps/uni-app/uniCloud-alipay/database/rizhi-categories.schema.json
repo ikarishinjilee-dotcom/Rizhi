@@ -8,6 +8,21 @@
     "userId": { "bsonType": "string" },
     "domain": { "bsonType": "string" },
     "name": { "bsonType": "string" },
-    "sort": { "bsonType": ["int", "long"] }
+    "sort": { "bsonType": ["int", "long"] },
+    "type": { "bsonType": "string" },
+    "color": { "bsonType": "string" },
+    "icon": { "bsonType": "string" },
+    "iconUrl": { "bsonType": "string" },
+    "iconFileId": { "bsonType": "string" },
+    "scopes": {
+      "bsonType": "array",
+      "items": { "bsonType": "string" }
+    },
+    "bankName": { "bsonType": "string" },
+    "bankId": { "bsonType": "string" },
+    "enabled": { "bsonType": "bool" },
+    "isSystem": { "bsonType": "bool" },
+    "accountGroup": { "bsonType": "string" },
+    "accountDirection": { "bsonType": "string" }
   }
 }

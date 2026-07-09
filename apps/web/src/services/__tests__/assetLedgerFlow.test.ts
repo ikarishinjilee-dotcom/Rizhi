@@ -41,7 +41,7 @@ describe("asset and ledger linked writes", () => {
     expect(afterAccount?.balance).toBe((beforeAccount?.balance ?? 0) - 1000);
     expect(transaction).toMatchObject({
       type: "asset_purchase",
-      categoryId: "tx-asset-purchase",
+      categoryId: "asset-digital",
       amount: 1000,
       accountId: "alipay",
       assetId: asset.id,
@@ -108,7 +108,7 @@ describe("asset and ledger linked writes", () => {
     expect(assetTotalCost(asset!, afterAddons)).toBe(beforeCost + 88);
     expect(transaction).toMatchObject({
       type: "expense",
-      categoryId: "tx-asset-addon-accessory",
+      categoryId: asset!.categoryId,
       amount: 88,
       accountId: "alipay",
       assetId: "ast_000002",

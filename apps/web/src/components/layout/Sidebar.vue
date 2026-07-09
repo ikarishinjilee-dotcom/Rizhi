@@ -13,6 +13,10 @@
     </nav>
 
     <div class="sidebar__foot">
+      <RouterLink v-if="isAdmin()" class="sidebar__item" to="/admin">
+        <ShieldCheck :size="16" />
+        <span>管理中心</span>
+      </RouterLink>
       <RouterLink class="sidebar__item" to="/settings">
         <Settings :size="16" />
         <span>设置</span>
@@ -27,7 +31,8 @@
 
 <script setup lang="ts">
 import { RouterLink } from "vue-router";
-import { BarChart3, Box, CircleHelp, CreditCard, NotebookText, Settings, User } from "@lucide/vue";
+import { BarChart3, Box, CircleHelp, CreditCard, NotebookText, Settings, ShieldCheck, User } from "@lucide/vue";
+import { isAdmin } from "@/services/authService";
 
 const navItems = [
   { label: "看板", path: "/dashboard", icon: BarChart3 },

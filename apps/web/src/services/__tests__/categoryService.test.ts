@@ -74,6 +74,30 @@ describe("categoryService", () => {
     });
   });
 
+  it("cascades disabling parent categories and blocks enabling children under disabled parents", async () => {
+    const parent = await categoryService.create({
+      domain: "asset",
+      name: "父级启停测试",
+      type: "other",
+      sort: 710,
+      scopes: ["asset", "expense"],
+    });
+    const child = await categoryService.create({
+      domain: "asset",
+      name: "子级启停测试",
+      type: "other",
+      parentId: parent.id,
+      sort: 711,
+      scopes: ["asset", "expense"],
+    });
+
+    await categoryService.update({ id: parent.id, enabled: false });
+
+    expect(await rizhiDb.categories.get(parent.id)).toMatchObject({ enabled: false });
+    expect(await rizhiDb.categories.get(child.id)).toMatchObject({ enabled: false });
+    await expect(categoryService.update({ id: child.id, enabled: true })).rejects.toThrow("父级分类已停用");
+  });
+
   it("saves and clears monthly budgets on expense categories", async () => {
     const category = await categoryService.create({
       domain: "transaction",

@@ -23,7 +23,6 @@ function createDefaultSettings(): UserSettingsRecord {
     currency: "CNY",
     locale: "zh-CN",
     theme: "light",
-    firstDayOfWeek: 1,
     displayName: authSession.username || "Demo User",
     notificationReadIds: [],
     notificationIgnoredIds: [],

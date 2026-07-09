@@ -8,6 +8,7 @@ import type {
   TransactionRecord,
   UserSettingsRecord,
 } from "@/domain/models";
+import { categoryScopes } from "@/domain/categoryScopes";
 
 export const mockNow = "2026-06-15T00:00:00.000+08:00";
 
@@ -58,7 +59,7 @@ export const mockCategories: CategoryRecord[] = ([
   { id: "account-consumer-credit", domain: "account", type: "consumer_credit", name: "消费信用", sort: 550 },
   { id: "account-loan", domain: "account", type: "loan", name: "贷款", sort: 560 },
   { id: "account-investment", domain: "account", type: "investment", name: "投资账户", sort: 570 },
-] satisfies CategoryRecord[]).map((category) => ({ enabled: true, isSystem: true, ...category }));
+] satisfies CategoryRecord[]).map((category) => ({ enabled: true, isSystem: true, scopes: categoryScopes(category), ...category }));
 
 function mockCategorySnapshot(categoryId: string, subCategoryId?: string): TransactionRecord["categorySnapshot"] {
   const category = mockCategories.find((item) => item.id === categoryId);
@@ -752,7 +753,6 @@ export const mockSettings: UserSettingsRecord = {
   currency: "CNY",
   locale: "zh-CN",
   theme: "light",
-  firstDayOfWeek: 1,
   displayName: "Demo User",
   notificationReadIds: [],
   notificationIgnoredIds: [],

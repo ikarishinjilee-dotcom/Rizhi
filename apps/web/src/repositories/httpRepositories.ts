@@ -225,6 +225,7 @@ export const httpCategoryRepository: CategoryRepository = {
     const params = new URLSearchParams();
     if (input.domain) params.set("domain", input.domain);
     if (input.type) params.set("type", input.type);
+    if (input.scope) params.set("scope", input.scope);
     if (input.enabled !== undefined) params.set("enabled", String(input.enabled));
     const query = params.toString();
     return request<CategoryRecord[]>(`/categories${query ? `?${query}` : ""}`);
