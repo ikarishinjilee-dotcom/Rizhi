@@ -1,9 +1,9 @@
 import { getAuthToken, handleUnauthorized } from "@/services/authService";
-
-const apiBaseUrl = (import.meta.env.VITE_API_BASE_URL || "").replace(/\/$/, "");
+import { isUniCloudDataSource, requireApiBaseUrl, requireUniCloudMode } from "@/services/apiConfig";
 
 async function request<T>(path: string, method: "GET" | "POST" | "PATCH", payload: Record<string, unknown> = {}) {
-  if (!apiBaseUrl) throw new Error("尚未配置业务 API 地址");
+  requireUniCloudMode("云端资料和图片同步");
+  const apiBaseUrl = requireApiBaseUrl();
   const response = await fetch(`${apiBaseUrl}${path}`, {
     method: "POST",
     headers: { "Content-Type": "text/plain;charset=UTF-8" },
@@ -32,10 +32,10 @@ export type CloudUserProfile = {
 };
 
 export function isCloudDataSource() {
-  return import.meta.env.VITE_DATA_SOURCE === "unicloud";
+  return isUniCloudDataSource();
 }
 
-export function uploadImageDataUrl(dataUrl: string, purpose: "asset" | "addon" | "avatar") {
+export function uploadImageDataUrl(dataUrl: string, purpose: "asset" | "addon" | "avatar" | "category_icon") {
   return request<{ fileId: string; url: string }>("/files/images", "POST", { dataUrl, purpose });
 }
 

@@ -11,10 +11,11 @@ import type {
   UserSettingsRecord,
 } from "@/domain/models";
 import { getAuthToken, handleUnauthorized } from "@/services/authService";
+import { getApiBaseUrl, isRemoteDataSource, isUniCloudDataSource } from "@/services/apiConfig";
 
 const BACKUP_FORMAT = "rizhi-local-backup";
 const BACKUP_VERSION = 1;
-const apiBaseUrl = (import.meta.env.VITE_API_BASE_URL ?? "http://127.0.0.1:8797/api/v1").replace(/\/$/, "");
+const apiBaseUrl = getApiBaseUrl();
 
 export type RizhiBackupPayload = {
   format: typeof BACKUP_FORMAT;
@@ -47,11 +48,11 @@ type ApiFailure = {
 };
 
 function useRemoteDataSource() {
-  return ["http", "unicloud"].includes(import.meta.env.VITE_DATA_SOURCE ?? "");
+  return isRemoteDataSource();
 }
 
 async function apiRequest<T>(path: string, init?: RequestInit): Promise<T> {
-  const useUniCloudTransport = import.meta.env.VITE_DATA_SOURCE === "unicloud";
+  const useUniCloudTransport = isUniCloudDataSource();
   const requestedMethod = String(init?.method ?? "GET").toUpperCase();
   const cloudPayload = useUniCloudTransport
     ? {

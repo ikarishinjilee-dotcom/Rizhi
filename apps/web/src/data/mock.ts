@@ -752,7 +752,6 @@ export const mockSettings: UserSettingsRecord = {
   currency: "CNY",
   locale: "zh-CN",
   theme: "light",
-  firstDayOfWeek: 1,
   displayName: "Demo User",
   notificationReadIds: [],
   notificationIgnoredIds: [],

@@ -28,6 +28,6 @@ import Topbar from "@/components/layout/Topbar.vue";
 }
 
 .app-shell__main {
-  padding: 32px 48px 56px;
+  padding: 24px 48px 56px;
 }
 </style>

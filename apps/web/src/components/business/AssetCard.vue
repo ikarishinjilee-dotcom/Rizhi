@@ -1,5 +1,18 @@
 <template>
   <article class="asset-card" data-testid="asset-card" role="button" tabindex="0" @click="$emit('open', asset.id)" @keydown.enter="$emit('open', asset.id)">
+    <div class="asset-card__status">
+      <RTag :tone="statusTone">{{ asset.status }}</RTag>
+    </div>
+
+    <div class="asset-card__menu" data-testid="asset-card-menu" @click.stop>
+      <button class="asset-card__more" data-testid="asset-card-more" type="button" aria-label="更多操作">…</button>
+      <div class="asset-card__popover">
+        <button type="button" @click="handleOpen">查看详情</button>
+        <button type="button" @click="handleEdit">编辑资产</button>
+        <button class="danger" data-testid="asset-card-delete" type="button" @click="handleDelete">删除资产</button>
+      </div>
+    </div>
+
     <div
       class="asset-card__media"
       :class="coverImage ? 'asset-card__media--image' : `asset-card__media--${asset.imageTone}`"
@@ -9,41 +22,17 @@
     </div>
 
     <div class="asset-card__body">
-      <div class="asset-card__head">
-        <div>
-          <h3>{{ asset.name }}</h3>
-          <p>{{ asset.brand || "未填写品牌" }}</p>
-          <RTag tone="muted">{{ asset.category }}</RTag>
-        </div>
+      <h3>{{ asset.name }}</h3>
+      <p>{{ asset.category }}</p>
 
-        <div class="asset-card__menu" data-testid="asset-card-menu" @click.stop>
-          <button class="asset-card__more" data-testid="asset-card-more" type="button" aria-label="更多操作">…</button>
-          <div class="asset-card__popover">
-            <button type="button" @click="handleOpen">查看详情</button>
-            <button type="button" @click="handleEdit">编辑资产</button>
-            <button class="danger" data-testid="asset-card-delete" type="button" @click="handleDelete">删除资产</button>
-          </div>
-        </div>
+      <div v-if="asset.warrantyDays !== undefined && asset.warrantyDays <= 30" class="asset-card__warning">
+        保修剩余 {{ asset.warrantyDays }} 天
       </div>
 
-      <AmountText class="asset-card__price" :value="asset.totalCost" sign="none" />
-
-      <div class="asset-card__metrics">
-        <div>
-          <span>持有</span>
-          <strong>{{ asset.days }} 天</strong>
-        </div>
-        <div>
-          <span>日均成本</span>
-          <strong>¥{{ asset.dailyCost.toFixed(2) }}</strong>
-        </div>
-      </div>
-
-      <div class="asset-card__tags">
-        <RTag v-if="asset.warrantyDays && asset.warrantyDays > 0" tone="success">保修剩余 {{ asset.warrantyDays }} 天</RTag>
-        <RTag v-else tone="muted">无保修提醒</RTag>
-        <RTag :tone="asset.status === '订阅中' ? 'purple' : 'success'">{{ asset.status }}</RTag>
-      </div>
+      <footer class="asset-card__footer">
+        <AmountText class="asset-card__price" :value="asset.totalCost" sign="none" />
+        <span>¥{{ asset.dailyCost.toFixed(2) }}/天</span>
+      </footer>
     </div>
   </article>
 </template>
@@ -61,6 +50,7 @@ export type AssetCardItem = {
   totalCost: number;
   days: number;
   dailyCost: number;
+  expectedUseDays?: number;
   warrantyDays?: number;
   status: string;
   symbol: string;
@@ -80,6 +70,12 @@ const emit = defineEmits<{
 }>();
 
 const coverImage = computed(() => props.asset.imageUrl || props.asset.imageUrls?.[0] || "");
+const statusTone = computed(() => {
+  if (props.asset.status.includes("过保")) return "warning";
+  if (props.asset.status.includes("闲置")) return "warning";
+  if (props.asset.status.includes("转让") || props.asset.status.includes("处置")) return "muted";
+  return "success";
+});
 
 function handleOpen() {
   emit("open", props.asset.id);
@@ -98,48 +94,56 @@ function handleDelete() {
 .asset-card {
   position: relative;
   display: grid;
-  grid-template-columns: 112px minmax(0, 1fr);
-  gap: var(--space-4);
-  min-height: 250px;
-  padding: var(--space-4);
+  gap: 11px;
+  min-height: 0;
+  padding: 14px 14px 12px;
   color: inherit;
   text-align: left;
   background: var(--color-bg-card);
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-lg);
-  box-shadow: var(--shadow-card);
+  border: 1px solid var(--color-border-soft);
+  border-radius: 20px;
+  box-shadow: 0 18px 38px rgba(15, 23, 42, 0.054);
   cursor: pointer;
-  transition: border-color 0.18s ease, box-shadow 0.18s ease, transform 0.18s ease;
+  transition: border-color 0.2s ease, box-shadow 0.2s ease, transform 0.2s ease;
 }
 
 .asset-card:hover,
 .asset-card:focus-visible {
-  border-color: #bbd5ff;
-  box-shadow: var(--shadow-popover);
+  border-color: rgba(38, 116, 255, 0.24);
+  box-shadow: 0 24px 46px rgba(15, 23, 42, 0.09);
   outline: none;
-  transform: translateY(-1px);
+  transform: translateY(-3px);
+}
+
+.asset-card__status {
+  position: absolute;
+  top: 14px;
+  left: 14px;
+  z-index: 2;
 }
 
 .asset-card__media {
   display: grid;
-  width: 112px;
-  height: 112px;
+  width: 100%;
+  aspect-ratio: 1 / 1;
+  height: auto;
   overflow: hidden;
   place-items: center;
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-lg);
-  font-size: 42px;
+  margin-top: 4px;
+  border: 0;
+  border-radius: 18px;
+  font-size: 50px;
   font-weight: 800;
 }
 
 .asset-card__media img {
   width: 100%;
   height: 100%;
-  object-fit: cover;
+  object-fit: contain;
 }
 
 .asset-card__media--image {
-  background: var(--color-bg-hover);
+  background: linear-gradient(135deg, #f8fbff, #ffffff);
 }
 
 .asset-card__media--blue {
@@ -162,45 +166,44 @@ function handleDelete() {
   background: linear-gradient(135deg, #f8fafc, #e5e7eb);
 }
 
-.asset-card__head {
-  display: flex;
-  justify-content: space-between;
-  gap: var(--space-2);
-}
-
-.asset-card__head > div:first-child {
+.asset-card__body {
+  display: grid;
   min-width: 0;
+  gap: 5px;
 }
 
 .asset-card h3 {
   margin: 0;
-  font-size: var(--font-card-title);
+  color: var(--color-text-primary);
+  font-size: 15px;
+  line-height: 20px;
+  font-weight: 800;
   overflow-wrap: anywhere;
 }
 
 .asset-card p {
-  margin: var(--space-1) 0;
+  margin: 0;
   color: var(--color-text-secondary);
-  font-size: var(--font-table);
+  font-size: 12px;
+  line-height: 17px;
 }
 
 .asset-card__menu {
-  position: relative;
-  z-index: 2;
-  flex: 0 0 auto;
-  align-self: start;
-  padding-bottom: 6px;
+  position: absolute;
+  z-index: 3;
+  top: 14px;
+  right: 14px;
 }
 
 .asset-card__more {
   display: grid;
-  width: 32px;
-  height: 32px;
+  width: 30px;
+  height: 30px;
   place-items: center;
   color: var(--color-text-tertiary);
-  background: transparent;
+  background: rgba(248, 250, 252, 0.86);
   border: 0;
-  border-radius: var(--radius-md);
+  border-radius: var(--radius-pill);
   cursor: pointer;
   font-size: 20px;
   line-height: 1;
@@ -213,14 +216,14 @@ function handleDelete() {
 
 .asset-card__popover {
   position: absolute;
-  top: 36px;
+  top: 34px;
   right: 0;
   z-index: 5;
   display: none;
   min-width: 112px;
   padding: var(--space-2);
   background: var(--color-bg-card);
-  border: 1px solid var(--color-border);
+  border: 1px solid var(--color-border-soft);
   border-radius: var(--radius-lg);
   box-shadow: var(--shadow-popover);
 }
@@ -255,41 +258,30 @@ function handleDelete() {
   background: #fff1f1;
 }
 
-.asset-card__price {
-  display: block;
-  margin-top: var(--space-5);
-  font-size: 18px;
+.asset-card__warning {
+  color: var(--color-danger);
+  font-size: 12px;
+  font-weight: 700;
 }
 
-.asset-card__metrics {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: var(--space-4);
-  margin-top: var(--space-4);
-}
-
-.asset-card__metrics div + div {
-  padding-left: var(--space-4);
-  border-left: 1px solid var(--color-border);
-}
-
-.asset-card__metrics span {
-  display: block;
-  color: var(--color-text-tertiary);
-  font-size: var(--font-caption);
-}
-
-.asset-card__metrics strong {
-  display: block;
-  margin-top: var(--space-1);
-  color: var(--color-text-secondary);
-  font-size: var(--font-table);
-}
-
-.asset-card__tags {
+.asset-card__footer {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  margin-top: var(--space-5);
+  margin-top: 2px;
+  padding-top: 8px;
+  border-top: 1px solid var(--color-border-soft);
+}
+
+.asset-card__price {
+  display: block;
+  font-size: 15px;
+  font-weight: 800;
+}
+
+.asset-card__footer span {
+  color: var(--color-text-primary);
+  font-size: 13px;
+  font-weight: 700;
 }
 </style>

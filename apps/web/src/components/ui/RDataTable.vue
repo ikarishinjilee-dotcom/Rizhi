@@ -13,8 +13,20 @@ defineProps<{
 
 <style scoped>
 .r-data-table {
-  border: 1px solid var(--color-border);
+  border: 1px solid var(--color-border-soft);
   border-radius: var(--radius-lg);
   overflow: hidden;
+  background: var(--color-bg-card);
+  box-shadow: 0 8px 20px rgba(15, 23, 42, 0.03);
+}
+
+.r-data-table:deep(.n-data-table-th) {
+  font-size: var(--font-caption);
+  font-weight: 700;
+}
+
+.r-data-table:deep(.n-data-table-td) {
+  height: 52px;
+  font-size: var(--font-table);
 }
 </style>

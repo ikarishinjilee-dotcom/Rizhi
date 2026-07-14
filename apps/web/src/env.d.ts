@@ -1,7 +1,7 @@
 /// <reference types="vite/client" />
 
 interface ImportMetaEnv {
-  readonly VITE_DATA_SOURCE?: "indexeddb" | "http" | "unicloud";
+  readonly VITE_DATA_SOURCE?: "indexeddb" | "unicloud";
   readonly VITE_API_BASE_URL?: string;
   readonly VITE_USER_ID?: string;
 }

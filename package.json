@@ -9,19 +9,11 @@
   ],
   "scripts": {
     "postinstall": "node ./scripts/ensure-uni-hbuilder-deps.mjs",
-    "api:dev": "tsx ./server/app/main.ts",
-    "start": "node ./scripts/start-production.mjs",
-    "start:api": "tsx ./server/app/main.ts",
-    "start:backup": "node ./scripts/backup-scheduler.mjs",
-    "dev": "npm run dev --workspace=@rizhi/web",
-    "dev:web": "npm run dev --workspace=@rizhi/web",
+    "dev": "npm run dev:unicloud --workspace=@rizhi/web",
+    "dev:web": "npm run dev:unicloud --workspace=@rizhi/web",
     "dev:uni": "npm run dev:h5 --workspace=@rizhi/uni-app",
     "dev:unicloud": "npm run dev:unicloud --workspace=@rizhi/web",
     "dev:test": "npm run dev:test --workspace=@rizhi/web",
-    "dev:full": "node ./scripts/dev-full.mjs",
-    "dev:http": "npm run dev:http --workspace=@rizhi/web",
-    "db:backup": "node ./scripts/backup-sqlite.mjs",
-    "db:restore": "node ./scripts/restore-sqlite.mjs",
     "build": "npm run build --workspace=@rizhi/web",
     "build:web": "npm run build --workspace=@rizhi/web",
     "build:unicloud": "npm run build:unicloud --workspace=@rizhi/web",
@@ -39,10 +31,7 @@
     "typecheck:uni": "npm run type-check --workspace=@rizhi/uni-app",
     "typecheck:all": "npm run typecheck && npm run typecheck:uni"
   },
-  "dependencies": {
-    "fastify": "^5.8.5",
-    "tsx": "^4.22.4"
-  },
+  "dependencies": {},
   "devDependencies": {
     "@types/node": "^26.0.1",
     "typescript": "^5.7.2"

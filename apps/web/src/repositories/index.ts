@@ -41,8 +41,9 @@ import {
   httpCategoryRepository,
   httpTransactionRepository,
 } from "@/repositories/httpRepositories";
+import { isRemoteDataSource } from "@/services/apiConfig";
 
-const useHttpDataSource = ["http", "unicloud"].includes(import.meta.env.VITE_DATA_SOURCE ?? "");
+const useHttpDataSource = isRemoteDataSource();
 
 export const appDataRepository = useHttpDataSource ? httpAppDataRepository : indexedDbAppDataRepository;
 export const assetRepository = useHttpDataSource ? httpAssetRepository : indexedDbAssetRepository;

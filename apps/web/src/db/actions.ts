@@ -1,5 +1,6 @@
 import { rizhiDb } from "@/db/rizhiDb";
 import { accountFlowDelta } from "@/domain/accountCalculations";
+import { categoryHasScope, transactionTypeToScope } from "@/domain/categoryScopes";
 import type {
   AccountFlowRecord,
   AssetAttachmentRecord,
@@ -82,6 +83,7 @@ export type CreateTransactionInput = {
   addonId?: ID;
   merchant?: string;
   note?: string;
+  receiptUrl?: string;
 };
 
 export type UpdateTransactionInput = CreateTransactionInput & {
@@ -232,28 +234,18 @@ function normalizeAttachments(attachments?: AssetAttachmentRecord[]) {
     }));
 }
 
-function imageUrlsToAttachments(imageUrl?: string, imageUrls?: string[], existing?: AssetAttachmentRecord[]) {
+function imageUrlsToAttachments(
+  imageUrl?: string,
+  imageUrls?: string[],
+  existing?: AssetAttachmentRecord[],
+  namePrefix = "资产图片",
+) {
   const normalized = normalizeImageUrls([imageUrl, ...(imageUrls ?? [])].filter((url): url is string => Boolean(url))) ?? [];
   const existingNonImages = existing?.filter((attachment) => attachment.type !== "asset_image") ?? [];
   const imageAttachments = normalized.map((url, index): AssetAttachmentRecord => ({
     id: existing?.find((attachment) => attachment.url === url)?.id ?? createId("att"),
     type: "asset_image",
-    name: index === 0 ? "资产主图" : `资产图片 ${index + 1}`,
-    url,
-    sort: index + 1,
-    isCover: url === normalizeImageUrl(imageUrl, imageUrls) || (!imageUrl && index === 0),
-    createdAt: existing?.find((attachment) => attachment.url === url)?.createdAt ?? nowIso(),
-  }));
-  return normalizeAttachments([...imageAttachments, ...existingNonImages]);
-}
-
-function addonImageUrlsToAttachments(imageUrl?: string, imageUrls?: string[], existing?: AssetAttachmentRecord[]) {
-  const normalized = normalizeImageUrls([imageUrl, ...(imageUrls ?? [])].filter((url): url is string => Boolean(url))) ?? [];
-  const existingNonImages = existing?.filter((attachment) => attachment.type !== "asset_image") ?? [];
-  const imageAttachments = normalized.map((url, index): AssetAttachmentRecord => ({
-    id: existing?.find((attachment) => attachment.url === url)?.id ?? createId("att"),
-    type: "asset_image",
-    name: index === 0 ? "附加项主图" : `附加项图片 ${index + 1}`,
+    name: index === 0 ? `${namePrefix}主图` : `${namePrefix} ${index + 1}`,
     url,
     sort: index + 1,
     isCover: url === normalizeImageUrl(imageUrl, imageUrls) || (!imageUrl && index === 0),
@@ -296,25 +288,16 @@ function assertManualTransactionEditable(transaction: TransactionRecord) {
   }
 }
 
-function applyAccountDelta(account: MoneyAccountRecord, type: TransactionType, amount: number) {
-  if (account.direction === "asset") {
-    if (type === "income" || type === "refund") return account.balance + amount;
-    return account.balance - amount;
-  }
-
-  if (type === "income" || type === "refund" || type === "repayment") {
-    return account.balance - amount;
-  }
-
-  return account.balance + amount;
-}
-
 function accountDelta(account: MoneyAccountRecord, type: TransactionType, amount: number) {
   if (account.direction === "asset") {
     return type === "income" || type === "refund" ? amount : -amount;
   }
 
   return type === "income" || type === "refund" || type === "repayment" ? -amount : amount;
+}
+
+function applyAccountDelta(account: MoneyAccountRecord, type: TransactionType, amount: number) {
+  return account.balance + accountDelta(account, type, amount);
 }
 
 async function transactionCategorySnapshot(categoryId: ID, subCategoryId?: ID): Promise<TransactionRecord["categorySnapshot"]> {
@@ -339,19 +322,18 @@ async function transactionCategorySnapshot(categoryId: ID, subCategoryId?: ID): 
 async function assertUsableTransactionCategory(categoryId: ID, type: TransactionType, subCategoryId?: ID) {
   const category = await rizhiDb.categories.get(categoryId);
   if (!category) throw new Error("交易分类不存在");
-  if (category.domain !== "transaction") throw new Error("请选择交易分类");
   if (category.deletedAt || category.enabled === false) throw new Error("该分类已停用");
-  if ((type === "expense" || type === "income") && category.type !== type) {
-    throw new Error(type === "expense" ? "请选择支出分类" : "请选择收入分类");
+  const scope = transactionTypeToScope(type);
+  if (scope && !categoryHasScope(category, scope)) {
+    throw new Error(scope === "expense" ? "请选择支出分类" : "请选择收入分类");
   }
 
   if (!subCategoryId) return;
   const subCategory = await rizhiDb.categories.get(subCategoryId);
   if (!subCategory) throw new Error("交易子分类不存在");
-  if (subCategory.domain !== "transaction") throw new Error("请选择交易子分类");
   if (subCategory.deletedAt || subCategory.enabled === false) throw new Error("该子分类已停用");
   if (subCategory.parentId !== categoryId) throw new Error("子分类不属于当前一级分类");
-  if (subCategory.type !== category.type) throw new Error("子分类类型和一级分类不一致");
+  if (scope && !categoryHasScope(subCategory, scope)) throw new Error("子分类用途和一级分类不一致");
 }
 
 async function withTransactionCategoryMeta<T extends Pick<TransactionRecord, "categoryId" | "type"> & Partial<Pick<TransactionRecord, "subCategoryId" | "businessType" | "categorySnapshot">>>(
@@ -471,6 +453,7 @@ export async function createTransaction(input: CreateTransactionInput) {
       addonId: input.addonId,
       merchant: input.merchant,
       note: input.note,
+      receiptUrl: input.receiptUrl,
       createdAt: timestamp,
       updatedAt: timestamp,
     }, true);
@@ -516,8 +499,9 @@ export async function updateTransaction(input: UpdateTransactionInput) {
       assetId: input.assetId,
       assetSnapshot: linkedAsset ? assetSnapshot(linkedAsset) : oldTransaction.assetSnapshot,
       addonId: input.addonId,
-      merchant: input.merchant,
-      note: input.note,
+        merchant: input.merchant,
+        note: input.note,
+        receiptUrl: input.receiptUrl,
       updatedAt: timestamp,
     }, true);
 
@@ -1250,7 +1234,7 @@ export async function createAssetAddonWithExpense(input: CreateAddonInput) {
       transactionId,
       includedInCost: direction === "expense" && input.includedInCost,
       notes: input.notes,
-      attachments: normalizeAttachments(input.attachments) ?? addonImageUrlsToAttachments(input.imageUrl, input.imageUrls),
+      attachments: normalizeAttachments(input.attachments) ?? imageUrlsToAttachments(input.imageUrl, input.imageUrls, undefined, "附加项图片"),
       createdAt: timestamp,
       updatedAt: timestamp,
     };
@@ -1296,7 +1280,7 @@ export async function updateAssetAddonWithExpense(input: UpdateAddonInput) {
       notes: input.notes,
       attachments: input.attachments
         ? normalizeAttachments(input.attachments)
-        : addonImageUrlsToAttachments(input.imageUrl, input.imageUrls, addon.attachments),
+        : imageUrlsToAttachments(input.imageUrl, input.imageUrls, addon.attachments, "附加项图片"),
       updatedAt: timestamp,
     };
 

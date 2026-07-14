@@ -19,7 +19,9 @@ export type AccountType =
   | "other";
 export type TransactionType = "expense" | "income" | "transfer" | "refund" | "repayment" | "asset_purchase";
 export type TransactionBusinessType = "normal" | "asset_purchase" | "asset_addon" | "asset_transfer" | "debt_repayment" | "refund" | "account_transfer" | "balance_adjustment" | "legacy_part_event";
-export type CategoryDomain = "asset" | "transaction" | "account";
+export type CategoryDomain = "asset" | "transaction" | "account" | "bank";
+export type CategoryScope = "asset" | "expense" | "income";
+export type AccountTypeGroup = "asset" | "credit" | "stored_value";
 export type FlowDirection = "in" | "out";
 
 export type TimestampFields = {
@@ -105,6 +107,7 @@ export type AssetPartEventRecord = TimestampFields & {
 
 export type MoneyAccountRecord = TimestampFields & {
   id: ID;
+  accountTypeId?: ID;
   name: string;
   type: AccountType;
   direction: AccountDirection;
@@ -115,6 +118,10 @@ export type MoneyAccountRecord = TimestampFields & {
   repaymentDay?: number;
   color?: string;
   icon?: string;
+  iconUrl?: string;
+  iconFileId?: string;
+  bankName?: string;
+  bankId?: ID;
   note?: string;
   enabled?: boolean;
 };
@@ -165,9 +172,16 @@ export type CategoryRecord = {
   parentId?: ID;
   color?: string;
   icon?: string;
+  iconUrl?: string;
+  iconFileId?: string;
+  scopes?: CategoryScope[];
+  bankName?: string;
+  bankId?: ID;
   monthlyBudget?: number;
   enabled?: boolean;
   isSystem?: boolean;
+  accountGroup?: AccountTypeGroup;
+  accountDirection?: AccountDirection;
   deletedAt?: string;
 };
 
@@ -176,7 +190,6 @@ export type UserSettingsRecord = TimestampFields & {
   currency: "CNY";
   locale: "zh-CN";
   theme: "light" | "dark" | "system";
-  firstDayOfWeek: 0 | 1;
   displayName?: string;
   avatarDataUrl?: string;
   avatarFileId?: string;
@@ -191,3 +204,4 @@ export type MetadataRecord = {
   key: string;
   value: string;
 };
+

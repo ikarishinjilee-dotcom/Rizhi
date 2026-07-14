@@ -1,159 +1,107 @@
 <template>
   <RDataGate :loading="store.loading" :ready="store.initialized" :error="store.error" @retry="initializeData">
     <section class="ledger-page">
-    <div class="ledger-tabs">
-      <button :class="{ active: mode === 'records' }" @click="mode = 'records'">交易记录</button>
-      <button :class="{ active: mode === 'calendar' }" @click="mode = 'calendar'">日历视图</button>
+    <div v-if="mode === 'records'" class="ledger-dashboard">
+      <header class="ledger-dashboard__toolbar">
+        <div class="ledger-period-controls">
+          <button type="button" class="ledger-icon-button" aria-label="上个月" @click="shiftCalendarMonth(-1)"><ChevronLeft :size="16" /></button>
+          <div class="ledger-month-picker">
+            <button type="button" class="ledger-month-select" aria-label="选择月份" @click="openMonthPicker">
+              {{ ledgerView === 'year' ? yearLabel : monthLabel }} <ChevronDown :size="15" />
+            </button>
+            <div v-if="showMonthPicker" class="ledger-month-picker__popover" :class="{ 'is-year-picker': ledgerView === 'year' }">
+              <div v-if="ledgerView === 'month'" class="ledger-month-picker__years">
+                <button v-for="year in monthPickerYears" :key="year" type="button" :class="{ active: year === monthPickerYear }" @click="monthPickerYear = year">{{ year }}</button>
+              </div>
+              <div v-if="ledgerView === 'month'" class="ledger-month-picker__months">
+                <button v-for="month in 12" :key="month" type="button" :class="{ active: monthPickerYear === new Date(calendarMonth).getFullYear() && month === new Date(calendarMonth).getMonth() + 1 }" @click="selectPickerMonth(month)">{{ month }}月</button>
+              </div>
+              <div v-else class="ledger-month-picker__year-grid">
+                <button v-for="year in monthPickerYears" :key="year" type="button" :class="{ active: year === new Date(calendarMonth).getFullYear() }" @click="selectPickerYear(year)">{{ year }}</button>
+              </div>
+            </div>
+          </div>
+          <button type="button" class="ledger-icon-button" aria-label="下个月" @click="shiftCalendarMonth(1)"><ChevronRight :size="16" /></button>
+          <div class="ledger-mode-switch">
+            <button :class="{ active: ledgerView === 'month' }" type="button" @click="ledgerView = 'month'">月</button>
+            <button :class="{ active: ledgerView === 'year' }" type="button" @click="ledgerView = 'year'">年</button>
+          </div>
+        </div>
+        <div class="ledger-dashboard__actions">
+          <RButton variant="secondary" @click="showCalendarModal = true"><NotebookText :size="15" /> 日报表</RButton>
+          <RButton variant="secondary" aria-label="打开日历" @click="showCalendarModal = true"><CalendarDays :size="15" /> 日历模式</RButton>
+          <RButton @click="openCreateModal('expense')"><Plus :size="16" /> 记一笔</RButton>
+        </div>
+      </header>
+
+      <div v-if="showFilterPanel" class="ledger-filter-panel">
+        <RSelect v-model="typeFilter" :options="typeOptions" placeholder="全部类型" />
+        <RSelect v-model="categoryFilter" :options="categoryOptions" placeholder="全部一级分类" />
+        <RSelect v-model="subCategoryFilter" :options="subCategoryFilterOptions" placeholder="全部子分类" />
+        <RSelect v-model="accountFilter" :options="accountOptions" placeholder="全部账户" />
+        <div class="ledger-filter-panel__actions">
+          <RButton variant="danger" @click="openCreateModal('expense')">支出</RButton>
+          <RButton @click="openCreateModal('income')">收入</RButton>
+        </div>
+      </div>
+
+      <section class="ledger-overview ledger-surface">
+        <div class="ledger-section-title"><span>收支总览</span><small>{{ monthLabel }}</small></div>
+        <div class="ledger-overview__grid">
+          <article><span>收入</span><strong class="success">{{ formatAmount(monthIncome) }}</strong><i class="ledger-stat-icon income">↗</i></article>
+          <article><span>支出</span><strong class="danger">{{ formatAmount(monthExpense) }}</strong><i class="ledger-stat-icon expense">↗</i></article>
+          <article><span>结余</span><strong :class="monthNet >= 0 ? 'success' : 'danger'">{{ monthNet >= 0 ? '' : '-' }}{{ formatAmount(monthNet) }}</strong><i class="ledger-stat-icon balance">□</i></article>
+          <article><span>日均支出</span><strong>{{ formatAmount(dailyExpenseAverage) }}</strong><i class="ledger-stat-icon average">▥</i></article>
+        </div>
+      </section>
+
+      <div class="ledger-content-grid">
+        <div class="ledger-content-grid__left">
+          <section class="ledger-surface ledger-chart-panel">
+            <div class="ledger-section-title"><span>{{ ledgerView === 'year' ? '月收支统计' : '日收支统计' }}</span><div class="ledger-chart-tabs"><button :class="{ active: chartMetric === 'expense' }" @click="chartMetric = 'expense'">支出</button><button :class="{ active: chartMetric === 'income' }" @click="chartMetric = 'income'">收入</button><button :class="{ active: chartMetric === 'all' }" @click="chartMetric = 'all'">全部</button></div></div>
+            <VChart class="ledger-echart" :option="dailyChartOption" autoresize @click="handleDailyChartClick" />
+          </section>
+
+          <section class="ledger-surface ledger-category-panel">
+            <div class="ledger-section-title"><span>分类统计</span><div class="ledger-chart-tabs"><button :class="{ active: categoryMetric === 'expense' }" type="button" @click="categoryMetric = 'expense'">支出</button><button :class="{ active: categoryMetric === 'income' }" type="button" @click="categoryMetric = 'income'">收入</button></div></div>
+            <div v-if="categorySummary.length" class="ledger-category-summary">
+              <div class="ledger-donut" @mousemove="handleDonutMouseMove" @mouseleave="hoveredCategoryKey = null"><svg viewBox="0 0 152 152" aria-hidden="true"><path v-for="(item, index) in categorySummary" :key="item.key" :d="categorySegmentPath(index)" :fill="item.color" /></svg><span>总计<strong>{{ formatAmount(categorySummaryTotal) }}</strong></span><div v-if="hoveredCategory" class="ledger-donut-tooltip"><i :style="{ background: hoveredCategory.color }"></i><strong>{{ hoveredCategory.name }}</strong><b>{{ formatAmount(hoveredCategory.total) }}</b><em>{{ hoveredCategory.percent }}%</em></div></div>
+              <div class="ledger-category-summary__list">
+                <div v-for="item in categorySummary" :key="item.key">
+                  <span class="ledger-category-name"><img v-if="item.iconUrl" :src="item.iconUrl" alt="" /><i v-else :style="{ background: item.color }">{{ item.icon || item.name.slice(0, 1) }}</i>{{ item.name }}</span><strong>{{ formatAmount(item.total) }}</strong><em>{{ item.percent }}%</em>
+                  <b><i :style="{ width: `${item.percent}%`, background: item.color }"></i></b>
+                </div>
+              </div>
+            </div>
+            <REmptyState v-else title="暂无分类数据" description="选择其他月份或新增一笔记账。" />
+          </section>
+        </div>
+
+        <section class="ledger-surface ledger-day-panel">
+          <div class="ledger-day-panel__head">
+            <div class="ledger-day-panel__date">
+              <button type="button" aria-label="前一天" @click="shiftSelectedDate(-1)"><ChevronLeft :size="15" /></button>
+              <div><strong>{{ selectedDateDisplay }}</strong><span>{{ selectedDateContextLabel }}</span></div>
+              <button type="button" aria-label="后一天" @click="shiftSelectedDate(1)"><ChevronRight :size="15" /></button>
+            </div>
+            <div class="ledger-day-panel__totals"><b class="income">收入：{{ formatAmount(selectedDayIncome) }}</b><b class="expense">支出：{{ formatAmount(selectedDayExpense) }}</b></div>
+          </div>
+          <div class="ledger-day-panel__columns"><span>分类</span><span>关联账户</span><span>金额</span></div>
+          <div v-if="selectedDayEntries.length" class="ledger-day-list">
+            <div v-for="entry in selectedDayEntries" :key="entry.id" class="ledger-day-row" data-testid="ledger-row" role="button" tabindex="0" @click="openEntryDetail(entry.id)" @keydown.enter="openEntryDetail(entry.id)">
+              <span class="ledger-day-row__category"><img v-if="summaryCategoryForEntry(entry).iconUrl" :src="summaryCategoryForEntry(entry).iconUrl" alt="" /><i v-else>{{ categoryInitial(entry) }}</i><strong>{{ categoryLabel(entry) }}</strong></span>
+              <span class="ledger-day-row__note ledger-account-cell"><img v-if="accountForEntry(entry)?.iconUrl" :src="accountForEntry(entry)?.iconUrl" alt="" /><i v-else :style="{ background: accountForEntry(entry)?.color || '#edf4ff', color: accountForEntry(entry)?.color ? '#fff' : 'var(--color-primary)' }">{{ accountForEntry(entry)?.icon || accountForEntry(entry)?.name?.slice(0, 1) || '账' }}</i>{{ accountRelationLabel(entry) }}</span>
+              <strong class="ledger-day-row__amount" :class="isPositive(entry.type) ? 'positive' : 'negative'">{{ amountPrefix(entry) }}{{ formatAmount(entry.amount) }}</strong>
+            </div>
+          </div>
+          <REmptyState v-else title="这一天暂无交易" description="选择其他日期或记录一笔新账。" />
+          <button type="button" class="ledger-detail-link" @click="showCalendarModal = true">查看账单明细 →</button>
+        </section>
+      </div>
     </div>
 
-    <div class="ledger-filters">
-      <RDatePicker v-model="dateRange" type="daterange" />
-      <RSelect v-model="typeFilter" :options="typeOptions" placeholder="全部类型" />
-      <RSelect v-model="categoryFilter" :options="categoryOptions" placeholder="全部一级分类" />
-      <RSelect v-model="subCategoryFilter" :options="subCategoryFilterOptions" placeholder="全部子分类" />
-      <RSelect v-model="assetFilter" :options="assetOptions" placeholder="全部物品" />
-      <RSelect v-model="accountFilter" :options="accountOptions" placeholder="全部账户" />
-      <div class="create-actions">
-        <RButton variant="danger" @click="openCreateModal('expense')">支出</RButton>
-        <RButton @click="openCreateModal('income')">收入</RButton>
-      </div>
-    </div>
-
-    <RInput v-model="keyword" class="ledger-search" placeholder="搜索商家、备注、金额" />
-
+    <n-modal v-model:show="showCalendarModal" preset="card" class="rizhi-calendar-modal" :bordered="false" :style="{ width: 'min(1180px, calc(100vw - 48px))', height: 'min(720px, calc(100dvh - 48px))', maxHeight: 'calc(100dvh - 48px)' }">
     <RCard>
-      <div class="ledger-summary">
-        <div><span>支出</span><strong class="danger">{{ formatAmount(monthExpense) }}</strong></div>
-        <div><span>收入</span><strong class="success">{{ formatAmount(monthIncome) }}</strong></div>
-        <div><span>净流入</span><strong :class="monthNet >= 0 ? 'success' : 'danger'">{{ monthNet >= 0 ? "" : "-" }}{{ formatAmount(monthNet) }}</strong></div>
-      </div>
-    </RCard>
-
-    <RCard>
-      <div class="category-breakdown">
-        <div class="section-head">
-          <div>
-            <span>分类统计</span>
-            <h3>当前筛选范围的收支结构</h3>
-          </div>
-          <small>{{ categoryBreakdown.length ? `共 ${categoryBreakdown.length} 个一级分类` : "暂无分类数据" }}</small>
-        </div>
-        <div v-if="categoryBreakdown.length" class="category-breakdown__grid">
-          <section v-for="group in categoryBreakdown" :key="group.key" class="category-stat-card">
-            <div class="category-stat-card__head">
-              <RTag :tone="group.direction === 'income' ? 'success' : 'danger'">{{ group.direction === "income" ? "收入" : "支出" }}</RTag>
-              <strong>{{ group.categoryName }}</strong>
-              <em :class="group.direction === 'income' ? 'positive' : 'negative'">
-                {{ group.direction === "income" ? "+" : "-" }}{{ formatAmount(group.total) }}
-              </em>
-            </div>
-            <div class="category-stat-card__bar">
-              <i :class="{ over: group.budgetStatus === 'over', warning: group.budgetStatus === 'warning' }" :style="{ width: `${group.budgetBarWidth ?? group.ratio}%` }"></i>
-            </div>
-            <div v-if="group.monthlyBudget" class="budget-row" :class="group.budgetStatus">
-              <span>月预算 {{ formatAmount(group.monthlyBudget) }}</span>
-              <strong>{{ group.budgetStatus === "over" ? "已超出" : "已使用" }} {{ group.budgetProgress }}%</strong>
-            </div>
-            <div class="sub-category-list">
-              <div v-for="sub in group.subCategories" :key="sub.key">
-                <span>{{ sub.name }}</span>
-                <strong>{{ formatAmount(sub.total) }}</strong>
-              </div>
-            </div>
-          </section>
-        </div>
-        <div v-else class="category-breakdown__empty">当前筛选范围内还没有可统计的记账。</div>
-      </div>
-    </RCard>
-
-    <RCard>
-      <div class="trend-panel">
-        <div class="section-head">
-          <div>
-            <span>趋势分析</span>
-            <h3>最近 3 个月收支变化</h3>
-          </div>
-          <small>跟随当前分类、账户和关键词筛选</small>
-        </div>
-        <div class="trend-grid">
-          <section class="trend-months">
-            <div v-for="month in recentMonthSummaries" :key="month.key" class="trend-month-card">
-              <span>{{ month.label }}</span>
-              <strong :class="month.net >= 0 ? 'positive' : 'negative'">{{ month.net >= 0 ? "" : "-" }}{{ formatAmount(month.net) }}</strong>
-              <div>
-                <em class="positive">收入 {{ formatAmount(month.income) }}</em>
-                <em class="negative">支出 {{ formatAmount(month.expense) }}</em>
-              </div>
-            </div>
-          </section>
-          <section class="trend-card">
-            <div class="trend-card__head">
-              <span>支出分类环比</span>
-              <strong>{{ categoryMoMTrends.length ? "本月 vs 上月" : "暂无可比数据" }}</strong>
-            </div>
-            <div v-if="categoryMoMTrends.length" class="mom-list">
-              <div v-for="item in categoryMoMTrends" :key="item.categoryId">
-                <span>{{ item.name }}</span>
-                <strong :class="item.delta >= 0 ? 'negative' : 'positive'">{{ item.delta >= 0 ? "+" : "" }}{{ item.delta }}%</strong>
-                <em>{{ formatAmount(item.current) }}</em>
-              </div>
-            </div>
-            <p v-else>最近两个月还没有足够的支出分类数据。</p>
-          </section>
-          <section class="trend-card">
-            <div class="trend-card__head">
-              <span>预算提醒</span>
-              <strong>{{ budgetInsights.length ? `${budgetInsights.length} 个分类` : "暂无预算提醒" }}</strong>
-            </div>
-            <div v-if="budgetInsights.length" class="budget-insight-list">
-              <div v-for="item in budgetInsights" :key="item.categoryId" :class="item.status">
-                <span>{{ item.name }}</span>
-                <strong>{{ item.status === "over" ? `超出 ${formatAmount(item.diff)}` : `剩余 ${formatAmount(item.diff)}` }}</strong>
-                <em>{{ item.progress }}%</em>
-              </div>
-            </div>
-            <p v-else>设置支出分类月预算后，这里会提示剩余和超支。</p>
-          </section>
-        </div>
-      </div>
-    </RCard>
-
-    <RCard v-if="mode === 'records'">
-      <table v-if="filteredEntries.length" class="ledger-table">
-        <thead>
-          <tr>
-            <th>日期</th>
-            <th>类型</th>
-            <th>分类</th>
-            <th>商家/备注</th>
-            <th>账户</th>
-            <th>关联资产</th>
-            <th>金额</th>
-            <th>操作</th>
-          </tr>
-        </thead>
-        <tbody>
-          <tr v-for="entry in filteredEntries" :key="entry.id" data-testid="ledger-row">
-            <td>{{ formatDateTime(displayOccurredAt(entry)) }}</td>
-            <td><RTag :tone="tagTone(entry.type)">{{ transactionTypeLabel(entry.type) }}</RTag></td>
-            <td>{{ categoryLabel(entry) }}</td>
-            <td>{{ entry.merchant || entry.note || "-" }}</td>
-            <td>{{ accountRelationLabel(entry) }}</td>
-            <td>{{ assetName(entry) }}</td>
-            <td class="amount" :class="{ positive: isPositive(entry.type), negative: !isPositive(entry.type), warning: isRepaymentTransaction(entry) }">
-              {{ amountPrefix(entry) }}{{ formatAmount(entry.amount) }}
-            </td>
-            <td class="ops">
-              <button :disabled="isProtectedTransaction(entry) || isRepaymentTransaction(entry) || isTransferTransaction(entry)" :title="protectedTransactionTip(entry)" @click="editEntry(entry.id)">编辑</button>
-              <button data-testid="ledger-delete-transaction" :disabled="isProtectedTransaction(entry)" :title="protectedTransactionTip(entry)" @click="deleteEntry(entry.id)">{{ isRepaymentTransaction(entry) || isTransferTransaction(entry) ? "撤销" : "删除" }}</button>
-            </td>
-          </tr>
-        </tbody>
-      </table>
-      <REmptyState v-else title="没有符合条件的交易" description="调整筛选条件，或新增一笔收入或支出。" />
-    </RCard>
-
-    <RCard v-else>
       <div class="ledger-calendar">
         <div class="calendar-toolbar">
           <div>
@@ -182,7 +130,7 @@
               <div v-if="day.count" class="day-summary">
                 <em v-if="day.income" class="positive">+{{ compactAmount(day.income) }}</em>
                 <em v-if="day.expense" class="negative">-{{ compactAmount(day.expense) }}</em>
-                <strong :class="day.net >= 0 ? 'positive' : 'negative'">{{ day.net >= 0 ? "+" : "-" }}{{ compactAmount(Math.abs(day.net)) }}</strong>
+                <strong :class="day.net >= 0 ? 'net-positive' : 'net-negative'">{{ day.net >= 0 ? "+" : "-" }}{{ compactAmount(Math.abs(day.net)) }}</strong>
               </div>
               <small v-if="day.count">{{ day.count }} 笔</small>
             </button>
@@ -197,14 +145,6 @@
               <div><span>收入</span><strong class="positive">{{ formatAmount(selectedDayIncome) }}</strong></div>
               <div><span>支出</span><strong class="negative">{{ formatAmount(selectedDayExpense) }}</strong></div>
               <div><span>净流入</span><strong :class="selectedDayNet >= 0 ? 'positive' : 'negative'">{{ selectedDayNet >= 0 ? "" : "-" }}{{ formatAmount(selectedDayNet) }}</strong></div>
-            </div>
-            <div v-if="selectedDayCategoryBreakdown.length" class="calendar-category-breakdown">
-              <div v-for="group in selectedDayCategoryBreakdown" :key="group.key">
-                <span>{{ group.categoryName }}</span>
-                <strong :class="group.direction === 'income' ? 'positive' : 'negative'">
-                  {{ group.direction === "income" ? "+" : "-" }}{{ formatAmount(group.total) }}
-                </strong>
-              </div>
             </div>
             <div v-if="selectedDayEntries.length" class="calendar-entry-list">
               <div v-for="entry in selectedDayEntries" :key="entry.id" class="calendar-entry">
@@ -223,10 +163,25 @@
         </div>
       </div>
     </RCard>
+    </n-modal>
 
     <div v-if="mode === 'records'" class="pagination">
       <span>当前筛选共 {{ filteredEntries.length }} 条交易</span>
     </div>
+
+    <n-modal v-model:show="showDetailModal" preset="card" :bordered="false" :style="{ width: 'min(520px, calc(100vw - 48px))', borderRadius: '18px' }">
+      <section v-if="selectedTransaction" class="ledger-entry-detail">
+        <header><div><span>记账详情</span><h2>{{ categoryLabel(selectedTransaction) }}</h2></div><button type="button" aria-label="关闭详情" @click="showDetailModal = false">×</button></header>
+        <div class="ledger-entry-detail__amount" :class="isPositive(selectedTransaction.type) ? 'positive' : 'negative'">{{ amountPrefix(selectedTransaction) }}{{ formatAmount(selectedTransaction.amount) }}</div>
+        <dl>
+          <div><dt>发生时间</dt><dd>{{ formatDateTime(displayOccurredAt(selectedTransaction)) }}</dd></div>
+          <div><dt>账户</dt><dd>{{ accountRelationLabel(selectedTransaction) }}</dd></div>
+          <div><dt>商家 / 来源</dt><dd>{{ selectedTransaction.merchant || '-' }}</dd></div>
+          <div><dt>备注</dt><dd>{{ selectedTransaction.note || '-' }}</dd></div>
+        </dl>
+        <footer><RButton variant="secondary" @click="showDetailModal = false">关闭</RButton><RButton v-if="!isRepaymentTransaction(selectedTransaction) && !isTransferTransaction(selectedTransaction)" variant="secondary" @click="editSelectedEntry">编辑</RButton><RButton variant="danger" :disabled="isProtectedTransaction(selectedTransaction)" @click="deleteSelectedEntry">删除</RButton></footer>
+      </section>
+    </n-modal>
 
     <n-modal
       v-model:show="showModal"
@@ -236,14 +191,15 @@
       :mask-closable="false"
       class="rizhi-ledger-modal-card"
       content-style="padding: 0;"
-      :style="{ width: 'min(860px, calc(100vw - 48px))', maxHeight: 'calc(100dvh - 48px)', borderRadius: '18px', overflow: 'hidden' }"
+      :style="{ width: 'min(860px, calc(100vw - 48px))', height: 'min(720px, calc(100dvh - 48px))', maxHeight: 'calc(100dvh - 48px)', borderRadius: '18px', overflow: 'hidden' }"
     >
-      <section class="ledger-modal" :class="{ income: draftType === 'income' }">
+      <section class="ledger-modal" :class="{ income: draftType === 'income', transfer: draftType === 'transfer' }">
         <header class="ledger-modal__hero">
           <div>
-            <span>{{ draftType === "income" ? "Income" : "Expense" }}</span>
-            <h2>{{ draftType === "income" ? "记录一笔收入" : "记录一笔日常支出" }}</h2>
-            <p>{{ draftType === "income" ? "收入会增加所选账户余额。" : "支出会减少现金账户余额，或增加信用/负债账户欠款。" }}</p>
+            <div class="ledger-modal__tabs"><button type="button" :class="{ active: draftType === 'expense' }" @click="switchDraftType('expense')">支出</button><button type="button" :class="{ active: draftType === 'income' }" @click="switchDraftType('income')">收入</button><button type="button" :class="{ active: draftType === 'transfer' }" @click="switchDraftType('transfer')">转账</button></div>
+            <span>{{ draftType === "income" ? "Income" : draftType === "transfer" ? "Transfer" : "Expense" }}</span>
+            <h2>{{ draftType === "income" ? "记录一笔收入" : draftType === "transfer" ? "记录一次账户转账" : "记录一笔日常支出" }}</h2>
+            <p>{{ draftType === "income" ? "收入会增加所选账户余额。" : draftType === "transfer" ? "转账会生成转出和转入两条账户流水。" : "支出会减少现金账户余额，或增加信用/负债账户欠款。" }}</p>
           </div>
           <button type="button" @click="requestCloseLedgerModal">×</button>
         </header>
@@ -256,16 +212,20 @@
               <input v-model="draftAmount" placeholder="0.00" />
             </div>
             <em>{{ draftErrors.amount }}</em>
-            <p>{{ draftType === "income" ? "收入会增加所选账户余额。" : "支出会同步写入账户流水。" }}</p>
+            <p>{{ draftType === "income" ? "收入会增加所选账户余额。" : draftType === "transfer" ? "金额会从转出账户扣除并转入目标账户。" : "支出会同步写入账户流水。" }}</p>
           </div>
 
-          <div class="ledger-form">
+          <div v-if="draftType === 'transfer'" class="ledger-form transfer-form">
+            <section class="form-section"><h3>转账信息</h3><div class="form-grid"><label :class="{ invalid: transferErrors.fromAccountId }"><span>转出账户</span><RSelect v-model="transferDraft.fromAccountId" :options="accountCreateOptions" placeholder="选择转出账户" /><em>{{ transferErrors.fromAccountId }}</em></label><label :class="{ invalid: transferErrors.toAccountId }"><span>转入账户</span><RSelect v-model="transferDraft.toAccountId" :options="accountCreateOptions" placeholder="选择转入账户" /><em>{{ transferErrors.toAccountId }}</em></label><label><span>备注</span><RInput v-model="transferDraft.note" placeholder="例如 支付宝转入微信" /></label></div></section>
+            <RInlineFeedback v-if="transferErrors.form" tone="danger">{{ transferErrors.form }}</RInlineFeedback>
+          </div>
+          <div v-else class="ledger-form">
             <section class="form-section">
               <h3>交易信息</h3>
               <div class="form-grid">
                 <label :class="{ invalid: draftErrors.date }"><span>发生日期</span><RDatePicker v-model="transactionDate" type="datetime" placeholder="选择日期时间" /><em>{{ draftErrors.date }}</em></label>
-                <label :class="{ invalid: draftErrors.categoryId }"><span>一级分类</span><RSelect v-model="draftCategoryId" :options="currentCategoryOptions" placeholder="选择一级分类" /><em>{{ draftErrors.categoryId }}</em></label>
-                <label><span>子分类</span><RSelect v-model="draftSubCategoryId" :options="currentSubCategoryOptions" placeholder="可选，例如 午餐 / 地铁" /></label>
+                <label class="category-field" :class="{ invalid: draftErrors.categoryId }"><span>分类</span><div class="ledger-category-picker"><button v-for="category in currentRootCategories" :key="category.id" type="button" :class="{ active: draftCategoryId === category.id }" @click="selectTransactionRootCategory(category.id)"><img v-if="category.iconUrl" :src="category.iconUrl" alt="" /><i v-else>{{ categoryIconText(category) }}</i>{{ categoryDisplayName(category.id, category.name) }}</button></div><em>{{ draftErrors.categoryId }}</em></label>
+                <label v-if="currentSubCategories.length" class="category-field"><span>子分类</span><div class="ledger-category-picker ledger-category-picker--children"><button v-for="category in currentSubCategories" :key="category.id" type="button" :class="{ active: draftSubCategoryId === category.id }" @click="draftSubCategoryId = category.id"><img v-if="category.iconUrl" :src="category.iconUrl" alt="" /><i v-else>{{ categoryIconText(category) }}</i>{{ categoryDisplayName(category.id, category.name) }}</button><button type="button" :class="{ active: !draftSubCategoryId || draftSubCategoryId === 'none' }" @click="draftSubCategoryId = 'none'">不选择子分类</button></div></label>
                 <label :class="{ invalid: draftErrors.accountId }"><span>{{ draftType === "income" ? "收款账户" : "付款账户" }}</span><RSelect v-model="draftAccountId" :options="accountCreateOptions" placeholder="选择账户" /><em>{{ draftErrors.accountId }}</em></label>
                 <label><span>{{ draftType === "income" ? "来源" : "商家" }}</span><RInput v-model="draftMerchant" :placeholder="draftType === 'income' ? '例如 工资 / 副业' : '例如 麦当劳 / 京东'" /></label>
               </div>
@@ -275,6 +235,14 @@
               <h3>资产关联（可选）</h3>
               <div class="asset-link-box" :class="{ invalid: draftErrors.assetId }">
                 <RSelect v-model="draftAssetId" :options="assetCreateOptions" placeholder="选择已有资产" />
+                <RInput v-model="assetSearchQuery" placeholder="搜索资产名称、品牌或型号" />
+                <div v-if="assetSearchQuery.trim()" class="asset-search-results">
+                  <button v-for="asset in assetSearchResults" :key="asset.id" type="button" :class="{ active: draftAssetId === asset.id }" @click="draftAssetId = asset.id; assetSearchQuery = asset.name">
+                    <strong>{{ asset.name }}</strong><span>{{ [asset.brand, asset.model].filter(Boolean).join(' / ') || '未填写规格' }}</span>
+                  </button>
+                  <span v-if="!assetSearchResults.length" class="asset-search-empty">没有找到匹配资产</span>
+                </div>
+                <div v-else-if="draftAssetId" class="asset-selected-hint">已选择：{{ selectedAssetName }}</div>
                 <em>{{ draftErrors.assetId }}</em>
                 <div class="link-options">
                   <label><input v-model="assetLinkMode" type="radio" value="related" /> 仅作为相关支出</label>
@@ -287,7 +255,8 @@
             <section class="form-section">
               <h3>备注与凭证</h3>
               <RInput v-model="draftNote" placeholder="添加备注，例如订单号、用途、说明" />
-              <div class="receipt-box">+ 上传凭证</div>
+              <input ref="receiptFileInput" class="hidden-file" type="file" accept="image/png,image/jpeg,image/webp,application/pdf" @change="selectReceipt" />
+              <button type="button" class="receipt-box" @click="receiptFileInput?.click()">＋ {{ draftReceiptName || '上传凭证' }}</button>
             </section>
             <RInlineFeedback v-if="draftErrors.form" tone="danger">{{ draftErrors.form }}</RInlineFeedback>
           </div>
@@ -296,7 +265,7 @@
         <footer class="ledger-modal__footer">
           <RButton variant="secondary" @click="requestCloseLedgerModal">取消</RButton>
           <RButton :variant="draftType === 'income' ? 'primary' : 'danger'" :loading="saving" @click="saveDraft">
-            {{ draftType === "income" ? "保存收入" : "保存支出" }}
+            {{ draftType === "income" ? "保存收入" : draftType === "transfer" ? "确认转账" : "保存支出" }}
           </RButton>
         </footer>
       </section>
@@ -357,6 +326,12 @@
 import { computed, onMounted, reactive, ref, watch } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import { NModal } from "naive-ui";
+import { CalendarDays, ChevronDown, ChevronLeft, ChevronRight, NotebookText, Plus } from "@lucide/vue";
+import VChart from "vue-echarts";
+import { BarChart } from "echarts/charts";
+import { GridComponent, LegendComponent, TooltipComponent } from "echarts/components";
+import { use } from "echarts/core";
+import { CanvasRenderer } from "echarts/renderers";
 import DeleteConfirmModal from "@/components/business/DeleteConfirmModal.vue";
 import RButton from "@/components/ui/RButton.vue";
 import RCard from "@/components/ui/RCard.vue";
@@ -367,37 +342,53 @@ import RTag from "@/components/ui/RTag.vue";
 import RDataGate from "@/components/ui/RDataGate.vue";
 import RInlineFeedback from "@/components/ui/RInlineFeedback.vue";
 import REmptyState from "@/components/ui/REmptyState.vue";
+import { imageFileToPersistentUrl } from "@/utils/imageFiles";
 import type { AssetAddonRecord, TransactionRecord, TransactionType } from "@/domain/models";
 import { assetAddonService } from "@/services/assetAddonService";
+import { accountService } from "@/services/accountService";
 import { transactionService } from "@/services/transactionService";
 import { useAppDataStore } from "@/stores/appDataStore";
+
+use([BarChart, GridComponent, LegendComponent, TooltipComponent, CanvasRenderer]);
 
 const store = useAppDataStore();
 const router = useRouter();
 const route = useRoute();
 
 const mode = ref<"records" | "calendar">("records");
-const dateRange = ref<[number, number] | null>(null);
+const showCalendarModal = ref(false);
+const ledgerView = ref<"month" | "year">("month");
+const chartMetric = ref<"expense" | "income" | "all">("expense");
+const categoryMetric = ref<"expense" | "income">("expense");
+const showFilterPanel = ref(false);
+const showMonthPicker = ref(false);
+const monthPickerYear = ref(new Date().getFullYear());
 const typeFilter = ref<string | number | null>("all");
 const categoryFilter = ref<string | number | null>("all");
 const subCategoryFilter = ref<string | number | null>("all");
-const assetFilter = ref<string | number | null>("all");
 const accountFilter = ref<string | number | null>("all");
-const keyword = ref("");
 const showModal = ref(false);
+const showDetailModal = ref(false);
+const selectedTransactionId = ref<string | null>(null);
 const showDeleteModal = ref(false);
 const showProtectedTransferModal = ref(false);
 const showUnsavedLedgerModal = ref(false);
 const saving = ref(false);
 const deletingTransactionLoading = ref(false);
-const draftType = ref<"expense" | "income">("expense");
+const draftType = ref<"expense" | "income" | "transfer">("expense");
+const transferDraft = reactive({ fromAccountId: null as string | number | null, toAccountId: null as string | number | null, note: "" });
+const transferErrors = reactive({ fromAccountId: "", toAccountId: "", form: "" });
 const draftAmount = ref("");
 const draftCategoryId = ref<string | number | null>(null);
 const draftSubCategoryId = ref<string | number | null>(null);
 const draftAccountId = ref<string | number | null>(null);
 const draftAssetId = ref<string | number | null>(null);
+const assetSearchQuery = ref("");
 const draftMerchant = ref("");
 const draftNote = ref("");
+const draftReceiptUrl = ref("");
+const draftReceiptName = ref("");
+const receiptFileInput = ref<HTMLInputElement | null>(null);
 const assetLinkMode = ref<"related" | "addon-included" | "addon-excluded">("related");
 const transactionDate = ref<number | null>(Date.now());
 const draftErrors = reactive({
@@ -436,18 +427,22 @@ const subCategoryFilterOptions = computed(() => [
     .filter((category) => category.parentId && (isAllFilter(categoryFilter.value) || category.parentId === categoryFilter.value))
     .map((category) => ({ label: category.name, value: category.id })),
 ]);
-const assetOptions = computed(() => [
-  { label: "全部物品", value: "all" },
-  ...store.assets.map((asset) => ({ label: asset.name, value: asset.id })),
-]);
 const accountOptions = computed(() => [
   { label: "全部账户", value: "all" },
   ...store.accounts.map((account) => ({ label: account.name, value: account.id })),
 ]);
 const accountCreateOptions = computed(() => store.accounts.map((account) => ({ label: account.name, value: account.id })));
 const assetCreateOptions = computed(() => store.assets.map((asset) => ({ label: asset.name, value: asset.id })));
+const assetSearchResults = computed(() => {
+  const query = assetSearchQuery.value.trim().toLowerCase();
+  if (!query) return [];
+  return store.assets.filter((asset) => `${asset.name} ${asset.brand ?? ""} ${asset.model ?? ""}`.toLowerCase().includes(query)).slice(0, 8);
+});
+const selectedAssetName = computed(() => store.assets.find((asset) => asset.id === draftAssetId.value)?.name ?? "");
 const currentCategoryOptions = computed(() => (draftType.value === "income" ? incomeCategories.value : expenseCategories.value)
-  .map((category) => ({ label: category.name, value: category.id })));
+  .map((category) => ({ label: categoryDisplayName(category.id, category.name), value: category.id })));
+const currentRootCategories = computed(() => (draftType.value === "income" ? incomeCategories.value : expenseCategories.value));
+const currentSubCategories = computed(() => activeTransactionCategories.value.filter((category) => category.parentId === draftCategoryId.value && category.type === draftType.value));
 const currentSubCategoryOptions = computed(() => [
   { label: "不选择子分类", value: "none" },
   ...activeTransactionCategories.value
@@ -460,17 +455,15 @@ const ledgerEntries = computed(() => store.transactions
     new Date(displayOccurredAt(right)).getTime() - new Date(displayOccurredAt(left)).getTime() ||
     new Date(right.createdAt).getTime() - new Date(left.createdAt).getTime()));
 const filteredEntries = computed(() => {
-  const q = keyword.value.trim().toLowerCase();
-  return ledgerEntries.value.filter((entry) => matchesLedgerFilters(entry, q, true));
+  return ledgerEntries.value.filter((entry) => matchesLedgerFilters(entry));
 });
 const trendEntries = computed(() => {
-  const q = keyword.value.trim().toLowerCase();
-  return ledgerEntries.value.filter((entry) => matchesLedgerFilters(entry, q, false));
+  return ledgerEntries.value.filter((entry) => matchesLedgerFilters(entry));
 });
-const monthIncome = computed(() => filteredEntries.value
+const monthIncome = computed(() => periodEntries.value
   .filter((entry) => ledgerDirection(entry) === "income")
   .reduce((sum, entry) => sum + entry.amount, 0));
-const monthExpense = computed(() => filteredEntries.value
+const monthExpense = computed(() => periodEntries.value
   .filter((entry) => ledgerDirection(entry) === "expense")
   .reduce((sum, entry) => sum + entry.amount, 0));
 const monthNet = computed(() => monthIncome.value - monthExpense.value);
@@ -496,6 +489,186 @@ const recentMonthSummaries = computed(() => recentMonths.value.map((month) => {
     net: income - expense,
   };
 }));
+const monthPickerYears = computed(() => {
+  const currentYear = new Date().getFullYear();
+  return Array.from({ length: 18 }, (_, index) => currentYear + 7 - index);
+});
+const selectedMonthKey = computed({
+  get: () => toMonthKey(new Date(calendarMonth.value)),
+  set: (value: string) => {
+    const [year, month] = value.split("-").map(Number);
+    calendarMonth.value = new Date(year, month - 1, 1).getTime();
+    selectedDateKey.value = toDateKey(new Date(calendarMonth.value));
+  },
+});
+const monthLabel = computed(() => {
+  const date = new Date(calendarMonth.value);
+  return `${date.getFullYear()}年${date.getMonth() + 1}月`;
+});
+const yearLabel = computed(() => `${new Date(calendarMonth.value).getFullYear()}年`);
+const periodEntries = computed(() => ledgerEntries.value.filter((entry) => {
+  const date = new Date(displayOccurredAt(entry));
+  const matchesPeriod = ledgerView.value === "year"
+    ? date.getFullYear() === new Date(calendarMonth.value).getFullYear()
+    : toMonthKey(date) === selectedMonthKey.value;
+  return matchesPeriod && matchesLedgerFilters(entry);
+}));
+const dailyExpenseAverage = computed(() => {
+  const date = new Date(calendarMonth.value);
+  const days = ledgerView.value === "year" ? (new Date(date.getFullYear(), 1, 29).getMonth() === 1 ? 366 : 365) : new Date(date.getFullYear(), date.getMonth() + 1, 0).getDate();
+  return monthExpense.value / Math.max(1, days);
+});
+const dailyChart = computed(() => {
+  const date = new Date(calendarMonth.value);
+  if (ledgerView.value === "year") {
+    const values = Array.from({ length: 12 }, (_, index) => {
+      const month = index + 1;
+      const entries = ledgerEntries.value.filter((entry) => {
+        const entryDate = new Date(displayOccurredAt(entry));
+        return entryDate.getFullYear() === date.getFullYear() && entryDate.getMonth() + 1 === month && matchesLedgerFilters(entry);
+      });
+      return { day: month, expense: entries.filter((entry) => ledgerDirection(entry) === "expense").reduce((sum, entry) => sum + entry.amount, 0), income: entries.filter((entry) => ledgerDirection(entry) === "income").reduce((sum, entry) => sum + entry.amount, 0), key: `${date.getFullYear()}-${String(month).padStart(2, "0")}` };
+    });
+    const getValue = (item: typeof values[number]) => chartMetric.value === "expense" ? item.expense : chartMetric.value === "income" ? item.income : item.income + item.expense;
+    const max = Math.max(...values.map((item) => Math.max(item.expense, item.income)), 1);
+    return values.map((item) => ({ ...item, value: getValue(item), expenseHeight: Math.round((item.expense / max) * 100), incomeHeight: Math.round((item.income / max) * 100), label: `${item.day}月`, shortLabel: `${item.day}月` }));
+  }
+  const daysInMonth = new Date(date.getFullYear(), date.getMonth() + 1, 0).getDate();
+  const values = Array.from({ length: daysInMonth }, (_, index) => {
+    const day = index + 1;
+    const entries = periodEntries.value.filter((entry) => new Date(displayOccurredAt(entry)).getDate() === day);
+    const expense = entries.filter((entry) => ledgerDirection(entry) === "expense").reduce((sum, entry) => sum + entry.amount, 0);
+    const income = entries.filter((entry) => ledgerDirection(entry) === "income").reduce((sum, entry) => sum + entry.amount, 0);
+    return { day, expense, income, key: `${selectedMonthKey.value}-${String(day).padStart(2, "0")}` };
+  });
+  const getValue = (item: typeof values[number]) => chartMetric.value === "expense" ? item.expense : chartMetric.value === "income" ? item.income : item.income + item.expense;
+  const max = Math.max(...values.map((item) => Math.max(item.expense, item.income)), 1);
+  return values.map((item) => ({ ...item, value: getValue(item), expenseHeight: Math.round((item.expense / max) * 100), incomeHeight: Math.round((item.income / max) * 100), label: `${item.day}日`, shortLabel: item.day === 1 || item.day % 5 === 0 ? `${item.day}` : "" }));
+});
+const dailyChartOption = computed(() => {
+  const showExpense = chartMetric.value !== "income";
+  const showIncome = chartMetric.value !== "expense";
+  return {
+    animation: true,
+    animationDuration: 260,
+    grid: { left: 42, right: 14, top: chartMetric.value === "all" ? 30 : 14, bottom: 28, containLabel: true },
+    legend: { show: chartMetric.value === "all", top: 0, right: 8, itemWidth: 10, itemHeight: 10, textStyle: { color: "#71809a", fontSize: 12 } },
+    tooltip: {
+      trigger: "axis",
+      axisPointer: { type: "shadow" },
+      formatter: (items: Array<{ axisValue: string; seriesName: string; value: number }>) => {
+        const rows = items.filter((item) => item.value > 0).map((item) => `${item.seriesName}：${formatAmount(item.value)}`);
+        if (!rows.length) return undefined;
+        return [`<strong>${items[0]?.axisValue ?? ""}</strong>`, ...rows].join("<br />");
+      },
+    },
+    xAxis: {
+      type: "category",
+      data: dailyChart.value.map((item) => ledgerView.value === "year" ? item.label : `${new Date(calendarMonth.value).getMonth() + 1}/${String(item.day).padStart(2, "0")}`),
+      axisTick: { show: false },
+      axisLine: { lineStyle: { color: "#e7edf5" } },
+      axisLabel: { color: "#8996aa", fontSize: 10, interval: ledgerView.value === "year" ? 0 : 1, hideOverlap: false, margin: 10 },
+    },
+    yAxis: {
+      type: "value",
+      min: 0,
+      splitNumber: 4,
+      axisLabel: { color: "#8996aa", fontSize: 11, formatter: (value: number) => compactAmount(value) },
+      axisLine: { show: false },
+      axisTick: { show: false },
+      splitLine: { lineStyle: { color: "#edf1f7", type: "dashed" } },
+    },
+    series: [
+      ...(showExpense ? [{ name: "支出", type: "bar", data: dailyChart.value.map((item) => item.expense || null), barMaxWidth: 12, itemStyle: { color: "#f04444", borderRadius: [4, 4, 0, 0] } }] : []),
+      ...(showIncome ? [{ name: "收入", type: "bar", data: dailyChart.value.map((item) => item.income || null), barMaxWidth: 12, itemStyle: { color: "#18a673", borderRadius: [4, 4, 0, 0] } }] : []),
+    ],
+  };
+});
+const chartYAxisMax = computed(() => Math.max(...dailyChart.value.map((item) => Math.max(item.expense, item.income)), 0));
+const chartYAxisTicks = computed(() => {
+  const max = chartYAxisMax.value;
+  if (!max) return [0, 0, 0, 0, 0];
+  return [max, max * 0.8, max * 0.6, max * 0.4, max * 0.2, 0];
+});
+const categorySummary = computed(() => {
+  const map = new Map<string, { key: string; name: string; total: number; icon?: string; iconUrl?: string }>();
+  for (const entry of periodEntries.value) {
+    if (ledgerDirection(entry) !== categoryMetric.value) continue;
+    const category = summaryCategoryForEntry(entry);
+    const key = category.id;
+    const item = map.get(key) ?? {
+      key,
+      name: category.name,
+      total: 0,
+      icon: category?.icon,
+      iconUrl: category?.iconUrl,
+    };
+    item.total += entry.amount;
+    map.set(key, item);
+  }
+  const total = Array.from(map.values()).reduce((sum, item) => sum + item.total, 0);
+  const colors = ["#2f7cf6", "#4ecdc4", "#6b4ce6", "#f59e0b", "#ef6b78", "#8ca0b8"];
+  return Array.from(map.values()).sort((a, b) => b.total - a.total).slice(0, 8).map((item, index) => ({ ...item, percent: total ? Number(((item.total / total) * 100).toFixed(1)) : 0, color: colors[index % colors.length] }));
+});
+const categorySummaryTotal = computed(() => categorySummary.value.reduce((sum, item) => sum + item.total, 0));
+const hoveredCategoryKey = ref<string | null>(null);
+const hoveredCategory = computed(() => categorySummary.value.find((item) => item.key === hoveredCategoryKey.value));
+const categoryDonutBackground = computed(() => {
+  let start = 0;
+  const stops = categorySummary.value.map((item) => {
+    const end = start + item.percent;
+    const stop = `${item.color} ${start}% ${end}%`;
+    start = end;
+    return stop;
+  });
+  return stops.length ? `conic-gradient(${stops.join(", ")})` : "#e7edf5";
+});
+
+function handleDonutMouseMove(event: MouseEvent) {
+  if (!categorySummary.value.length) return;
+  const element = event.currentTarget as HTMLElement;
+  const rect = element.getBoundingClientRect();
+  const x = event.clientX - (rect.left + rect.width / 2);
+  const y = event.clientY - (rect.top + rect.height / 2);
+  const distance = Math.sqrt(x * x + y * y);
+  if (distance < rect.width * 0.2 || distance > rect.width * 0.5) {
+    hoveredCategoryKey.value = null;
+    return;
+  }
+  let degrees = (Math.atan2(y, x) * 180) / Math.PI + 90;
+  if (degrees < 0) degrees += 360;
+  const percent = degrees / 3.6;
+  let accumulated = 0;
+  hoveredCategoryKey.value = categorySummary.value.find((item) => {
+    accumulated += item.percent;
+    return percent <= accumulated;
+  })?.key ?? categorySummary.value[categorySummary.value.length - 1]?.key ?? null;
+}
+
+function categorySegmentPath(index: number) {
+  const outer = 64;
+  const inner = 42;
+  const startPercent = categorySummary.value.slice(0, index).reduce((sum, item) => sum + item.percent, 0);
+  const endPercent = startPercent + categorySummary.value[index].percent;
+  const start = ((startPercent / 100) * Math.PI * 2) - Math.PI / 2;
+  const end = ((endPercent / 100) * Math.PI * 2) - Math.PI / 2;
+  const largeArc = endPercent - startPercent > 50 ? 1 : 0;
+  const point = (radius: number, angle: number) => [76 + radius * Math.cos(angle), 76 + radius * Math.sin(angle)];
+  const [sx, sy] = point(outer, start);
+  const [ex, ey] = point(outer, end);
+  const [ix, iy] = point(inner, end);
+  const [isx, isy] = point(inner, start);
+  return `M ${sx} ${sy} A ${outer} ${outer} 0 ${largeArc} 1 ${ex} ${ey} L ${ix} ${iy} A ${inner} ${inner} 0 ${largeArc} 0 ${isx} ${isy} Z`;
+}
+const selectedDateDisplay = computed(() => {
+  const date = parseDateKey(selectedDateKey.value);
+  return `${String(date.getMonth() + 1).padStart(2, "0")}.${String(date.getDate()).padStart(2, "0")}`;
+});
+const selectedDateIsToday = computed(() => selectedDateKey.value === toDateKey(new Date()));
+const selectedDateContextLabel = computed(() => {
+  if (selectedDateIsToday.value) return "今天";
+  return ["星期日", "星期一", "星期二", "星期三", "星期四", "星期五", "星期六"][parseDateKey(selectedDateKey.value).getDay()];
+});
 const categoryMoMTrends = computed(() => {
   const currentKey = recentMonths.value[2]?.key;
   const previousKey = recentMonths.value[1]?.key;
@@ -562,8 +735,7 @@ const calendarDays = computed(() => {
   const monthStart = new Date(calendarMonth.value);
   const firstDayIndex = (monthStart.getDay() + 6) % 7;
   const monthEnd = new Date(monthStart.getFullYear(), monthStart.getMonth() + 1, 0);
-  const requiredCells = firstDayIndex + monthEnd.getDate();
-  const gridCells = Math.ceil(requiredCells / 7) * 7;
+  const gridCells = 42;
   const gridStart = new Date(monthStart);
   gridStart.setDate(monthStart.getDate() - firstDayIndex);
 
@@ -597,6 +769,7 @@ const selectedDateLabel = computed(() => {
   return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
 });
 const deletingTransaction = computed(() => store.transactions.find((entry) => entry.id === deletingTransactionId.value));
+const selectedTransaction = computed(() => store.transactions.find((entry) => entry.id === selectedTransactionId.value));
 const isLedgerDraftDirty = computed(() => showModal.value && serializeLedgerDraft() !== initialLedgerDraftSnapshot.value);
 const deleteDialogTitle = computed(() => {
   if (isRepaymentTransaction(deletingTransaction.value)) return "撤销这笔还款？";
@@ -622,7 +795,10 @@ onMounted(initializeData);
 
 async function initializeData() {
   await store.init().catch(() => undefined);
-  if (store.initialized) applyRouteState();
+  if (store.initialized) {
+    applyRouteState();
+    selectDefaultDateForMonth(new Date(calendarMonth.value));
+  }
 }
 
 watch(() => [route.query.transactionId, route.query.type, route.query.month], () => {
@@ -643,10 +819,6 @@ function startOfMonth(date: Date) {
   return new Date(date.getFullYear(), date.getMonth(), 1);
 }
 
-function endOfMonth(date: Date) {
-  return new Date(date.getFullYear(), date.getMonth() + 1, 0, 23, 59, 59, 999);
-}
-
 function toDateKey(date: Date) {
   return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
 }
@@ -664,7 +836,7 @@ function shiftCalendarMonth(offset: number) {
   const current = new Date(calendarMonth.value);
   const next = new Date(current.getFullYear(), current.getMonth() + offset, 1);
   calendarMonth.value = next.getTime();
-  selectedDateKey.value = toDateKey(next);
+  selectDefaultDateForMonth(next);
 }
 
 function goCurrentMonth() {
@@ -726,7 +898,70 @@ function validateDraft() {
 }
 
 function categoryName(id: string) {
-  return store.categories.find((category) => category.id === id)?.name ?? "-";
+  const category = store.categories.find((item) => item.id === id);
+  return category ? categoryDisplayName(id, category.name) : categoryDisplayName(id, "-");
+}
+
+function selectDefaultDateForMonth(month: Date) {
+  const today = new Date();
+  if (month.getFullYear() === today.getFullYear() && month.getMonth() === today.getMonth()) {
+    selectedDateKey.value = toDateKey(today);
+    return;
+  }
+
+  const latestEntry = filteredEntries.value.find((entry) => {
+    const occurredAt = new Date(displayOccurredAt(entry));
+    return occurredAt.getFullYear() === month.getFullYear() && occurredAt.getMonth() === month.getMonth();
+  });
+  selectedDateKey.value = latestEntry ? toDateKey(new Date(displayOccurredAt(latestEntry))) : toDateKey(month);
+}
+
+function shiftSelectedDate(offset: number) {
+  const next = parseDateKey(selectedDateKey.value);
+  next.setDate(next.getDate() + offset);
+  selectedDateKey.value = toDateKey(next);
+  calendarMonth.value = startOfMonth(next).getTime();
+}
+
+function handleDailyChartClick(params: { dataIndex?: number }) {
+  if (typeof params.dataIndex !== "number") return;
+  const item = dailyChart.value[params.dataIndex];
+  if (!item) return;
+  if (ledgerView.value === "year") {
+    const month = new Date(new Date(calendarMonth.value).getFullYear(), item.day - 1, 1);
+    selectDefaultDateForMonth(month);
+    return;
+  }
+  selectedDateKey.value = item.key;
+}
+
+function rootTransactionCategory(id: string) {
+  let category = store.categories.find((item) => item.id === id && item.domain === "transaction");
+  while (category?.parentId) {
+    category = store.categories.find((item) => item.id === category?.parentId && item.domain === "transaction");
+  }
+  return category;
+}
+
+function summaryCategoryForEntry(entry: TransactionRecord) {
+  const directCategory = rootTransactionCategory(entry.categoryId);
+  if (directCategory) return directCategory;
+
+  const fallbackId = entry.businessType === "asset_purchase"
+    ? "tx-asset-purchase"
+    : entry.businessType === "asset_addon"
+      ? (ledgerDirection(entry) === "income" ? "tx-asset-addon-income" : "tx-asset-addon-accessory")
+      : entry.businessType === "asset_transfer"
+        ? "tx-asset-transfer"
+        : entry.businessType === "legacy_part_event"
+          ? "tx-asset-part-transfer"
+          : "tx-uncategorized";
+  return store.categories.find((item) => item.id === fallbackId && item.domain === "transaction") ?? {
+    id: "tx-uncategorized",
+    name: "未分类",
+    icon: undefined,
+    iconUrl: undefined,
+  };
 }
 
 function categoryLabel(entry: TransactionRecord) {
@@ -735,19 +970,58 @@ function categoryLabel(entry: TransactionRecord) {
   return subCategory && subCategory !== "-" ? `${category} / ${subCategory}` : category;
 }
 
-function matchesLedgerFilters(entry: TransactionRecord, q: string, includeDate: boolean) {
+function chartTooltip(day: { label: string; expense: number; income: number }) {
+  if (chartMetric.value === "expense") return `${day.label}：支出 ${formatAmount(day.expense)}`;
+  if (chartMetric.value === "income") return `${day.label}：收入 ${formatAmount(day.income)}`;
+  return `${day.label}：收入 ${formatAmount(day.income)}，支出 ${formatAmount(day.expense)}`;
+}
+
+function openMonthPicker() {
+  monthPickerYear.value = new Date(calendarMonth.value).getFullYear();
+  showMonthPicker.value = !showMonthPicker.value;
+}
+
+function selectPickerMonth(month: number) {
+  calendarMonth.value = new Date(monthPickerYear.value, month - 1, 1).getTime();
+  selectDefaultDateForMonth(new Date(calendarMonth.value));
+  showMonthPicker.value = false;
+}
+
+function selectPickerYear(year: number) {
+  calendarMonth.value = new Date(year, 0, 1).getTime();
+  selectDefaultDateForMonth(new Date(calendarMonth.value));
+  showMonthPicker.value = false;
+}
+
+function categoryInitial(entry: TransactionRecord) {
+  const label = entry.categorySnapshot?.categoryName ?? categoryName(entry.categoryId);
+  return label.trim().slice(0, 1) || "账";
+}
+
+function openEntryDetail(id: string) {
+  selectedTransactionId.value = id;
+  showDetailModal.value = true;
+}
+
+function editSelectedEntry() {
+  if (!selectedTransaction.value) return;
+  showDetailModal.value = false;
+  editEntry(selectedTransaction.value.id);
+}
+
+function deleteSelectedEntry() {
+  if (!selectedTransaction.value) return;
+  showDetailModal.value = false;
+  deleteEntry(selectedTransaction.value.id);
+}
+
+function matchesLedgerFilters(entry: TransactionRecord) {
   const direction = ledgerDirection(entry);
   const matchesType = isAllFilter(typeFilter.value) || direction === typeFilter.value;
   const matchesCategory = isAllFilter(categoryFilter.value) || entry.categoryId === categoryFilter.value;
   const matchesSubCategory = isAllFilter(subCategoryFilter.value) || entry.subCategoryId === subCategoryFilter.value;
-  const matchesAsset = isAllFilter(assetFilter.value) || entry.assetId === assetFilter.value;
   const matchesAccount = isAllFilter(accountFilter.value) || entry.accountId === accountFilter.value;
-  const matchesDate = !includeDate || !dateRange.value || (
-    new Date(entry.occurredAt).getTime() >= dateRange.value[0] &&
-    new Date(entry.occurredAt).getTime() <= dateRange.value[1]
-  );
-  const haystack = `${entry.merchant ?? ""}${entry.note ?? ""}${entry.amount}${categoryLabel(entry)}${accountName(entry.accountId)}`.toLowerCase();
-  return matchesType && matchesCategory && matchesSubCategory && matchesAsset && matchesAccount && matchesDate && (!q || haystack.includes(q));
+  return matchesType && matchesCategory && matchesSubCategory && matchesAccount;
 }
 
 function buildCategoryBreakdown(entries: TransactionRecord[]) {
@@ -846,6 +1120,34 @@ function isAllFilter(value: string | number | null) {
 
 function accountName(id: string) {
   return store.accounts.find((account) => account.id === id)?.name ?? "-";
+}
+
+const transactionCategoryLabels: Record<string, string> = {
+  "tx-food": "餐饮美食",
+  "tx-shopping": "购物消费",
+  "tx-transport": "交通出行",
+  "tx-housing": "住房居家",
+  "tx-entertainment": "休闲娱乐",
+  "tx-health": "医疗健康",
+  "tx-education": "教育学习",
+  "tx-salary": "工资收入",
+  "tx-side-income": "外快收入",
+  "tx-asset-transfer": "资产转让收入",
+  "tx-asset-addon-income": "资产附加项收入",
+  "tx-asset-part-transfer": "资产部件收入",
+};
+
+function categoryDisplayName(id: string, fallback: string) {
+  return transactionCategoryLabels[id] || fallback;
+}
+
+function categoryIconText(category: { icon?: string; name: string }) {
+  const icon = category.icon?.trim();
+  return icon && icon.length <= 2 ? icon : category.name.trim().slice(0, 1) || "类";
+}
+
+function accountForEntry(entry: TransactionRecord) {
+  return store.accounts.find((account) => account.id === entry.accountId);
 }
 
 function accountRelationLabel(entry: TransactionRecord) {
@@ -960,7 +1262,7 @@ function isAssetOpenForAddon(assetId: string | number | null) {
   return asset?.status === "using" || asset?.status === "idle";
 }
 
-function resetDraft(type: "expense" | "income") {
+function resetDraft(type: "expense" | "income" | "transfer") {
   editingTransactionId.value = null;
   draftType.value = type;
   draftAmount.value = "";
@@ -968,15 +1270,24 @@ function resetDraft(type: "expense" | "income") {
   draftSubCategoryId.value = "none";
   draftAccountId.value = store.accounts[0]?.id ?? null;
   draftAssetId.value = null;
+  assetSearchQuery.value = "";
   draftMerchant.value = "";
   draftNote.value = "";
+  transferDraft.fromAccountId = store.assetAccounts[0]?.id ?? null;
+  transferDraft.toAccountId = store.assetAccounts[1]?.id ?? store.accounts[1]?.id ?? null;
+  transferDraft.note = "";
+  transferErrors.fromAccountId = "";
+  transferErrors.toAccountId = "";
+  transferErrors.form = "";
+  draftReceiptUrl.value = "";
+  draftReceiptName.value = "";
   assetLinkMode.value = "related";
   transactionDate.value = Date.now();
   clearDraftErrors();
   initialLedgerDraftSnapshot.value = serializeLedgerDraft();
 }
 
-function openCreateModal(type: "expense" | "income") {
+function openCreateModal(type: "expense" | "income" | "transfer") {
   resetDraft(type);
   showModal.value = true;
 }
@@ -997,8 +1308,11 @@ function editEntry(id: string) {
   draftSubCategoryId.value = entry.subCategoryId ?? "none";
   draftAccountId.value = entry.accountId;
   draftAssetId.value = entry.assetId ?? null;
+  assetSearchQuery.value = entry.assetId ? store.assets.find((asset) => asset.id === entry.assetId)?.name ?? "" : "";
   draftMerchant.value = entry.merchant ?? "";
   draftNote.value = entry.note ?? "";
+  draftReceiptUrl.value = entry.receiptUrl ?? "";
+  draftReceiptName.value = entry.receiptUrl ? "已上传凭证" : "";
   assetLinkMode.value = "related";
   transactionDate.value = new Date(entry.occurredAt).getTime();
   initialLedgerDraftSnapshot.value = serializeLedgerDraft();
@@ -1015,8 +1329,6 @@ function applyRouteState() {
       categoryFilter.value = entry.categoryId;
       subCategoryFilter.value = entry.subCategoryId ?? "all";
       accountFilter.value = entry.accountId;
-      assetFilter.value = entry.assetId ?? "all";
-      keyword.value = entry.note || entry.merchant || "";
 
       if (!isRepaymentTransaction(entry)) {
         editEntry(entry.id);
@@ -1029,17 +1341,11 @@ function applyRouteState() {
   const requestedMonth = typeof route.query.month === "string" ? route.query.month : "";
   if (!requestedType && !requestedMonth) return;
 
-  const today = new Date();
   mode.value = "records";
   typeFilter.value = requestedType === "income" || requestedType === "expense" ? requestedType : "all";
   categoryFilter.value = "all";
   subCategoryFilter.value = "all";
   accountFilter.value = "all";
-  assetFilter.value = "all";
-  keyword.value = "";
-  if (requestedMonth === "current") {
-    dateRange.value = [startOfMonth(today).getTime(), endOfMonth(today).getTime()];
-  }
 }
 
 function serializeLedgerDraft() {
@@ -1055,6 +1361,7 @@ function serializeLedgerDraft() {
     draftNote: draftNote.value,
     assetLinkMode: assetLinkMode.value,
     transactionDate: transactionDate.value,
+    draftReceiptUrl: draftReceiptUrl.value,
   });
 }
 
@@ -1104,6 +1411,10 @@ function goProtectedAsset() {
 }
 
 async function saveDraft() {
+  if (draftType.value === "transfer") {
+    await saveTransferDraft();
+    return;
+  }
   if (!validateDraft()) return;
   saving.value = true;
   try {
@@ -1148,6 +1459,7 @@ async function saveDraft() {
           assetId: draftAssetId.value ? String(draftAssetId.value) : undefined,
           merchant: draftMerchant.value,
           note: draftNote.value,
+          receiptUrl: draftReceiptUrl.value || undefined,
         });
       }
     } else if (draftType.value === "expense" && draftAssetId.value && assetLinkMode.value !== "related") {
@@ -1176,6 +1488,7 @@ async function saveDraft() {
         assetId: draftAssetId.value ? String(draftAssetId.value) : undefined,
         merchant: draftMerchant.value,
         note: draftNote.value,
+        receiptUrl: draftReceiptUrl.value || undefined,
       });
     }
     await store.refresh();
@@ -1187,6 +1500,73 @@ async function saveDraft() {
   } finally {
     saving.value = false;
   }
+}
+
+async function saveTransferDraft() {
+  transferErrors.fromAccountId = "";
+  transferErrors.toAccountId = "";
+  transferErrors.form = "";
+  if (!transferDraft.fromAccountId) transferErrors.fromAccountId = "请选择转出账户。";
+  if (!transferDraft.toAccountId) transferErrors.toAccountId = "请选择转入账户。";
+  if (transferDraft.fromAccountId && transferDraft.fromAccountId === transferDraft.toAccountId) transferErrors.form = "转出和转入账户不能相同。";
+  let amount = 0;
+  try { amount = parseAmount(draftAmount.value); } catch { transferErrors.form = transferErrors.form || "请输入正确金额。"; }
+  if (transferErrors.fromAccountId || transferErrors.toAccountId || transferErrors.form) return;
+  saving.value = true;
+  try {
+    await accountService.transfer({ fromAccountId: String(transferDraft.fromAccountId), toAccountId: String(transferDraft.toAccountId), amount, occurredAt: new Date(transactionDate.value ?? Date.now()).toISOString(), note: transferDraft.note.trim() || "资金转账" });
+    await store.refresh();
+    showModal.value = false;
+  } catch (err) {
+    transferErrors.form = err instanceof Error ? err.message : "转账保存失败。";
+  } finally { saving.value = false; }
+}
+
+function switchDraftType(type: "expense" | "income" | "transfer") {
+  if (editingTransactionId.value) return;
+  draftType.value = type;
+  if (type === "income") draftCategoryId.value = incomeCategories.value[0]?.id ?? null;
+  if (type === "expense") draftCategoryId.value = expenseCategories.value[0]?.id ?? null;
+  if (type !== "transfer") draftSubCategoryId.value = "none";
+  if (type === "transfer") {
+    transferDraft.fromAccountId ||= store.accounts[0]?.id ?? null;
+    transferDraft.toAccountId ||= store.accounts[1]?.id ?? null;
+  }
+}
+
+function selectTransactionRootCategory(id: string | number) {
+  draftCategoryId.value = id;
+  draftSubCategoryId.value = "none";
+}
+
+async function selectReceipt(event: Event) {
+  const input = event.target as HTMLInputElement;
+  const file = input.files?.[0];
+  if (!file) return;
+  if (file.type !== "application/pdf" && !file.type.startsWith("image/")) {
+    draftErrors.form = "凭证仅支持图片或 PDF 文件。";
+    return;
+  }
+  if (file.size > 8 * 1024 * 1024) {
+    draftErrors.form = "凭证文件不能超过 8 MB。";
+    return;
+  }
+  try {
+    draftReceiptUrl.value = file.type === "application/pdf" ? await fileToDataUrl(file) : await imageFileToPersistentUrl(file);
+    draftReceiptName.value = file.name;
+    draftErrors.form = "";
+  } catch (error) {
+    draftErrors.form = error instanceof Error ? error.message : "凭证读取失败，请重新选择。";
+  }
+}
+
+function fileToDataUrl(file: File) {
+  return new Promise<string>((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(String(reader.result));
+    reader.onerror = () => reject(new Error("凭证读取失败，请重新选择。"));
+    reader.readAsDataURL(file);
+  });
 }
 </script>
 
@@ -1220,7 +1600,7 @@ async function saveDraft() {
 
 .ledger-filters {
   display: grid;
-  grid-template-columns: 260px repeat(5, minmax(130px, 1fr)) auto;
+  grid-template-columns: repeat(4, minmax(130px, 1fr)) auto;
   gap: var(--space-4);
   align-items: center;
 }
@@ -1229,10 +1609,6 @@ async function saveDraft() {
   display: flex;
   gap: var(--space-3);
   justify-content: flex-end;
-}
-
-.ledger-search {
-  width: 330px;
 }
 
 .ledger-summary {
@@ -1569,6 +1945,9 @@ async function saveDraft() {
 
 .ledger-calendar {
   display: grid;
+  height: 100%;
+  min-height: 0;
+  box-sizing: border-box;
   gap: var(--space-3);
   padding: var(--space-3);
 }
@@ -1626,6 +2005,8 @@ async function saveDraft() {
 
 .calendar-layout {
   display: grid;
+  min-height: 0;
+  height: 100%;
   grid-template-columns: minmax(0, 1fr) 282px;
   gap: var(--space-4);
   align-items: start;
@@ -1634,6 +2015,8 @@ async function saveDraft() {
 .calendar-board {
   display: grid;
   grid-template-columns: repeat(7, minmax(0, 1fr));
+  grid-template-rows: 36px repeat(6, minmax(0, 1fr));
+  height: 100%;
   gap: 1px;
   overflow: hidden;
   background: #e8edf5;
@@ -1712,6 +2095,23 @@ async function saveDraft() {
 .day-summary em,
 .day-summary strong {
   font-style: normal;
+}
+
+.day-summary strong {
+  width: max-content;
+  padding: 1px 4px;
+  border-radius: 4px;
+  font-weight: 800;
+}
+
+.day-summary .net-positive {
+  color: #2563eb;
+  background: #eaf2ff;
+}
+
+.day-summary .net-negative {
+  color: #7c3aed;
+  background: #f3e8ff;
 }
 
 .calendar-day small {
@@ -1800,7 +2200,7 @@ async function saveDraft() {
   font-size: 12px;
 }
 
-.calendar-entry span {
+.calendar-entry > div span {
   display: block;
   margin-top: 2px;
   color: var(--color-text-tertiary);
@@ -1853,6 +2253,7 @@ async function saveDraft() {
   display: flex;
   flex-direction: column;
   width: 100%;
+  height: 100%;
   max-height: calc(100dvh - 48px);
   overflow: hidden;
   background: var(--color-bg-card);
@@ -1876,6 +2277,17 @@ async function saveDraft() {
     linear-gradient(135deg, #0f9f6e, #16a36a);
 }
 
+.calendar-entry > .r-tag {
+  justify-content: center;
+  box-sizing: border-box;
+  line-height: 1;
+  vertical-align: middle;
+}
+
+.ledger-modal.transfer .ledger-modal__hero {
+  background: radial-gradient(circle at 84% 18%, rgba(255, 255, 255, 0.25), transparent 26%), linear-gradient(135deg, #356fe8, #5b8ff5);
+}
+
 .ledger-modal__hero span {
   font-size: var(--font-caption);
   font-weight: 800;
@@ -1893,7 +2305,7 @@ async function saveDraft() {
   opacity: 0.85;
 }
 
-.ledger-modal__hero button {
+.ledger-modal__hero > button {
   width: 32px;
   height: 32px;
   color: #fff;
@@ -1906,10 +2318,13 @@ async function saveDraft() {
 .ledger-modal__body {
   display: grid;
   flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
   grid-template-columns: 250px 1fr;
   gap: var(--space-6);
   min-height: 0;
   overflow: auto;
+  height: 0;
   padding: 28px 32px;
 }
 
@@ -1984,7 +2399,8 @@ async function saveDraft() {
 .form-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: var(--space-4);
+  align-items: start;
+  gap: 10px var(--space-4);
 }
 
 .form-grid label {
@@ -2063,6 +2479,7 @@ async function saveDraft() {
 
 .asset-link-box {
   display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: var(--space-3);
   padding: var(--space-4);
   background: var(--color-primary-soft);
@@ -2078,13 +2495,55 @@ async function saveDraft() {
 
 .receipt-box {
   display: grid;
+  width: 100%;
   height: 60px;
+  padding: 0;
   place-items: center;
   color: var(--color-text-tertiary);
+  font: inherit;
   background: var(--color-bg-hover);
   border: 1px dashed var(--color-border-strong);
   border-radius: var(--radius-lg);
+  cursor: pointer;
 }
+
+.asset-link-box > .r-select,
+.asset-link-box > .r-input { min-width: 0; }
+.asset-link-box > .asset-search-results,
+.asset-link-box > .asset-search-empty,
+.asset-link-box > .asset-selected-hint,
+.asset-link-box > em,
+.asset-link-box > .link-options { grid-column: 1 / -1; }
+
+.asset-search-results { display: grid; max-height: 190px; margin-top: 8px; overflow-y: auto; background: var(--color-bg-card); border: 1px solid var(--color-border); border-radius: 10px; }
+.asset-search-results button { display: flex; flex-direction: column; align-items: flex-start; gap: 2px; padding: 9px 12px; color: var(--color-text-primary); background: transparent; border: 0; border-bottom: 1px solid var(--color-border); cursor: pointer; text-align: left; }
+.asset-search-results button:last-of-type { border-bottom: 0; }
+.asset-search-results button:hover, .asset-search-results button.active { background: var(--color-primary-light); }
+.asset-search-results button span, .asset-search-empty, .asset-selected-hint { color: var(--color-text-tertiary); font-size: var(--font-caption); }
+.asset-search-empty { padding: 12px; }
+.asset-selected-hint { margin-top: 8px; }
+
+.form-grid label.category-field { display: block; grid-column: 1 / -1; align-self: start; }
+.ledger-category-picker { display: flex; flex-wrap: wrap; gap: 7px; margin-top: 8px; }
+.ledger-category-picker button { display: inline-flex; align-items: center; gap: 6px; min-height: 32px; padding: 4px 10px; color: var(--color-text-secondary); background: var(--color-bg-card); border: 1px solid var(--color-border); border-radius: 999px; cursor: pointer; font: inherit; font-size: 12px; }
+.ledger-category-picker button.active { color: var(--color-primary); background: var(--color-primary-light); border-color: #bbd5ff; font-weight: 700; }
+.ledger-category-picker button img, .ledger-category-picker button i { display: grid; width: 20px; height: 20px; place-items: center; border-radius: 6px; font-size: 11px; font-style: normal; object-fit: cover; }
+.ledger-category-picker--children { padding-left: 10px; border-left: 2px solid var(--color-primary-light); }
+
+.ledger-modal .hidden-file {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+.receipt-box:hover { color: var(--color-primary); border-color: var(--color-primary); background: #f4f8ff; }
+
+.ledger-modal.transfer .ledger-form { align-content: start; }
+.ledger-modal.transfer .form-section { padding-bottom: 0; border-bottom: 0; }
 
 .ledger-modal__footer {
   display: flex;
@@ -2128,10 +2587,135 @@ async function saveDraft() {
     padding-left: 0;
   }
 
-  .ledger-search {
-    width: 100%;
-  }
 }
+</style>
+
+<style>
+.ledger-dashboard { position: relative; gap: 12px; }
+.ledger-month-picker { position: relative; }
+.ledger-month-select { display: inline-flex; align-items: center; justify-content: space-between; gap: 12px; border: 1px solid var(--color-border); }
+.ledger-month-picker__popover { position: absolute; z-index: 20; top: calc(100% + 9px); left: 0; display: grid; grid-template-columns: 92px 1fr; width: 350px; overflow: hidden; border: 1px solid var(--color-border); border-radius: 14px; background: var(--color-bg-card); box-shadow: 0 18px 42px rgba(23, 43, 74, .18); }
+.ledger-month-picker__years { display: grid; align-content: start; gap: 4px; max-height: 360px; padding: 12px 8px; overflow-y: auto; border-right: 1px solid var(--color-border); background: #fbfcfe; }
+.ledger-month-picker__years button, .ledger-month-picker__months button { border: 0; border-radius: 9px; background: transparent; cursor: pointer; }
+.ledger-month-picker__years button { height: 38px; color: var(--color-text-secondary); font-size: 15px; }
+.ledger-month-picker__years button.active { color: var(--color-primary); background: #eaf2ff; box-shadow: inset 0 0 0 1px #8db9ff; }
+.ledger-month-picker__months { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; align-content: start; padding: 18px; }
+.ledger-month-picker__months button { height: 48px; color: var(--color-text-primary); font-size: 16px; }
+.ledger-month-picker__months button:hover { background: #f1f6ff; }
+.ledger-month-picker__months button.active { color: var(--color-primary); background: #eaf2ff; box-shadow: inset 0 0 0 1px #8db9ff; }
+.ledger-month-picker__popover.is-year-picker { display: block; width: 360px; }
+.ledger-month-picker__year-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; padding: 18px; }
+.ledger-month-picker__year-grid button { height: 52px; color: var(--color-text-primary); border: 0; border-radius: 10px; background: transparent; cursor: pointer; font-size: 16px; }
+.ledger-month-picker__year-grid button:hover { background: #f1f6ff; }
+.ledger-month-picker__year-grid button.active { color: var(--color-primary); background: #eaf2ff; box-shadow: inset 0 0 0 1px #8db9ff; }
+.ledger-dashboard__toolbar { min-height: 42px; }
+.ledger-icon-button, .ledger-month-select { height: 36px; }
+.ledger-icon-button { width: 36px; display: inline-grid; place-items: center; font-size: 0; }
+.ledger-month-select { min-width: 122px; font-size: 16px; }
+.ledger-mode-switch { height: 36px; }
+.ledger-mode-switch button { height: 30px; min-width: 36px; padding: 0 10px; }
+.ledger-dashboard__actions { gap: 8px; }
+.ledger-dashboard__actions :deep(.n-button) { min-height: 36px; padding: 0 12px; }
+.ledger-filter-panel { position: absolute; z-index: 10; top: 48px; right: 0; width: min(680px, calc(100vw - 32px)); grid-template-columns: repeat(4, minmax(0, 1fr)); padding: 12px; box-shadow: 0 14px 32px rgba(26, 45, 76, .14); }
+.ledger-filter-panel__actions { grid-column: 1 / -1; justify-content: flex-end; }
+.ledger-surface { padding: 16px; border-radius: 12px; }
+.ledger-section-title { margin-bottom: 12px; font-size: 16px; }
+.ledger-overview__grid { gap: 10px; }
+.ledger-overview__grid article { min-height: 80px; padding: 13px 14px; }
+.ledger-overview__grid article > span { font-size: 13px; }
+.ledger-overview__grid article > strong { margin-top: 6px; font-size: 21px; }
+.ledger-stat-icon { top: 13px; right: 13px; width: 28px; height: 28px; }
+.ledger-content-grid { gap: 12px; }
+.ledger-content-grid__left { gap: 12px; }
+.ledger-chart-panel, .ledger-category-panel, .ledger-day-panel { min-height: 250px; }
+.ledger-echart { display: block; width: 100%; min-width: 0; height: 220px; }
+.ledger-bar-chart { height: 178px; padding-top: 8px; }
+.ledger-bar-chart { display: grid; grid-template-columns: 34px minmax(0,1fr); gap: 8px; align-items: stretch; position: relative; border-bottom: 0; }
+.ledger-bar-chart__axis { display: flex; flex-direction: column; justify-content: space-between; padding: 0 0 22px; color: var(--color-text-tertiary); font-size: 10px; text-align: right; }
+.ledger-bar-chart__plot { display: flex; width: 100%; min-width: 0; align-items: end; gap: 4px; height: 100%; border-bottom: 1px solid var(--color-border); background: repeating-linear-gradient(to bottom, transparent 0, transparent calc(20% - 1px), var(--color-border) 20%); }
+.ledger-bar-chart__item { height: 100%; }
+.ledger-bar-chart__bars { display: flex; align-items: end; justify-content: center; gap: 2px; width: 100%; height: calc(100% - 38px); }
+.ledger-bar-chart__item i { width: 7px; min-height: 0; }
+.ledger-bar-chart__item i.expense { background: #f04444; }
+.ledger-bar-chart__item i.income { background: var(--color-success); }
+.ledger-category-summary { grid-template-columns: 145px minmax(0, 1fr); gap: 16px; }
+.ledger-donut { width: 124px; height: 124px; }
+.ledger-donut::before { width: 70px; height: 70px; }
+.ledger-day-panel__head { padding: 16px 18px 12px; }
+.ledger-day-panel__head strong { font-size: 18px; }
+.ledger-day-panel__columns { padding: 9px 18px; }
+.ledger-day-row { min-height: 52px; padding: 8px 18px; }
+.ledger-day-row__category i { width: 26px; height: 26px; }
+.ledger-detail-link { padding: 12px; }
+.ledger-dashboard { display: grid; gap: 12px; }
+.ledger-dashboard__toolbar, .ledger-period-controls, .ledger-dashboard__actions, .ledger-mode-switch, .ledger-chart-tabs { display: flex; align-items: center; }
+.ledger-dashboard__toolbar { justify-content: space-between; gap: 16px; min-height: 52px; }
+.ledger-period-controls, .ledger-dashboard__actions { gap: 10px; }
+.ledger-icon-button, .ledger-month-select, .ledger-mode-switch, .ledger-chart-tabs { height: 42px; border: 1px solid var(--color-border); border-radius: 10px; background: var(--color-bg-card); }
+.ledger-icon-button { width: 42px; color: var(--color-text-primary); font-size: 26px; cursor: pointer; }
+.ledger-month-select { width: 146px; min-width: 146px; padding: 0 12px; color: var(--color-text-primary); font-size: 18px; font-weight: 700; cursor: pointer; }
+.ledger-mode-switch, .ledger-chart-tabs { padding: 3px; gap: 2px; background: var(--color-bg-hover); border-color: transparent; }
+.ledger-mode-switch button, .ledger-chart-tabs button { height: 34px; min-width: 42px; padding: 0 14px; color: var(--color-text-secondary); border: 0; border-radius: 8px; background: transparent; cursor: pointer; }
+.ledger-mode-switch button.active, .ledger-chart-tabs button.active { color: var(--color-primary); background: var(--color-bg-card); box-shadow: 0 1px 4px rgba(22,45,80,.1); }
+.ledger-filter-panel { display: grid; grid-template-columns: repeat(4,minmax(0,1fr)) auto; gap: 12px; padding: 14px; border: 1px solid var(--color-border); border-radius: 12px; background: var(--color-bg-card); }
+.ledger-filter-panel__actions { display: flex; gap: 8px; }
+.ledger-surface { padding: 22px; border: 1px solid rgba(221,229,240,.9); border-radius: 16px; background: var(--color-bg-card); box-shadow: 0 8px 24px rgba(41,65,104,.045); }
+.ledger-section-title { display: flex; align-items: center; justify-content: space-between; margin-bottom: 18px; color: var(--color-text-primary); font-size: 19px; font-weight: 700; }
+.ledger-section-title small { color: var(--color-text-tertiary); font-size: 13px; font-weight: 500; }
+.ledger-overview__grid { display: grid; grid-template-columns: repeat(4,minmax(0,1fr)); gap: 14px; }
+.ledger-overview__grid article { position: relative; min-height: 96px; padding: 17px 18px; border-radius: 12px; background: linear-gradient(135deg,#fbfcff,#f6f8fc); }
+.ledger-overview__grid article > span, .ledger-overview__grid article > strong { display: block; }
+.ledger-overview__grid article > span { color: var(--color-text-secondary); font-size: 14px; }
+.ledger-overview__grid article > strong { margin-top: 9px; color: var(--color-text-primary); font-size: 26px; }
+.ledger-overview__grid article > strong.success { color: var(--color-success); } .ledger-overview__grid article > strong.danger { color: var(--color-danger); }
+.ledger-stat-icon { position: absolute; top: 18px; right: 18px; display: grid; width: 34px; height: 34px; place-items: center; color: var(--color-primary); border-radius: 10px; background: #edf4ff; font-style: normal; }
+.ledger-stat-icon.expense { color: #ef6b78; background: #fff0f2; } .ledger-stat-icon.balance { color: #7a5af8; background: #f2efff; } .ledger-stat-icon.average { color: #f59e0b; background: #fff6e7; }
+.ledger-content-grid { display: grid; grid-template-columns: minmax(0,1.05fr) minmax(420px,1fr); gap: 18px; align-items: stretch; }
+.ledger-content-grid__left { display: grid; gap: 18px; } .ledger-chart-panel, .ledger-category-panel, .ledger-day-panel { min-height: 300px; }
+.ledger-chart-panel { min-width: 0; }
+.ledger-chart-tabs { height: 34px; } .ledger-chart-tabs button { height: 28px; padding: 0 12px; }
+.ledger-chart-tabs { height: 30px; padding: 2px; border-radius: 8px; }
+.ledger-chart-tabs button { height: 26px; min-width: 38px; padding: 0 10px; font-size: 13px; font-weight: 600; }
+.ledger-bar-chart { display: flex; align-items: end; gap: 4px; height: 220px; padding: 16px 8px 0; border-bottom: 1px solid var(--color-border); }
+.ledger-bar-chart__item { display: flex; position: relative; flex: 1; align-items: center; justify-content: end; height: 100%; flex-direction: column; min-width: 0; }
+.ledger-bar-chart__item i { display: block; width: min(14px,70%); min-height: 2px; border-radius: 5px 5px 0 0; background: var(--color-primary); transition: height .2s ease; }
+.ledger-bar-chart__item i.income { background: var(--color-success); } .ledger-bar-chart__item i.all { background: linear-gradient(180deg,var(--color-primary),#8bb8ff); }
+.ledger-bar-chart__item small { height: 22px; color: var(--color-text-tertiary); font-size: 11px; } .ledger-bar-chart__value { min-height: 16px; color: var(--color-text-secondary); font-size: 10px; }
+.ledger-category-summary { display: grid; grid-template-columns: 180px minmax(0,1fr); gap: 26px; align-items: center; }
+.ledger-donut { display: grid; position: relative; width: 152px; height: 152px; place-items: center; border-radius: 50%; cursor: crosshair; }
+.ledger-donut svg { position: relative; z-index: 1; width: 152px; height: 152px; overflow: visible; }
+.ledger-donut svg path { transition: none; }
+.ledger-donut::before { content: ""; position: absolute; width: 88px; height: 88px; border-radius: 50%; background: var(--color-bg-card); }
+.ledger-donut span { position: relative; z-index: 1; text-align: center; color: var(--color-text-secondary); font-size: 11px; } .ledger-donut strong { display: block; margin-top: 4px; color: var(--color-text-primary); font-size: 14px; }
+.ledger-donut-tooltip { position: absolute; z-index: 4; top: 50%; left: calc(100% + 12px); display: grid; grid-template-columns: auto 1fr auto; gap: 4px 7px; min-width: 150px; padding: 9px 11px; color: var(--color-text-primary); background: var(--color-bg-card); border: 1px solid var(--color-border); border-radius: 9px; box-shadow: 0 8px 24px rgba(18,32,56,.16); transform: translateY(-50%); pointer-events: none; white-space: nowrap; }
+.ledger-donut-tooltip i { width: 9px; height: 9px; margin-top: 4px; border-radius: 50%; } .ledger-donut-tooltip strong { margin: 0; font-size: 12px; } .ledger-donut-tooltip b { font-size: 12px; } .ledger-donut-tooltip em { grid-column: 2 / -1; color: var(--color-text-tertiary); font-size: 11px; font-style: normal; }
+.ledger-category-summary__list { display: grid; gap: 9px; } .ledger-category-summary__list > div { display: grid; grid-template-columns: minmax(80px,1fr) auto 42px; gap: 8px; align-items: center; font-size: 13px; }
+.ledger-category-summary__list span { min-width: 0; overflow: hidden; color: var(--color-text-secondary); text-overflow: ellipsis; white-space: nowrap; }
+.ledger-category-name { display: flex; align-items: center; gap: 6px; }
+.ledger-category-name img, .ledger-category-name i { display: inline-grid; width: 20px; height: 20px; flex: 0 0 auto; place-items: center; border-radius: 6px; }
+.ledger-category-name img { object-fit: cover; }
+.ledger-category-name i { color: #fff; font-size: 11px; font-style: normal; }
+.ledger-category-summary__list strong { color: var(--color-text-primary); font-size: 13px; } .ledger-category-summary__list em { color: var(--color-text-tertiary); font-style: normal; text-align: right; }
+.ledger-category-summary__list b { display: block; grid-column: 1 / -1; height: 4px; overflow: hidden; border-radius: 4px; background: #edf1f7; } .ledger-category-summary__list b i { display: block; height: 100%; border-radius: inherit; }
+.ledger-day-panel { display: flex; flex-direction: column; padding: 0; overflow: hidden; } .ledger-day-panel__head { display: flex; align-items: center; justify-content: space-between; padding: 22px 24px 16px; border-bottom: 1px solid var(--color-border); }
+.ledger-day-panel__head strong { display: inline-block; margin-right: 8px; font-size: 22px; } .ledger-day-panel__head span { color: var(--color-text-secondary); } .ledger-day-panel__totals { display: flex; gap: 14px; } .ledger-day-panel__head b { font-size: 14px; } .ledger-day-panel__head b.income { color: var(--color-success); } .ledger-day-panel__head b.expense { color: var(--color-danger); }
+.ledger-day-panel__date { display: flex; align-items: center; gap: 8px; }
+.ledger-day-panel__date > div { min-width: 112px; text-align: center; }
+.ledger-day-panel__date button { display: grid; width: 28px; height: 28px; padding: 0; place-items: center; color: var(--color-text-secondary); background: var(--color-surface-soft); border: 1px solid var(--color-border); border-radius: 8px; cursor: pointer; }
+.ledger-day-panel__date button:hover { color: var(--color-primary); border-color: color-mix(in srgb, var(--color-primary) 35%, var(--color-border)); }
+.ledger-day-panel__columns { display: grid; grid-template-columns: 1fr 1fr auto; gap: 12px; padding: 12px 24px; color: var(--color-text-tertiary); font-size: 12px; background: var(--color-bg-hover); } .ledger-day-panel__columns span:last-child { text-align: right; }
+.ledger-day-list { flex: 1; } .ledger-day-row, .ledger-day-panel__columns { display: grid; grid-template-columns: minmax(180px, 1.15fr) minmax(180px, 1fr) 112px; gap: 12px; align-items: center; } .ledger-day-row { position: relative; min-height: 61px; padding: 10px 24px; border-bottom: 1px solid var(--color-border); }
+.ledger-day-panel__columns { padding: 10px 24px; color: var(--color-text-tertiary); background: var(--color-bg-soft); font-size: 12px; } .ledger-day-panel__columns span:last-child { text-align: right; }
+.ledger-day-row { cursor: pointer; transition: background .16s ease; } .ledger-day-row:hover, .ledger-day-row:focus-visible { background: #f7faff; outline: none; } .ledger-day-row__category { display: flex; align-items: center; gap: 10px; min-width: 0; } .ledger-day-row__category i, .ledger-day-row__category img { display: grid; width: 30px; height: 30px; flex: 0 0 auto; place-items: center; color: var(--color-primary); border-radius: 50%; background: #edf4ff; font-style: normal; font-size: 13px; object-fit: cover; }
+.ledger-day-row__category strong, .ledger-day-row__note { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; } .ledger-day-row__note { color: var(--color-text-tertiary); } .ledger-account-cell { display: flex; align-items: center; gap: 8px; min-width: 0; } .ledger-account-cell img, .ledger-account-cell i { display: grid; width: 24px; height: 24px; flex: 0 0 auto; place-items: center; border-radius: 7px; font-size: 11px; font-style: normal; object-fit: cover; } .ledger-day-row__amount { text-align: right; white-space: nowrap; } .ledger-day-row__amount.positive { color: var(--color-success); } .ledger-day-row__amount.negative { color: var(--color-danger); }
+.ledger-entry-detail header { display: flex; align-items: flex-start; justify-content: space-between; } .ledger-entry-detail header span { color: var(--color-text-secondary); font-size: 13px; } .ledger-entry-detail h2 { margin: 5px 0 0; font-size: 22px; } .ledger-entry-detail header button { border: 0; background: transparent; color: var(--color-text-secondary); font-size: 24px; cursor: pointer; }
+.ledger-modal__tabs { display: inline-flex; gap: 4px; width: fit-content; margin-bottom: 16px; padding: 4px; background: rgba(0,0,0,.12); border-radius: 999px; } .ledger-modal__tabs button { width: auto; min-width: 62px; height: 32px; padding: 0 14px; color: rgba(255,255,255,.82); background: transparent; border: 0; border-radius: 999px; cursor: pointer; font: inherit; font-size: 13px; font-weight: 700; line-height: 32px; white-space: nowrap; } .ledger-modal__tabs button.active { color: var(--color-text-primary); background: #fff; box-shadow: 0 2px 8px rgba(15, 23, 42, .14); }
+.ledger-entry-detail__amount { margin: 26px 0; font-size: 32px; font-weight: 700; } .ledger-entry-detail__amount.positive { color: var(--color-success); } .ledger-entry-detail__amount.negative { color: var(--color-danger); } .ledger-entry-detail dl { margin: 0; border-top: 1px solid var(--color-border); } .ledger-entry-detail dl > div { display: flex; justify-content: space-between; gap: 20px; padding: 13px 0; border-bottom: 1px solid var(--color-border); } .ledger-entry-detail dt { color: var(--color-text-secondary); } .ledger-entry-detail dd { margin: 0; text-align: right; } .ledger-entry-detail footer { display: flex; justify-content: flex-end; gap: 10px; margin-top: 22px; }
+.ledger-detail-link { margin: auto auto 0; padding: 17px; color: var(--color-primary); border: 0; background: transparent; cursor: pointer; font-size: 14px; }
+.calendar-entry > .r-tag { display: inline-flex; align-items: center; justify-content: center; box-sizing: border-box; line-height: 1; }
+@media (max-width: 1100px) { .ledger-content-grid { grid-template-columns: 1fr; } .ledger-filter-panel { grid-template-columns: repeat(2,minmax(0,1fr)); } }
+@media (max-width: 760px) { .ledger-dashboard__toolbar { align-items: stretch; flex-direction: column; } .ledger-dashboard__actions { justify-content: stretch; } .ledger-dashboard__actions > * { flex: 1; } .ledger-overview__grid { grid-template-columns: repeat(2,minmax(0,1fr)); } .ledger-filter-panel { grid-template-columns: 1fr; } .ledger-category-summary { grid-template-columns: 1fr; justify-items: center; } .ledger-day-row, .ledger-day-panel__columns { grid-template-columns: minmax(0, 1fr) minmax(120px, .8fr) 92px; } }
+@media (max-width: 760px) { .asset-link-box { grid-template-columns: 1fr; } .asset-link-box > .r-select, .asset-link-box > .r-input { grid-column: 1 / -1; } }
 </style>
 
 <style>
@@ -2145,8 +2729,15 @@ async function saveDraft() {
 }
 
 .rizhi-ledger-modal-card .n-card__content {
+  display: flex;
+  height: 100%;
   min-height: 0;
   overflow: hidden;
   padding: 0 !important;
 }
+
+.rizhi-calendar-modal.n-card { height: min(720px, calc(100dvh - 48px)); overflow: hidden; }
+.rizhi-calendar-modal .n-card__content { height: 100%; min-height: 0; padding: 0 !important; overflow: hidden; }
+.rizhi-calendar-modal .r-card { height: 100%; }
+.rizhi-calendar-modal .r-card > .n-card__content { height: 100%; min-height: 0; padding: 0 !important; }
 </style>

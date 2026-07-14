@@ -23,7 +23,6 @@ function createDefaultSettings(): UserSettingsRecord {
     currency: "CNY",
     locale: "zh-CN",
     theme: "light",
-    firstDayOfWeek: 1,
     displayName: authSession.username || "Demo User",
     notificationReadIds: [],
     notificationIgnoredIds: [],
@@ -37,7 +36,15 @@ function createDefaultSettings(): UserSettingsRecord {
 
 export const settingsService = {
   async get(): Promise<UserSettingsRecord> {
-    const local = (await rizhiDb.settings.get(settingsId())) ?? createDefaultSettings();
+    const stored = await rizhiDb.settings.get(settingsId());
+    const local = stored
+      ? {
+          ...stored,
+          displayName: stored.displayName === "Demo User" && authSession.username
+            ? authSession.username
+            : stored.displayName,
+        }
+      : createDefaultSettings();
     if (!isCloudDataSource()) return local;
     let profile = await getCloudUserProfile();
     if (!profile) {

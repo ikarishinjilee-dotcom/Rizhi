@@ -25,3 +25,17 @@ const proxyValue = computed({
   set: (value: SelectValue) => emit("update:modelValue", value),
 });
 </script>
+
+<style scoped>
+.r-select {
+  width: 100%;
+}
+
+.r-select:deep(.n-base-selection) {
+  background: rgba(255, 255, 255, 0.92);
+}
+
+.r-select:deep(.n-base-selection-placeholder) {
+  color: var(--color-text-tertiary);
+}
+</style>

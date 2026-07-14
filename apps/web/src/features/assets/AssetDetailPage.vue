@@ -832,7 +832,7 @@ async function handleAddonImages(event: Event) {
   const files = Array.from(input.files ?? []);
   if (!files.length) return;
   try {
-    const images = await Promise.all(files.map(imageFileToPersistentUrl));
+    const images = await Promise.all(files.map((file) => imageFileToPersistentUrl(file)));
     addonDraft.imageUrls = [...addonDraft.imageUrls, ...images].filter((url, index, urls) => urls.indexOf(url) === index);
     addonDraft.imageUrl = addonDraft.imageUrl || addonDraft.imageUrls[0] || "";
     addonErrors.form = "";

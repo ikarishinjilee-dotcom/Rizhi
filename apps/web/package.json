@@ -7,7 +7,6 @@
     "dev": "vite",
     "dev:unicloud": "vite --mode unicloud",
     "dev:test": "vite --mode staging",
-    "dev:http": "vite --mode http",
     "build": "vue-tsc -b && vite build",
     "build:unicloud": "vue-tsc -b && vite build --mode unicloud",
     "build:test": "vue-tsc -b && vite build --mode staging",
@@ -25,7 +24,8 @@
     "pinia": "^2.3.0",
     "vue": "^3.5.13",
     "vue-echarts": "^7.0.3",
-    "vue-router": "^4.5.0"
+    "vue-router": "^4.5.0",
+    "vuedraggable": "^4.1.0"
   },
   "devDependencies": {
     "@playwright/test": "^1.61.1",

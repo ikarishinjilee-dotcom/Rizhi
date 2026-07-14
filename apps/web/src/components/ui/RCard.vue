@@ -10,7 +10,15 @@ import { NCard } from "naive-ui";
 
 <style scoped>
 .r-card {
-  border-color: var(--color-border);
+  overflow: hidden;
+  background: var(--color-bg-card);
+  border-color: var(--color-border-soft);
   box-shadow: var(--shadow-card);
+  transition: transform 0.2s ease, box-shadow 0.2s ease, border-color 0.2s ease;
+}
+
+.r-card:hover {
+  border-color: rgba(38, 116, 255, 0.16);
+  box-shadow: var(--shadow-card-hover);
 }
 </style>

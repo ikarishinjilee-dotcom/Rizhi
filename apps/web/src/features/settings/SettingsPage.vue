@@ -22,7 +22,7 @@
     </header>
 
     <div v-if="activeSection === 'overview'" class="settings-overview">
-      <RouterLink v-for="item in overviewItems" :key="item.path" :to="item.path" class="overview-card">
+      <RouterLink v-for="item in overviewItems.filter((item) => item.path !== '/settings/categories')" :key="item.path" :to="item.path" class="overview-card">
         <span class="overview-card__icon"><component :is="item.icon" :size="20" /></span>
         <div>
           <h2>{{ item.label }}</h2>
@@ -65,10 +65,6 @@
             <label>
               <span>语言</span>
               <RSelect v-model="profileDraft.locale" :options="localeOptions" />
-            </label>
-            <label>
-              <span>每周开始日</span>
-              <RSelect v-model="profileDraft.firstDayOfWeek" :options="weekStartOptions" />
             </label>
           </div>
           <RInlineFeedback v-if="profileMessage" :tone="profileMessageTone">{{ profileMessage }}</RInlineFeedback>
@@ -448,6 +444,7 @@ import type { CategoryDomain, CategoryRecord, TransactionRecord } from "@/domain
 import { backupService } from "@/services/backupService";
 import { categoryService } from "@/services/categoryService";
 import { settingsService } from "@/services/settingsService";
+import { authSession } from "@/services/authService";
 import { useAppDataStore } from "@/stores/appDataStore";
 import { imageFileToPersistentUrl } from "@/utils/imageFiles";
 
@@ -458,11 +455,10 @@ const avatarFileInput = ref<HTMLInputElement | null>(null);
 const profileMessage = ref("");
 const profileMessageTone = ref<"success" | "danger">("success");
 const profileDraft = reactive({
-  displayName: "Demo User",
+  displayName: authSession.username || "未设置",
   avatarDataUrl: undefined as string | undefined,
   currency: "CNY" as string | number | null,
   locale: "zh-CN" as string | number | null,
-  firstDayOfWeek: 1 as string | number | null,
 });
 const resetting = ref(false);
 const exporting = ref(false);
@@ -524,7 +520,7 @@ const settingsNavItems = [
   { label: "个人资料", path: "/settings/profile", icon: UserRound },
   { label: "分类管理", path: "/settings/categories", icon: Tags },
   { label: "数据管理", path: "/settings/data", icon: DatabaseBackup },
-];
+].filter((item) => item.path !== "/settings/categories");
 const sectionCopy: Record<SettingsSection, { title: string; description: string }> = {
   overview: { title: "设置中心", description: "管理个人资料、业务分类和本地数据。" },
   profile: { title: "个人资料", description: "设置应用内显示身份和基础偏好。" },
@@ -558,10 +554,6 @@ const overviewItems = computed(() => [
 ]);
 const currencyOptions = [{ label: "人民币（CNY）", value: "CNY" }];
 const localeOptions = [{ label: "简体中文", value: "zh-CN" }];
-const weekStartOptions = [
-  { label: "星期一", value: 1 },
-  { label: "星期日", value: 0 },
-];
 
 const categoryDomainOptions: Array<{ label: string; value: CategoryDomain }> = [
   { label: "资产分类", value: "asset" },
@@ -589,6 +581,8 @@ const categoryTypeOptions = {
   ],
 };
 
+
+const categoryTypeOptionsWithBank = { ...categoryTypeOptions, bank: [{ label: "银行", value: "other" }] };
 
 const assetCategorySortOptions = [
   { label: "自定义", value: "manual" as const },
@@ -626,7 +620,7 @@ const parentCategories = computed(() => activeTransactionCategories.value
   .filter((category) => !category.parentId)
   .sort((a, b) => a.sort - b.sort));
 const parentCategoryOptions = computed(() => parentCategories.value.map((category) => ({ label: category.name, value: category.id })));
-const currentCategoryTypeOptions = computed(() => categoryTypeOptions[categoryDomain.value]);
+const currentCategoryTypeOptions = computed(() => categoryTypeOptionsWithBank[categoryDomain.value]);
 
 function compareByManualOrder(left: CategoryRecord, right: CategoryRecord) {
   return left.sort - right.sort || left.name.localeCompare(right.name, "zh-CN");
@@ -709,11 +703,10 @@ watch(parentCategories, (parents) => {
 
 async function loadProfile() {
   const settings = await settingsService.get();
-  profileDraft.displayName = settings.displayName ?? "Demo User";
+  profileDraft.displayName = settings.displayName || authSession.username || "未设置";
   profileDraft.avatarDataUrl = settings.avatarDataUrl;
   profileDraft.currency = settings.currency;
   profileDraft.locale = settings.locale;
-  profileDraft.firstDayOfWeek = settings.firstDayOfWeek;
   profileMessage.value = "";
 }
 
@@ -732,7 +725,6 @@ async function saveProfile() {
       avatarDataUrl: profileDraft.avatarDataUrl,
       currency: "CNY",
       locale: "zh-CN",
-      firstDayOfWeek: Number(profileDraft.firstDayOfWeek) === 0 ? 0 : 1,
     });
     profileDraft.displayName = displayName;
     profileMessageTone.value = "success";
@@ -892,7 +884,7 @@ function editCategory(category: CategoryRecord) {
     selectedParentCategoryId.value = category.parentId ?? category.id;
   }
   categoryDraft.name = category.name;
-  categoryDraft.type = category.type ?? categoryTypeOptions[category.domain][0]?.value ?? "other";
+  categoryDraft.type = category.type ?? categoryTypeOptionsWithBank[category.domain][0]?.value ?? "other";
   categoryDraft.parentId = category.parentId ?? null;
   categoryDraft.sort = String(category.sort);
   categoryDraft.color = category.color || "#1677FF";

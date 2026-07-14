@@ -25,7 +25,7 @@ function dataUrlBytes(dataUrl: string) {
   return Math.ceil(base64.length * 0.75);
 }
 
-export async function imageFileToPersistentUrl(file: File) {
+export async function imageFileToPersistentUrl(file: File, _kind: "asset" | "addon" | "avatar" | "category_icon" = "asset") {
   if (!file.type.startsWith("image/")) throw new Error(`${file.name} 不是有效图片`);
   if (file.size > MAX_IMAGE_BYTES) throw new Error(`${file.name} 超过 12MB，请压缩后再上传`);
 

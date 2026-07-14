@@ -28,3 +28,22 @@ const proxyValue = computed({
   set: (value: string) => emit("update:modelValue", value),
 });
 </script>
+
+<style scoped>
+.r-input {
+  width: 100%;
+}
+
+.r-input:deep(.n-input) {
+  background: rgba(255, 255, 255, 0.92);
+}
+
+.r-input:deep(.n-input__input-el),
+.r-input:deep(.n-input__textarea-el) {
+  color: var(--color-text-primary);
+}
+
+.r-input:deep(.n-input__placeholder) {
+  color: var(--color-text-tertiary);
+}
+</style>

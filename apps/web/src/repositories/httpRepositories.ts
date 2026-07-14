@@ -25,11 +25,12 @@ import type {
 } from "@/repositories/contracts";
 import type { AssetAddonRecord, AssetAttachmentRecord, AssetRecord, CategoryRecord, ID, MoneyAccountRecord, TransactionRecord } from "@/domain/models";
 import { getAuthToken, handleUnauthorized } from "@/services/authService";
+import { getApiBaseUrl, isUniCloudDataSource } from "@/services/apiConfig";
 import { uploadImageDataUrl } from "@/services/cloudApiService";
 
-const apiBaseUrl = (import.meta.env.VITE_API_BASE_URL ?? "http://127.0.0.1:8797/api/v1").replace(/\/$/, "");
+const apiBaseUrl = getApiBaseUrl();
 const userId = import.meta.env.VITE_USER_ID?.trim() || "user-local";
-const useUniCloudTransport = import.meta.env.VITE_DATA_SOURCE === "unicloud";
+const useUniCloudTransport = isUniCloudDataSource();
 
 type ApiSuccess<T> = {
   data: T;
@@ -110,7 +111,7 @@ async function withImageAttachments<T extends { imageUrl?: string; imageUrls?: s
   }
 
   const attachments = prepared.attachments;
-  if (!attachments?.some((attachment) => attachment.url.startsWith("data:image/"))) return prepared;
+  if (!useUniCloudTransport || !attachments?.some((attachment) => attachment.url.startsWith("data:image/"))) return prepared;
   const uploadedAttachments = await Promise.all(attachments.map(async (attachment) => {
     if (!attachment.url.startsWith("data:image/")) return attachment;
     const uploaded = await uploadImageDataUrl(attachment.url, purpose);
@@ -225,6 +226,7 @@ export const httpCategoryRepository: CategoryRepository = {
     const params = new URLSearchParams();
     if (input.domain) params.set("domain", input.domain);
     if (input.type) params.set("type", input.type);
+    if (input.scope) params.set("scope", input.scope);
     if (input.enabled !== undefined) params.set("enabled", String(input.enabled));
     const query = params.toString();
     return request<CategoryRecord[]>(`/categories${query ? `?${query}` : ""}`);

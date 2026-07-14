@@ -28,11 +28,11 @@ const feedbackIcon = computed(() => {
   grid-template-columns: 16px minmax(0, 1fr);
   gap: var(--space-2);
   align-items: start;
-  padding: 10px 12px;
-  color: #1d4ed8;
-  background: #eff6ff;
-  border: 1px solid #bfdbfe;
-  border-radius: var(--radius-lg);
+  padding: 12px 14px;
+  color: var(--color-primary);
+  background: var(--color-primary-soft);
+  border: 1px solid rgba(38, 116, 255, 0.16);
+  border-radius: var(--radius-md);
   font-size: var(--font-caption);
   font-weight: 600;
   line-height: 1.55;
@@ -43,14 +43,14 @@ const feedbackIcon = computed(() => {
 }
 
 .inline-feedback--danger {
-  color: #b42318;
+  color: var(--color-danger);
   background: var(--color-danger-light);
-  border-color: #fecaca;
+  border-color: rgba(239, 68, 68, 0.2);
 }
 
 .inline-feedback--success {
-  color: #047857;
+  color: var(--color-success);
   background: var(--color-success-light);
-  border-color: #bbf7d0;
+  border-color: rgba(22, 184, 120, 0.2);
 }
 </style>

@@ -38,6 +38,7 @@ console.log(`[Rizhi] Building ${target.label} web bundle...`);
 const build = spawnSync(npmCommand, ["run", target.buildScript], {
   cwd: resolve("."),
   stdio: "inherit",
+  shell: process.platform === "win32",
 });
 
 if (build.status !== 0) process.exit(build.status ?? 1);

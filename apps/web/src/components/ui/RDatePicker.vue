@@ -35,3 +35,13 @@ const proxyValue = computed({
   set: (value: DateValue) => emit("update:modelValue", value),
 });
 </script>
+
+<style scoped>
+.r-date-picker {
+  width: 100%;
+}
+
+.r-date-picker:deep(.n-input) {
+  background: rgba(255, 255, 255, 0.92);
+}
+</style>

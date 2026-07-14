@@ -59,16 +59,21 @@
               <label><span>型号 / 规格</span><RInput v-model="draft.model" placeholder="例如 256GB / 黑色 / M2" /></label>
               <label><span>购买渠道</span><RInput v-model="draft.channel" placeholder="Apple 官网 / 京东 / 线下门店" /></label>
             </div>
-            <div class="category-picker">
+            <div class="category-picker category-picker--roots">
               <button
-                v-for="category in assetCategories"
+                v-for="category in assetRootCategories"
                 :key="category.id"
                 :data-testid="`asset-category-option-${category.id}`"
                 :class="{ active: draft.categoryId === category.id }"
                 type="button"
-                @click="draft.categoryId = category.id"
+                @click="selectRootCategory(category.id)"
               >
-                {{ category.name }}
+                <img v-if="category.iconUrl" :src="category.iconUrl" alt="" /><i v-else>{{ category.icon || category.name.slice(0, 1) }}</i>{{ category.name }}
+              </button>
+            </div>
+            <div v-if="selectedRootCategoryId && selectedSubCategories.length" class="category-picker category-picker--children">
+              <button v-for="category in selectedSubCategories" :key="category.id" type="button" :class="{ active: draft.categoryId === category.id }" @click="draft.categoryId = category.id">
+                <img v-if="category.iconUrl" :src="category.iconUrl" alt="" /><i v-else>{{ category.icon || category.name.slice(0, 1) }}</i>{{ category.name }}
               </button>
             </div>
           </section>
@@ -186,6 +191,9 @@ const initialDraftSnapshot = ref("");
 const assetCategories = computed(() => store.categories
   .filter((category) => category.domain === "asset" && !category.deletedAt && category.enabled !== false)
   .sort((left, right) => left.sort - right.sort || left.name.localeCompare(right.name, "zh-CN")));
+const assetRootCategories = computed(() => assetCategories.value.filter((category) => !category.parentId));
+const selectedRootCategoryId = ref<string | number | null>(null);
+const selectedSubCategories = computed(() => assetCategories.value.filter((category) => category.parentId === selectedRootCategoryId.value));
 const accountOptions = computed(() => store.accounts.map((account) => ({ label: account.name, value: account.id })));
 const lifeOptions = [1, 2, 3, 5, 8].map((year) => ({ label: `${year} 年`, value: year }));
 
@@ -225,11 +233,12 @@ function toTime(value?: string) {
 }
 
 function resetDraft() {
-  const firstCategory = assetCategories.value[0]?.id ?? null;
+  const firstCategory = assetRootCategories.value[0]?.id ?? null;
   draft.name = props.asset?.name ?? "";
   draft.brand = props.asset?.brand ?? "";
   draft.model = props.asset?.model ?? "";
   draft.categoryId = props.asset?.categoryId ?? firstCategory;
+  selectedRootCategoryId.value = findRootCategoryId(String(draft.categoryId ?? ""));
   draft.channel = props.asset?.merchant ?? "";
   draft.cost = props.asset ? String(props.asset.originalCost) : "";
   draft.purchaseDate = toTime(props.asset?.purchaseDate) ?? Date.now();
@@ -242,6 +251,19 @@ function resetDraft() {
   draft.imageUrl = draft.imageUrls[0] || "";
   clearErrors();
   initialDraftSnapshot.value = serializeDraft();
+}
+
+function findRootCategoryId(id: string) {
+  let category = assetCategories.value.find((item) => item.id === id);
+  while (category?.parentId) category = assetCategories.value.find((item) => item.id === category?.parentId);
+  return category?.id ?? assetRootCategories.value[0]?.id ?? null;
+}
+
+function selectRootCategory(id: string | number) {
+  selectedRootCategoryId.value = id;
+  const children = assetCategories.value.filter((category) => category.parentId === id);
+  if (children.length) draft.categoryId = children[0].id;
+  else draft.categoryId = id;
 }
 
 function clearErrors() {
@@ -316,7 +338,7 @@ async function handleImageFiles(event: Event) {
   if (!files.length) return;
 
   try {
-    const images = await Promise.all(files.map(imageFileToPersistentUrl));
+    const images = await Promise.all(files.map((file) => imageFileToPersistentUrl(file)));
     draft.imageUrls = [...draft.imageUrls, ...images].filter((url, index, urls) => urls.indexOf(url) === index);
     draft.imageUrl = draft.imageUrl || draft.imageUrls[0] || "";
     errors.form = "";
@@ -573,6 +595,9 @@ watch([() => props.asset, assetCategories, () => store.accounts.length], () => {
 }
 
 .category-picker button {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
   height: 32px;
   padding: 0 var(--space-4);
   color: var(--color-text-secondary);
@@ -580,6 +605,24 @@ watch([() => props.asset, assetCategories, () => store.accounts.length], () => {
   border: 1px solid var(--color-border);
   border-radius: 999px;
   cursor: pointer;
+}
+
+.category-picker button img,
+.category-picker button i {
+  display: grid;
+  width: 20px;
+  height: 20px;
+  place-items: center;
+  border-radius: 6px;
+  font-size: 11px;
+  font-style: normal;
+  object-fit: cover;
+}
+
+.category-picker--children {
+  margin-top: 8px;
+  padding-left: 12px;
+  border-left: 2px solid var(--color-primary-light);
 }
 
 .category-picker button.active {

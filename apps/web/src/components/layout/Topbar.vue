@@ -164,6 +164,7 @@
           <div class="account-menu__identity">
             <strong>{{ profile.displayName }}</strong>
             <span>{{ authSession.username || "日值账户" }}</span>
+            <em class="account-menu__role">{{ accountRoleLabel }}</em>
           </div>
           <button type="button" @click="openProfile">
             <UserRound :size="16" />
@@ -196,7 +197,7 @@ import { Bell, BellRing, Box, CalendarClock, ChevronDown, ChevronRight, CreditCa
 import DeleteConfirmModal from "@/components/business/DeleteConfirmModal.vue";
 import RInput from "@/components/ui/RInput.vue";
 import type { UserSettingsRecord } from "@/domain/models";
-import { authSession, logout } from "@/services/authService";
+import { authSession, isAdmin, isSuperAdmin, logout } from "@/services/authService";
 import { SETTINGS_UPDATED_EVENT, settingsService } from "@/services/settingsService";
 import { useAppDataStore } from "@/stores/appDataStore";
 
@@ -252,10 +253,11 @@ const notificationDraft = reactive({
 });
 const selectedIndex = ref(0);
 const profile = reactive({
-  displayName: "Demo User",
+  displayName: authSession.username || "未设置",
   avatarDataUrl: undefined as string | undefined,
 });
 const profileInitial = computed(() => profile.displayName.trim().charAt(0).toUpperCase() || "R");
+const accountRoleLabel = computed(() => isSuperAdmin() ? "超级管理员" : isAdmin() ? "管理员" : "普通用户");
 const normalizedQuery = computed(() => query.value.trim().toLocaleLowerCase("zh-CN"));
 const allSearchResults = computed<SearchResult[]>(() => [
   ...store.assets.map((asset) => {
@@ -552,7 +554,7 @@ async function confirmLogout() {
 }
 
 function applySettings(settings: UserSettingsRecord) {
-  profile.displayName = settings.displayName ?? "Demo User";
+  profile.displayName = settings.displayName || authSession.username || "未设置";
   profile.avatarDataUrl = settings.avatarDataUrl;
   readNotificationIds.value = new Set(settings.notificationReadIds ?? []);
   ignoredNotificationIds.value = new Set(settings.notificationIgnoredIds ?? []);
@@ -575,7 +577,6 @@ onMounted(async () => {
     currency: "CNY" as const,
     locale: "zh-CN" as const,
     theme: "light" as const,
-    firstDayOfWeek: 1 as const,
     createdAt: new Date().toISOString(),
     updatedAt: new Date().toISOString(),
   })));
@@ -1215,6 +1216,18 @@ onBeforeUnmount(() => {
 .account-menu__panel > button:hover {
   color: var(--color-text-primary);
   background: var(--color-bg-hover);
+}
+
+.account-menu__role {
+  width: fit-content;
+  margin-top: 4px;
+  padding: 3px 7px;
+  color: var(--color-primary);
+  background: var(--color-primary-light);
+  border-radius: var(--radius-pill);
+  font-size: 10px;
+  font-style: normal;
+  font-weight: 700;
 }
 
 .account-menu__panel > button.danger {
