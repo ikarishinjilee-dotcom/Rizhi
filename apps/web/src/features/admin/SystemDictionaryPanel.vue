@@ -34,8 +34,8 @@
 						</span>
 						<span>
 							<strong>{{ item.name }}</strong>
-							<small>排序 {{ item.sort }}<template v-if="bankLabel(item)"> ·
-									{{ bankLabel(item) }}</template></small>
+							<small>排序 {{ item.sort }}</small>
+							<small v-if="domain === 'bank' && item.note" class="category-card__note">{{ item.note }}</small>
 						</span>
 					</button>
 					<div class="category-card__badges">
@@ -114,18 +114,17 @@
 					<label><span>排序 *</span>
 						<RInput v-model="draft.sort" inputmode="numeric" placeholder="数字越小越靠前" />
 					</label>
-					<template v-if="domain === 'account'">
-						<label><span>账户类别 *</span>
-							<RSelect v-model="draft.accountGroup" :options="groupOptions" />
-						</label>
-						<label><span>基础资金类型 *</span>
-							<RSelect v-model="draft.type" :options="typeOptions" />
-						</label>
-						<label v-if="needsBank"><span>所属银行 *</span>
-							<RSelect v-model="draft.bankId" :options="bankOptions" placeholder="选择银行" />
-						</label>
-					</template>
-					<template v-else-if="domain === 'asset'">
+					<label v-if="domain === 'bank'"><span>备注</span>
+						<RInput v-model="draft.note" placeholder="例如：美国分行、国际账户" />
+					</label>
+					<label v-if="domain === 'account'"><span>账户方向 *</span>
+						<RSelect v-model="draft.accountDirection" :options="directionOptions" />
+					</label>
+					<label v-if="domain === 'account'"><span>账户分组 *</span>
+						<RSelect v-model="draft.accountGroup" :options="accountGroupOptions" />
+					</label>
+					<label v-if="domain === 'account'" class="enabled-row"><input v-model="draft.requiresBank" type="checkbox" /> 需要选择银行</label>
+					<template v-if="domain === 'asset'">
 						<div class="scope-field">
 							<span>适用范围 *</span>
 							<div class="scope-options">
@@ -276,7 +275,7 @@
 	const statusFilter = ref<"all" | "enabled" | "disabled">("all");
 	const scopeFilter = ref<"all" | CategoryScope>("all");
 	const message = ref(""), messageTone = ref<"success" | "danger">("success");
-	const draft = reactive({ id: "", name: "", sort: "100", type: "other", parentId: "", accountGroup: "asset", accountDirection: "asset", bankId: "", iconUrl: "", iconFileId: "", scopes: ["asset", "expense"] as CategoryScope[], enabled: true });
+	const draft = reactive({ id: "", name: "", note: "", sort: "100", type: "other", parentId: "", accountDirection: "asset", accountGroup: "asset", requiresBank: false, iconUrl: "", iconFileId: "", scopes: ["asset", "expense"] as CategoryScope[], enabled: true });
 	const items = computed(() => store.categories
 		.filter((item) => props.domain === "asset" ? isBusinessCategory(item) : item.domain === props.domain)
 		.sort((a, b) => a.sort - b.sort));
@@ -298,13 +297,11 @@
 	const selectedBatchItems = computed(() => batchItems.value.filter((item) => selectedBatchIds.value.includes(item.id)));
 	const panelTitle = computed(() => props.domain === "asset" ? "资产与记账分类" : props.domain === "account" ? "资金账户类型" : "银行管理");
 	const panelDescription = computed(() => props.domain === "asset" ? "统一维护资产、支出和收入可使用的系统分类。" : props.domain === "account" ? "统一维护添加资金账户时可选择的类型。" : "统一维护银行卡所属银行及其图标。");
-	const groupOptions = [{ label: "普通存储账户", value: "asset" }, { label: "信用卡账户", value: "credit" }, { label: "充值账户", value: "stored_value" }];
-	const typeOptions = [{ label: "现金", value: "cash" }, { label: "电子钱包", value: "wallet" }, { label: "银行卡", value: "debit_card" }, { label: "信用卡", value: "credit_card" }, { label: "消费信用", value: "consumer_credit" }, { label: "其他", value: "other" }];
 	const statusOptions = [{ label: "状态：全部", value: "all" }, { label: "状态：启用", value: "enabled" }, { label: "状态：停用", value: "disabled" }];
 	const scopeOptions = [{ label: "分类类型：全部", value: "all" }, { label: "资产", value: "asset" }, { label: "支出", value: "expense" }, { label: "收入", value: "income" }];
+	const directionOptions = [{ label: "资产账户", value: "asset" }, { label: "负债账户", value: "liability" }];
+	const accountGroupOptions = [{ label: "现金账户", value: "asset" }, { label: "信用账户", value: "credit" }, { label: "充值账户", value: "stored_value" }];
 	const batchOperationOptions = [{ label: "批量启用", value: "enable" }, { label: "批量停用", value: "disable" }, { label: "批量修改适用范围", value: "scopes" }, { label: "批量删除", value: "delete" }];
-	const bankOptions = computed(() => store.categories.filter((item) => item.domain === "bank" && item.enabled !== false).sort((a, b) => a.sort - b.sort).map((item) => ({ label: item.name, value: item.id })));
-	const needsBank = computed(() => draft.type === "debit_card" || draft.type === "credit_card");
 	const batchPreviewText = computed(() => {
 		const count = selectedBatchIds.value.length;
 		if (!count) return "请选择至少一个分类。";
@@ -318,10 +315,7 @@
 		if (isBusinessCategory(item)) {
 			return categoryScopes(item).map((scope) => ({ asset: "资产", expense: "支出", income: "收入" })[scope]).join(" / ");
 		}
-		return groupOptions.find((option) => option.value === item.accountGroup)?.label || "普通存储账户";
-	}
-	function bankLabel(item : CategoryRecord) {
-		return item.bankId ? store.categories.find((bank) => bank.id === item.bankId)?.name || "" : "";
+		return "";
 	}
 	function childItemsOf(parentId : string) {
 		return items.value.filter((item) => item.parentId === parentId);
@@ -462,7 +456,7 @@
 			batchDeleting.value = false;
 		}
 	}
-	function reset() { Object.assign(draft, { id: "", name: "", sort: "100", type: props.domain === "asset" ? "other" : "wallet", parentId: "", accountGroup: "asset", accountDirection: "asset", bankId: "", iconUrl: "", iconFileId: "", scopes: props.domain === "asset" ? ["asset", "expense"] : [], enabled: true }); }
+	function reset() { Object.assign(draft, { id: "", name: "", note: "", sort: "100", type: "other", parentId: "", accountDirection: "asset", accountGroup: "asset", requiresBank: false, iconUrl: "", iconFileId: "", scopes: props.domain === "asset" ? ["asset", "expense"] : [], enabled: true }); }
 	function startCreate() {
 		reset();
 		selectedChildParent.value = null;
@@ -481,7 +475,7 @@
 		editorVisible.value = true;
 	}
 	function edit(item : CategoryRecord) {
-		Object.assign(draft, { id: item.id, name: item.name, sort: String(item.sort), type: String(item.type || "other"), parentId: item.parentId || "", accountGroup: item.accountGroup || "asset", accountDirection: item.accountDirection || "asset", bankId: item.bankId || "", iconUrl: item.iconUrl || "", iconFileId: item.iconFileId || "", scopes: categoryScopes(item), enabled: item.enabled !== false });
+		Object.assign(draft, { id: item.id, name: item.name, note: item.note || "", sort: String(item.sort), type: String(item.type || "other"), parentId: item.parentId || "", accountDirection: item.accountDirection || (item.accountGroup === "credit" ? "liability" : "asset"), accountGroup: item.accountGroup || "asset", requiresBank: item.requiresBank ?? (item.type === "debit_card" || item.type === "credit_card"), iconUrl: item.iconUrl || "", iconFileId: item.iconFileId || "", scopes: categoryScopes(item), enabled: item.enabled !== false });
 		selectedChildParent.value = item.parentId ? items.value.find((parent) => parent.id === item.parentId) || null : null;
 		editorVisible.value = true;
 	}
@@ -496,15 +490,13 @@
 	async function save() {
 		if (!draft.name.trim()) return showError(new Error("请输入名称"));
 		const sort = Number(draft.sort); if (!Number.isFinite(sort)) return showError(new Error("排序必须是数字"));
-		if (needsBank.value && !draft.bankId) return showError(new Error("请选择所属银行"));
 		if (props.domain === "asset" && !draft.scopes.length) return showError(new Error("请至少选择一个适用范围"));
 		const currentParent = draft.parentId ? items.value.find((item) => item.id === draft.parentId) : null;
 		if (props.domain === "asset" && draft.parentId && draft.enabled && currentParent?.enabled === false) return showError(new Error("一级分类已停用，不能单独启用子分类"));
 		saving.value = true;
-		const accountDirection = draft.accountGroup === "credit" ? "liability" : "asset";
 		const businessType = draft.scopes.includes("income") && !draft.scopes.includes("expense") ? "income" : draft.type;
 		const domain : CategoryDomain = props.domain === "asset" ? (draft.scopes.includes("asset") ? "asset" : "transaction") : props.domain;
-		const payload : CreateCategoryInput = { domain, name: draft.name.trim(), sort, parentId: draft.parentId || undefined, type: (props.domain === "asset" ? businessType : draft.type) as CategoryRecord["type"], scopes: props.domain === "asset" ? [...draft.scopes] : undefined, enabled: draft.enabled, iconUrl: draft.iconUrl || undefined, iconFileId: draft.iconFileId || undefined, accountGroup: props.domain === "account" ? draft.accountGroup as CategoryRecord["accountGroup"] : undefined, accountDirection: props.domain === "account" ? accountDirection as CategoryRecord["accountDirection"] : undefined, bankId: needsBank.value ? draft.bankId : undefined };
+		const payload : CreateCategoryInput = { domain, name: draft.name.trim(), note: props.domain === "bank" ? draft.note.trim() || undefined : undefined, sort, parentId: draft.parentId || undefined, type: (props.domain === "asset" ? businessType : draft.type) as CategoryRecord["type"], scopes: props.domain === "asset" ? [...draft.scopes] : undefined, enabled: draft.enabled, iconUrl: draft.iconUrl || undefined, iconFileId: draft.iconFileId || undefined, accountDirection: props.domain === "account" ? draft.accountDirection as CategoryRecord["accountDirection"] : undefined, accountGroup: props.domain === "account" ? draft.accountGroup as CategoryRecord["accountGroup"] : undefined, requiresBank: props.domain === "account" ? draft.requiresBank : undefined };
 		try {
 			draft.id ? await categoryService.update({ id: draft.id, ...payload }) : await categoryService.create(payload);
 			if (draft.id && props.domain === "asset" && !draft.parentId && !draft.enabled) {
@@ -635,6 +627,14 @@
 		margin-top: 6px;
 		color: var(--color-text-muted);
 		font-size: 12px;
+	}
+
+	.category-card__main .category-card__note {
+		margin-top: 3px;
+		max-width: 180px;
+		overflow: hidden;
+		text-overflow: ellipsis;
+		white-space: nowrap;
 	}
 
 	.drag-handle {

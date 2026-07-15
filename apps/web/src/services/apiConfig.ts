@@ -10,10 +10,6 @@ export function isUniCloudDataSource() {
   return getDataSource() === "unicloud";
 }
 
-export function isRemoteDataSource() {
-  return isUniCloudDataSource();
-}
-
 export function getApiBaseUrl() {
   return (import.meta.env.VITE_API_BASE_URL || "").trim().replace(/\/$/, "");
 }

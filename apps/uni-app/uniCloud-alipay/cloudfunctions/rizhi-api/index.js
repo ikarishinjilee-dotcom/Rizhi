@@ -5,6 +5,7 @@ const db = uniCloud.database();
 const command = db.command;
 const userProfiles = db.collection("rizhi-user-profiles");
 const uniIdUsers = db.collection("uni-id-users");
+const siteBranding = db.collection("rizhi-site-branding");
 
 const collections = {
   assets: db.collection("rizhi-assets"),
@@ -178,7 +179,9 @@ async function authenticate(event, token) {
     error.code = result?.errCode || "UNAUTHORIZED";
     throw error;
   }
-  const userResult = await uniIdUsers.doc(result.uid).field({ status: true }).get();
+  // Token 中的 role 可能是在授予管理员身份前签发的旧值。
+  // 每次请求都从用户表读取实时角色，避免前端已显示管理员但写操作仍被拒绝。
+  const userResult = await uniIdUsers.doc(result.uid).field({ status: true, role: true }).get();
   const user = userResult.data?.[0];
   if (!user || Number(user.status || 0) !== 0) {
     const error = new Error(Number(user?.status) === 1 ? "账户已被停用" : "账户当前不可用");
@@ -186,7 +189,7 @@ async function authenticate(event, token) {
     error.code = Number(user?.status) === 1 ? "ACCOUNT_DISABLED" : "ACCOUNT_UNAVAILABLE";
     throw error;
   }
-  return result;
+  return { ...result, role: Array.isArray(user.role) ? user.role : [] };
 }
 
 async function invokeUniId(event, method, params, deviceId) {
@@ -393,7 +396,7 @@ async function uploadImage(userId, body) {
     "image/png": "png",
     "image/webp": "webp",
   }[match[1]];
-  const purpose = ["asset", "addon", "avatar", "category_icon"].includes(body.purpose) ? body.purpose : "asset";
+  const purpose = ["asset", "addon", "avatar", "category_icon", "site_icon"].includes(body.purpose) ? body.purpose : "asset";
   const cloudPath = `rizhi/${userId}/${purpose}/${Date.now()}-${Math.random().toString(36).slice(2, 10)}.${extension}`;
   const uploaded = await uniCloud.uploadFile({ cloudPath, fileContent });
   const fileId = uploaded.fileID || uploaded.fileId;
@@ -467,6 +470,47 @@ async function updateUserProfile(userId, body) {
   if (existing) await userProfiles.doc(existing._id).set(record);
   else await userProfiles.add(record);
   return getUserProfile(userId);
+}
+
+async function getSiteBranding() {
+  const result = await siteBranding.where({ key: "default" }).limit(1).get();
+  const record = result.data[0] || {};
+  const urls = await getTemporaryFileUrls([record.logoFileId, record.mainLogoFileId, record.faviconFileId, record.homeLogoFileId, record.homeHeroFileId].filter(Boolean));
+  return {
+    logoFileId: record.logoFileId,
+    mainLogoFileId: record.mainLogoFileId,
+    faviconFileId: record.faviconFileId,
+    homeLogoFileId: record.homeLogoFileId,
+    homeHeroFileId: record.homeHeroFileId,
+    logoUrl: urls.get(record.logoFileId) || "",
+    mainLogoUrl: urls.get(record.mainLogoFileId) || "",
+    faviconUrl: urls.get(record.faviconFileId) || "",
+    homeLogoUrl: urls.get(record.homeLogoFileId) || "",
+    homeHeroUrl: urls.get(record.homeHeroFileId) || "",
+    homeTitle: record.homeTitle || "",
+    homeDescription: record.homeDescription || "",
+  };
+}
+
+async function updateSiteBranding(auth, body) {
+  requireAdmin(auth);
+  const existingResult = await siteBranding.where({ key: "default" }).limit(1).get();
+  const existing = existingResult.data[0];
+  const record = {
+    key: "default",
+    logoFileId: body.logoFileId ? String(body.logoFileId) : undefined,
+    mainLogoFileId: body.mainLogoFileId ? String(body.mainLogoFileId) : undefined,
+    faviconFileId: body.faviconFileId ? String(body.faviconFileId) : undefined,
+    homeLogoFileId: body.homeLogoFileId ? String(body.homeLogoFileId) : undefined,
+    homeHeroFileId: body.homeHeroFileId ? String(body.homeHeroFileId) : undefined,
+    homeTitle: String(body.homeTitle || "").trim(),
+    homeDescription: String(body.homeDescription || "").trim(),
+    createdAt: existing?.createdAt || now(),
+    updatedAt: now(),
+  };
+  if (existing) await siteBranding.doc(existing._id).set(record);
+  else await siteBranding.add(record);
+  return getSiteBranding();
 }
 
 function withoutInternalFields(record) {
@@ -590,7 +634,6 @@ async function updateAccountBalance(userId, accountId, delta, transactionId, occ
 async function createTransaction(userId, body, type) {
   const amount = Number(body.amount);
   if (!Number.isFinite(amount) || amount <= 0) throw new Error("金额必须大于 0");
-  if (!body.accountId) throw new Error("请选择账户");
   const timestamp = now();
   const transaction = {
     ...body,
@@ -603,14 +646,9 @@ async function createTransaction(userId, body, type) {
     updatedAt: timestamp,
   };
   await insert("transactions", userId, transaction);
-  await updateAccountBalance(
-    userId,
-    transaction.accountId,
-    type === "income" ? amount : -amount,
-    transaction.id,
-    transaction.occurredAt,
-    transaction.note,
-  );
+  if (transaction.accountId) {
+    await updateAccountBalance(userId, transaction.accountId, type === "income" ? amount : -amount, transaction.id, transaction.occurredAt, transaction.note);
+  }
   return transaction;
 }
 
@@ -622,7 +660,7 @@ async function updateTransaction(userId, id, body) {
   }
 
   const oldDelta = existing.type === "income" ? Number(existing.amount) : -Number(existing.amount);
-  await updateAccountBalance(userId, existing.accountId, -oldDelta, id, now(), "撤销交易原值");
+  if (existing.accountId) await updateAccountBalance(userId, existing.accountId, -oldDelta, id, now(), "撤销交易原值");
 
   const updated = {
     ...withoutInternalFields(existing),
@@ -634,7 +672,7 @@ async function updateTransaction(userId, id, body) {
   if (!Number.isFinite(updated.amount) || updated.amount <= 0) throw new Error("金额必须大于 0");
   await replace("transactions", userId, id, updated);
   const newDelta = updated.type === "income" ? updated.amount : -updated.amount;
-  await updateAccountBalance(userId, updated.accountId, newDelta, id, updated.occurredAt, updated.note);
+  if (updated.accountId) await updateAccountBalance(userId, updated.accountId, newDelta, id, updated.occurredAt, updated.note);
   return updated;
 }
 
@@ -645,7 +683,7 @@ async function deleteTransaction(userId, id) {
     throw new Error("联动交易请在对应业务入口删除");
   }
   const delta = existing.type === "income" ? -Number(existing.amount) : Number(existing.amount);
-  await updateAccountBalance(userId, existing.accountId, delta, id, now(), "删除交易回滚");
+  if (existing.accountId) await updateAccountBalance(userId, existing.accountId, delta, id, now(), "删除交易回滚");
   await collections.accountFlows.where({ userId, transactionId: id }).remove();
   await collections.transactions.doc(existing._id).remove();
   return null;
@@ -1243,6 +1281,12 @@ async function route(event) {
   }
   if (method === "PATCH" && path === "/profile") {
     return ok(await updateUserProfile(userId, body));
+  }
+  if (method === "GET" && path === "/site-branding") {
+    return ok(await getSiteBranding());
+  }
+  if (method === "PATCH" && path === "/site-branding") {
+    return ok(await updateSiteBranding(auth, body));
   }
   if (method === "POST" && path === "/auth/claim-local-data") {
     return ok(await claimLocalData(userId));

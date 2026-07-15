@@ -35,8 +35,39 @@ export function isCloudDataSource() {
   return isUniCloudDataSource();
 }
 
-export function uploadImageDataUrl(dataUrl: string, purpose: "asset" | "addon" | "avatar" | "category_icon") {
+export function uploadImageDataUrl(dataUrl: string, purpose: "asset" | "addon" | "avatar" | "category_icon" | "site_icon") {
   return request<{ fileId: string; url: string }>("/files/images", "POST", { dataUrl, purpose });
+}
+
+export type CloudSiteBranding = {
+  logoUrl?: string;
+  mainLogoUrl?: string;
+  faviconUrl?: string;
+  homeLogoUrl?: string;
+  homeHeroUrl?: string;
+  homeTitle?: string;
+  homeDescription?: string;
+  logoFileId?: string;
+  mainLogoFileId?: string;
+  faviconFileId?: string;
+  homeLogoFileId?: string;
+  homeHeroFileId?: string;
+};
+
+export function getCloudSiteBranding() {
+  return request<CloudSiteBranding>("/site-branding", "GET");
+}
+
+export function updateCloudSiteBranding(input: {
+  logoFileId?: string;
+  mainLogoFileId?: string;
+  faviconFileId?: string;
+  homeLogoFileId?: string;
+  homeHeroFileId?: string;
+  homeTitle?: string;
+  homeDescription?: string;
+}) {
+  return request<CloudSiteBranding>("/site-branding", "PATCH", input);
 }
 
 export function getCloudUserProfile() {

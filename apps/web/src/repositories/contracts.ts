@@ -86,7 +86,7 @@ export type CreateTransactionInput = {
   businessType?: TransactionBusinessType;
   amount: number;
   occurredAt: string;
-  accountId: ID;
+  accountId?: ID;
   assetId?: ID;
   addonId?: ID;
   merchant?: string;
@@ -140,6 +140,7 @@ export type CreateAccountInput = {
   type: MoneyAccountRecord["type"];
   direction: MoneyAccountRecord["direction"];
   balance: number;
+  includeInTotalAssets?: boolean;
   institution?: string;
   creditLimit?: number;
   billDay?: number;
@@ -161,6 +162,7 @@ export type UpdateAccountInput = Partial<CreateAccountInput> & {
 export type CreateCategoryInput = {
   domain: CategoryDomain;
   name: string;
+  note?: string;
   type?: CategoryRecord["type"];
   sort?: number;
   parentId?: ID;
@@ -176,6 +178,7 @@ export type CreateCategoryInput = {
   isSystem?: boolean;
   accountGroup?: CategoryRecord["accountGroup"];
   accountDirection?: CategoryRecord["accountDirection"];
+  requiresBank?: boolean;
   deletedAt?: string;
 };
 

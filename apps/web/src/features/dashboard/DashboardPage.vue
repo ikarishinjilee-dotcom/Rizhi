@@ -3,10 +3,19 @@
 		<section class="dashboard-page">
 			<section class="dashboard-welcome">
 				<div class="dashboard-welcome__copy">
+					<img class="dashboard-welcome__brand dashboard-welcome__brand--fallback"
+						src="/rizhi-logo-lockup.png" alt="Rizhi，记录生活，理清日常" />
+					<div class="dashboard-welcome__managed-copy">
+						<img class="dashboard-welcome__brand" :src="homeBranding.homeLogoUrl" alt="Rizhi，记录生活，理清日常" />
+						<h1>{{ homeBranding.homeTitle }}</h1>
+						<p>{{ homeBranding.homeDescription }}</p>
+					</div>
 					<h1>把资产、交易与物品，<br />整理成更清晰的生活秩序</h1>
 					<p>在 Rizhi，统一管理你的交易、资产与物品，清楚每一笔收支，<br />掌握资产状况，物品去向不再遗忘，重要事项及时提醒，<br />让生活与财务井井有条。</p>
 				</div>
-				<div class="dashboard-welcome__visual" aria-hidden="true"><img src="/dashboard-hero.png" alt="" /></div>
+				<div class="dashboard-welcome__visual" aria-hidden="true"><img class="dashboard-welcome__hero"
+						:src="homeBranding.homeHeroUrl" alt="" /><img class="dashboard-welcome__hero--fallback"
+						src="/dashboard-hero.png" alt="" /></div>
 			</section>
 			<section class="dashboard-entry-grid" aria-label="快速入口">
 				<button class="dashboard-entry dashboard-entry--purple" type="button"
@@ -116,8 +125,9 @@
 	import { assetTotalCost } from "@/domain/assetCalculations";
 	import type { AssetRecord, TransactionRecord } from "@/domain/models";
 	import { useAppDataStore } from "@/stores/appDataStore";
-	import { computed, onMounted, ref } from "vue";
+	import { computed, onBeforeUnmount, onMounted, ref } from "vue";
 	import { useRouter } from "vue-router";
+	import { getCachedSiteBranding, SITE_BRANDING_UPDATED_EVENT, siteBrandingService, type SiteBranding } from "@/services/siteBrandingService";
 
 	type MiniListItem = {
 		id ?: string;
@@ -131,7 +141,17 @@
 	const store = useAppDataStore();
 	const router = useRouter();
 
-	onMounted(initializeData);
+	const homeBranding = ref<SiteBranding>(getCachedSiteBranding());
+	function applyHomeBranding(event ?: Event) {
+		const next = (event as CustomEvent<SiteBranding> | undefined)?.detail;
+		if (next) homeBranding.value = next;
+	}
+	onMounted(() => {
+		void initializeData();
+		void siteBrandingService.get().then((next) => { homeBranding.value = next; }).catch(() => undefined);
+		window.addEventListener(SITE_BRANDING_UPDATED_EVENT, applyHomeBranding);
+	});
+	onBeforeUnmount(() => window.removeEventListener(SITE_BRANDING_UPDATED_EVENT, applyHomeBranding));
 
 	async function initializeData() {
 		await store.init().catch(() => undefined);
@@ -441,9 +461,12 @@
 	.dashboard-page {
 		display: grid;
 		gap: var(--space-5);
-		min-height: calc(100vh - 100px);
+		height: calc(100vh - 60px);
+		min-height: 0;
+		box-sizing: border-box;
+		overflow: hidden;
 		align-content: space-between;
-		padding: 42px 56px 52px;
+		padding: 32px 56px 28px;
 		/* background: radial-gradient(circle at 78% 24%, rgba(234, 236, 243, 1.0), transparent 42%), #f8faff; */
 	}
 
@@ -470,9 +493,31 @@
 		margin: 0;
 		color: #122957;
 		font-size: clamp(30px, 2.7vw, 44px);
-		line-height: 1.28;
-		letter-spacing: -.045em;
-		font-weight: 900;
+		line-height: 1.24;
+		letter-spacing: -.04em;
+		font-family: Inter, "PingFang SC", "Microsoft YaHei", Arial, sans-serif;
+		font-weight: 800;
+	}
+
+	.dashboard-welcome__brand {
+		display: block;
+		width: min(400px, 100%);
+		height: auto;
+		margin: 0 0 22px;
+		object-fit: contain;
+		filter: drop-shadow(0 8px 18px rgba(62, 103, 168, .1));
+	}
+
+	.dashboard-welcome__brand--fallback,
+	.dashboard-welcome__copy>h1,
+	.dashboard-welcome__copy>p,
+	.dashboard-welcome__visual .dashboard-welcome__hero--fallback {
+		display: none;
+	}
+
+	.dashboard-welcome__managed-copy h1,
+	.dashboard-welcome__managed-copy p {
+		white-space: pre-line;
 	}
 
 	.dashboard-welcome__copy p {
@@ -741,7 +786,7 @@
 		}
 
 		.dashboard-welcome__copy h1 {
-			font-size: clamp(30px, 3vw, 40px);
+			font-size: clamp(30px, 2vw, 40px);
 		}
 
 		.dashboard-welcome__copy p {
@@ -755,7 +800,9 @@
 
 	@media (max-width: 900px) {
 		.dashboard-page {
-			min-height: auto;
+			height: auto;
+			min-height: calc(100vh - 60px);
+			overflow: visible;
 			padding: 28px 18px 36px;
 		}
 
@@ -772,6 +819,11 @@
 
 		.dashboard-welcome__copy h1 {
 			font-size: 36px;
+		}
+
+		.dashboard-welcome__brand {
+			width: 190px;
+			margin: 0 auto 18px;
 		}
 
 		.dashboard-welcome__copy p {

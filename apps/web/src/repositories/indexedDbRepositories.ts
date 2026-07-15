@@ -201,6 +201,7 @@ export const indexedDbCategoryRepository: CategoryRepository = {
       domain: input.domain,
       type: defaultCategoryType(input),
       name: input.name.trim(),
+      note: input.note?.trim() || undefined,
       sort: input.sort ?? 999,
       parentId: input.parentId,
       color: input.color,
@@ -213,6 +214,7 @@ export const indexedDbCategoryRepository: CategoryRepository = {
       isSystem: input.isSystem ?? false,
       accountGroup: input.accountGroup,
       accountDirection: input.accountDirection,
+      requiresBank: input.requiresBank,
       bankId: input.bankId,
       deletedAt: input.deletedAt,
     };
@@ -242,6 +244,7 @@ export const indexedDbCategoryRepository: CategoryRepository = {
       domain: input.domain ?? category.domain,
       type: input.type ?? category.type,
       name: input.name?.trim() ?? category.name,
+      note: "note" in input ? input.note?.trim() || undefined : category.note,
       sort: input.sort ?? category.sort,
       parentId: nextParentId,
       color: input.color ?? category.color,
@@ -254,6 +257,7 @@ export const indexedDbCategoryRepository: CategoryRepository = {
       isSystem: input.isSystem ?? category.isSystem ?? false,
       accountGroup: input.accountGroup ?? category.accountGroup,
       accountDirection: input.accountDirection ?? category.accountDirection,
+      requiresBank: "requiresBank" in input ? input.requiresBank : category.requiresBank,
       bankId: "bankId" in input ? input.bankId : category.bankId,
       deletedAt: input.deletedAt ?? category.deletedAt,
     };

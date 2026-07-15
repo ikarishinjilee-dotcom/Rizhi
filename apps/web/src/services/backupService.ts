@@ -11,7 +11,7 @@ import type {
   UserSettingsRecord,
 } from "@/domain/models";
 import { getAuthToken, handleUnauthorized } from "@/services/authService";
-import { getApiBaseUrl, isRemoteDataSource, isUniCloudDataSource } from "@/services/apiConfig";
+import { getApiBaseUrl, isUniCloudDataSource } from "@/services/apiConfig";
 
 const BACKUP_FORMAT = "rizhi-local-backup";
 const BACKUP_VERSION = 1;
@@ -48,7 +48,7 @@ type ApiFailure = {
 };
 
 function useRemoteDataSource() {
-  return isRemoteDataSource();
+  return isUniCloudDataSource();
 }
 
 async function apiRequest<T>(path: string, init?: RequestInit): Promise<T> {

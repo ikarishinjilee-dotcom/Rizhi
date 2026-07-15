@@ -25,7 +25,9 @@ export const useAppDataStore = defineStore("appData", () => {
   const activeAccounts = computed(() => accounts.value.filter((account) => account.enabled !== false));
   const assetAccounts = computed(() => activeAccounts.value.filter((account) => account.direction === "asset"));
   const liabilityAccounts = computed(() => activeAccounts.value.filter((account) => account.direction === "liability"));
-  const totalAssetBalance = computed(() => assetAccounts.value.reduce((sum, account) => sum + account.balance, 0));
+  const totalAssetBalance = computed(() => assetAccounts.value
+    .filter((account) => account.includeInTotalAssets !== false)
+    .reduce((sum, account) => sum + account.balance, 0));
   const totalLiabilityBalance = computed(() => liabilityAccounts.value.reduce((sum, account) => sum + account.balance, 0));
   const netWorth = computed(() => totalAssetBalance.value - totalLiabilityBalance.value);
 

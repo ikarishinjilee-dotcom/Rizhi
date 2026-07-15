@@ -41,9 +41,9 @@ import {
   httpCategoryRepository,
   httpTransactionRepository,
 } from "@/repositories/httpRepositories";
-import { isRemoteDataSource } from "@/services/apiConfig";
+import { isUniCloudDataSource } from "@/services/apiConfig";
 
-const useHttpDataSource = isRemoteDataSource();
+const useHttpDataSource = isUniCloudDataSource();
 
 export const appDataRepository = useHttpDataSource ? httpAppDataRepository : indexedDbAppDataRepository;
 export const assetRepository = useHttpDataSource ? httpAssetRepository : indexedDbAssetRepository;

@@ -184,20 +184,33 @@
                 <span>备注</span>
                 <RInput v-model="accountDraft.note" placeholder="例如 日常消费分期" />
               </label>
+              <label v-if="selectedAccountNeedsBank">
+                <span>所属银行</span>
+                <button type="button" class="bank-picker-trigger" @click="bankPickerVisible = true">
+                  <span v-if="selectedBank" class="bank-picker-trigger__value"><b :style="{ background: selectedBank.color || '#1677ff' }">{{ selectedBank.icon || selectedBank.name.slice(0, 1) }}</b>{{ selectedBank.name }}</span>
+                  <span v-else class="bank-picker-trigger__placeholder">选择银行</span>
+                  <span>⌄</span>
+                </button>
+              </label>
+              <div class="account-total-assets-toggle">
+                <span>资产汇总</span>
+                <label class="switch-row"><input v-model="accountDraft.includeInTotalAssets" type="checkbox" /> 计入总资产</label>
+                <small>关闭后仍保留账户和流水，但不计入总资产与净资产。</small>
+              </div>
               <label :class="{ invalid: accountErrors.balance }">
                 <span>{{ selectedAccountType.direction === "liability" ? "当前欠款" : "当前余额" }}</span>
                 <RInput v-model="accountDraft.balance" placeholder="1,256.00" />
                 <em>{{ accountErrors.balance }}</em>
               </label>
-              <label>
+              <label v-if="selectedAccountIsCredit">
                 <span>总额度</span>
                 <RInput v-model="accountDraft.creditLimit" placeholder="5,000.00" />
               </label>
-              <label>
+              <label v-if="selectedAccountIsCredit">
                 <span>出账日</span>
                 <RSelect v-model="accountDraft.billDay" :options="dayOptions" placeholder="每月10日" />
               </label>
-              <label>
+              <label v-if="selectedAccountIsCredit">
                 <span>还款日</span>
                 <RSelect v-model="accountDraft.repaymentDay" :options="dayOptions" placeholder="每月10日" />
               </label>
@@ -208,6 +221,25 @@
               <RButton :loading="savingAccount" @click="submitAccount">{{ editingAccountId ? "保存修改" : "保存账户" }}</RButton>
             </footer>
           </div>
+        </div>
+      </section>
+    </n-modal>
+
+    <n-modal v-model:show="bankPickerVisible" preset="card" :bordered="false" :closable="false"
+      class="rizhi-fund-modal-card" content-style="padding: 0;"
+      :style="{ width: 'min(720px, calc(100vw - 48px))', borderRadius: '20px', overflow: 'hidden' }">
+      <section class="bank-picker-modal">
+        <header class="bank-picker-modal__head">
+          <div><span>银行选择</span><h3>选择所属银行</h3><p>选择后会回填到当前资金账户。</p></div>
+          <button type="button" @click="bankPickerVisible = false">×</button>
+        </header>
+        <div class="bank-picker-grid">
+          <button v-for="bank in bankItems" :key="bank.id" type="button" :class="{ active: accountDraft.bankId === bank.id }" @click="selectBank(bank)">
+            <span class="bank-picker-card__icon" :style="{ background: bank.color || '#1677ff' }"><img v-if="bank.iconUrl" :src="bank.iconUrl" alt="" /><b v-else>{{ bank.icon || bank.name.slice(0, 1) }}</b></span>
+            <strong>{{ bank.name }}</strong>
+            <small v-if="bank.note">{{ bank.note }}</small>
+          </button>
+          <REmptyState v-if="!bankItems.length" compact title="暂无可用银行" description="请先在管理员的银行管理中添加银行。" />
         </div>
       </section>
     </n-modal>
@@ -555,6 +587,8 @@ type AccountTypeItem = {
   color: string;
   type: AccountType;
   direction: MoneyAccountRecord["direction"];
+  group?: "asset" | "credit" | "stored_value";
+  requiresBank?: boolean;
 };
 type AccountListMode = "asset" | "liability" | "repayment";
 
@@ -562,6 +596,7 @@ const store = useAppDataStore();
 const router = useRouter();
 const route = useRoute();
 const showAccountModal = ref(false);
+const bankPickerVisible = ref(false);
 const showTransferModal = ref(false);
 const showRepaymentModal = ref(false);
 const showDetailDrawer = ref(false);
@@ -590,21 +625,21 @@ const initialAccountDraftSnapshot = ref("");
 const initialTransferDraftSnapshot = ref("");
 const initialRepaymentDraftSnapshot = ref("");
 
-const accountTypeSections: Array<{ title: string; items: AccountTypeItem[] }> = [
+const defaultAccountTypeSections: Array<{ title: string; items: AccountTypeItem[] }> = [
   {
     title: "资金账户",
     items: [
       { key: "cash", label: "现金", icon: "现", color: "#3B82F6", type: "cash", direction: "asset" },
       { key: "wechat", label: "微信", icon: "微", color: "#22C55E", type: "wallet", direction: "asset" },
       { key: "alipay", label: "支付宝", icon: "支", color: "#1677FF", type: "wallet", direction: "asset" },
-      { key: "bank", label: "银行卡", icon: "卡", color: "#38BDF8", type: "debit_card", direction: "asset" },
+      { key: "bank", label: "银行卡", icon: "卡", color: "#38BDF8", type: "debit_card", direction: "asset", requiresBank: true },
       { key: "other-asset", label: "其它", icon: "其", color: "#94A3B8", type: "other", direction: "asset" },
     ] satisfies AccountTypeItem[],
   },
   {
     title: "信用账户",
     items: [
-      { key: "credit-card", label: "信用卡", icon: "信", color: "#F97316", type: "credit_card", direction: "liability" },
+      { key: "credit-card", label: "信用卡", icon: "信", color: "#F97316", type: "credit_card", direction: "liability", requiresBank: true },
       { key: "huabei", label: "花呗", icon: "花", color: "#3B82F6", type: "consumer_credit", direction: "liability" },
       { key: "jiedai", label: "借呗", icon: "借", color: "#0EA5E9", type: "consumer_credit", direction: "liability" },
       { key: "jd", label: "京东", icon: "京", color: "#EF4444", type: "consumer_credit", direction: "liability" },
@@ -619,12 +654,36 @@ const accountTypeSections: Array<{ title: string; items: AccountTypeItem[] }> = 
     ] satisfies AccountTypeItem[],
   },
 ];
-const allAccountTypeItems: AccountTypeItem[] = accountTypeSections.flatMap((section) => section.items);
+const accountTypeSections = computed(() => {
+  const configured = store.categories
+    .filter((item) => item.domain === "account" && item.enabled !== false)
+    .sort((a, b) => a.sort - b.sort)
+    .map((item) => ({
+      key: item.id,
+      label: item.name,
+      icon: item.icon || item.name.slice(0, 1),
+      color: item.color || "#3B82F6",
+      type: (item.type || "other") as AccountType,
+      direction: item.accountDirection || (item.accountGroup === "credit" ? "liability" : "asset"),
+      group: (item.accountGroup || "asset") as AccountTypeItem["group"],
+      requiresBank: item.requiresBank ?? (item.type === "debit_card" || item.type === "credit_card"),
+    } satisfies AccountTypeItem));
+  if (!configured.length) return defaultAccountTypeSections;
+  const groupTitles = { asset: "现金账户", credit: "信用账户", stored_value: "充值账户" } as const;
+  return (["asset", "credit", "stored_value"] as const)
+    .map((group) => ({ title: groupTitles[group], items: configured.filter((item) => item.group === group) }))
+    .filter((section) => section.items.length);
+});
+const allAccountTypeItems = computed(() => accountTypeSections.value.flatMap((section) => section.items));
 
-const selectedAccountType = ref<AccountTypeItem>(accountTypeSections[0].items[0]);
+const selectedAccountType = ref<AccountTypeItem>(defaultAccountTypeSections[0].items[0]);
+const selectedAccountIsCredit = computed(() => selectedAccountType.value.group === "credit" || selectedAccountType.value.direction === "liability");
+const selectedAccountNeedsBank = computed(() => selectedAccountType.value.requiresBank === true);
 const accountDraft = reactive({
   name: "",
   note: "",
+  bankId: null as string | null,
+  includeInTotalAssets: true,
   balance: "",
   creditLimit: "",
   billDay: null as string | number | null,
@@ -654,6 +713,14 @@ const accountOptions = computed(() => store.activeAccounts.map((account) => ({ l
 const assetAccountOptions = computed(() => store.assetAccounts.map((account) => ({ label: account.name, value: account.id })));
 const liabilityAccountOptions = computed(() => store.liabilityAccounts.map((account) => ({ label: account.name, value: account.id })));
 const dayOptions = Array.from({ length: 28 }, (_, index) => ({ label: `每月${index + 1}日`, value: index + 1 }));
+const bankOptions = computed(() => store.categories
+  .filter((item) => item.domain === "bank" && item.enabled !== false)
+  .sort((a, b) => a.sort - b.sort)
+  .map((item) => ({ label: item.name, value: item.id })));
+const bankItems = computed(() => store.categories
+  .filter((item) => item.domain === "bank" && item.enabled !== false)
+  .sort((a, b) => a.sort - b.sort));
+const selectedBank = computed(() => bankItems.value.find((item) => item.id === accountDraft.bankId) ?? null);
 const summaryCards = computed(() => {
   const netWorthTrend = buildSummaryTrend("netWorth");
   const assetTrend = buildSummaryTrend("assets");
@@ -791,6 +858,8 @@ function openEditAccount(id: string) {
   selectedAccountType.value = matchAccountType(account);
   accountDraft.name = account.name;
   accountDraft.note = account.note ?? "";
+  accountDraft.bankId = account.bankId ?? null;
+  accountDraft.includeInTotalAssets = account.includeInTotalAssets !== false;
   accountDraft.balance = String(account.balance);
   accountDraft.creditLimit = account.creditLimit !== undefined ? String(account.creditLimit) : "";
   accountDraft.billDay = account.billDay ?? null;
@@ -813,17 +882,22 @@ function selectAccountType(item: AccountTypeItem) {
   }
 }
 
+function selectBank(bank: (typeof bankItems.value)[number]) {
+  accountDraft.bankId = bank.id;
+  bankPickerVisible.value = false;
+}
+
 function matchAccountType(account: MoneyAccountRecord) {
   const institution = account.institution?.trim();
-  const exactPreset = allAccountTypeItems.find((item) =>
+  const exactPreset = allAccountTypeItems.value.find((item) =>
     item.direction === account.direction
     && item.type === account.type
     && (item.label === institution || item.label === account.name || item.icon === account.icon || item.color === account.color)
   );
   if (exactPreset) return exactPreset;
 
-  const sameType = allAccountTypeItems.find((item) => item.type === account.type && item.direction === account.direction);
-  return sameType ?? accountTypeSections[0].items[0];
+  const sameType = allAccountTypeItems.value.find((item) => item.type === account.type && item.direction === account.direction);
+  return sameType ?? accountTypeSections.value[0].items[0];
 }
 
 function isAccountTypeDisabled(item: AccountTypeItem) {
@@ -895,12 +969,12 @@ function buildSummaryTrend(kind: SummaryTrendKind) {
 function calcSummaryValueAt(cutoff: Date, kind: SummaryTrendKind) {
   return store.accounts.reduce((sum, account) => {
     const balance = calcAccountBalanceAt(account, cutoff);
-    if (kind === "assets") return account.direction === "asset" ? sum + balance : sum;
+    if (kind === "assets") return account.direction === "asset" && account.includeInTotalAssets !== false ? sum + balance : sum;
     if (kind === "liabilities") return account.direction === "liability" ? sum + balance : sum;
     if (kind === "availableCredit") {
       return account.direction === "liability" ? sum + Math.max((account.creditLimit ?? 0) - balance, 0) : sum;
     }
-    return sum + (account.direction === "asset" ? balance : -balance);
+    return sum + (account.direction === "asset" && account.includeInTotalAssets !== false ? balance : account.direction === "liability" ? -balance : 0);
   }, 0);
 }
 
@@ -970,9 +1044,11 @@ function transactionTypeLabel(type?: string) {
 
 function resetAccountForm() {
   editingAccountId.value = null;
-  selectedAccountType.value = accountTypeSections[0].items[0];
+  selectedAccountType.value = accountTypeSections.value[0].items[0];
   accountDraft.name = "";
   accountDraft.note = "";
+  accountDraft.bankId = null;
+  accountDraft.includeInTotalAssets = true;
   accountDraft.balance = "";
   accountDraft.creditLimit = "";
   accountDraft.billDay = null;
@@ -1081,10 +1157,13 @@ async function submitAccount() {
       type: type.type,
       direction: type.direction,
       balance: parseAmount(accountDraft.balance || "0"),
+      includeInTotalAssets: accountDraft.includeInTotalAssets,
+      bankId: selectedAccountNeedsBank.value ? accountDraft.bankId || undefined : undefined,
+      bankName: selectedAccountNeedsBank.value ? bankOptions.value.find((item) => item.value === accountDraft.bankId)?.label : undefined,
       institution: type.label,
-      creditLimit: accountDraft.creditLimit ? parseAmount(accountDraft.creditLimit) : undefined,
-      billDay: Number(accountDraft.billDay) || undefined,
-      repaymentDay: Number(accountDraft.repaymentDay) || undefined,
+      creditLimit: selectedAccountIsCredit.value && accountDraft.creditLimit ? parseAmount(accountDraft.creditLimit) : undefined,
+      billDay: selectedAccountIsCredit.value ? Number(accountDraft.billDay) || undefined : undefined,
+      repaymentDay: selectedAccountIsCredit.value ? Number(accountDraft.repaymentDay) || undefined : undefined,
       color: type.color,
       icon: type.icon,
       note: accountDraft.note.trim() || undefined,
@@ -1415,6 +1494,27 @@ function goLedger() {
 .form-grid label, .transfer-body label { display: grid; grid-template-rows: auto auto 16px; gap: var(--space-2); color: var(--color-text-secondary); font-size: var(--font-caption); font-weight: 700; }
 .form-grid label.invalid, .transfer-body label.invalid { color: var(--color-danger); }
 .form-grid em, .transfer-body em { min-height: 16px; color: var(--color-danger); font-style: normal; line-height: 16px; }
+.bank-picker-trigger { display: flex; align-items: center; justify-content: space-between; width: 100%; min-height: 40px; padding: 0 12px; color: var(--color-text-primary); background: #fff; border: 1px solid var(--color-border); border-radius: 10px; cursor: pointer; text-align: left; }
+.bank-picker-trigger:hover { border-color: var(--color-primary); }
+.bank-picker-trigger__value { display: flex; align-items: center; gap: 8px; }
+.bank-picker-trigger__value b, .bank-picker-card__icon { display: grid; width: 28px; height: 28px; place-items: center; overflow: hidden; color: #fff; border-radius: 8px; font-size: 12px; font-weight: 800; }
+.bank-picker-card__icon img { width: 100%; height: 100%; object-fit: cover; }
+.bank-picker-trigger__placeholder { color: var(--color-text-muted); }
+.bank-picker-modal__head { display: flex; align-items: flex-start; justify-content: space-between; padding: 22px 24px; color: #fff; background: linear-gradient(135deg, #102a72, #3b82f6); }
+.bank-picker-modal__head span { font-size: 11px; font-weight: 800; letter-spacing: .08em; opacity: .78; }
+.bank-picker-modal__head h3 { margin: 6px 0; font-size: 22px; }
+.bank-picker-modal__head p { margin: 0; opacity: .78; }
+.bank-picker-modal__head > button { width: 32px; height: 32px; color: #fff; background: rgba(255,255,255,.16); border: 0; border-radius: 50%; cursor: pointer; font-size: 18px; }
+.bank-picker-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 14px; padding: 22px; max-height: 460px; overflow-y: auto; background: #f8fbff; }
+.bank-picker-grid > button { display: grid; grid-template-columns: auto 1fr; grid-template-rows: auto auto; align-items: center; gap: 3px 10px; min-height: 76px; padding: 12px; color: var(--color-text-primary); text-align: left; background: #fff; border: 1px solid var(--color-border); border-radius: 12px; cursor: pointer; }
+.bank-picker-grid > button:hover, .bank-picker-grid > button.active { border-color: var(--color-primary); box-shadow: 0 8px 18px rgba(22,119,255,.12); }
+.bank-picker-grid > button .bank-picker-card__icon { grid-row: 1 / -1; }
+.bank-picker-grid > button strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.bank-picker-grid > button small { overflow: hidden; color: #94a3b8; text-overflow: ellipsis; white-space: nowrap; }
+.account-total-assets-toggle { display: grid; grid-column: 1 / -1; gap: var(--space-2); color: var(--color-text-secondary); font-size: var(--font-caption); font-weight: 700; }
+.account-total-assets-toggle .switch-row { display: flex; align-items: center; gap: var(--space-2); color: var(--color-text-primary); font-weight: 700; }
+.account-total-assets-toggle .switch-row input { accent-color: var(--color-primary); }
+.account-total-assets-toggle small { color: var(--color-text-tertiary); font-weight: 500; }
 .form-error { margin-top: var(--space-3); padding: var(--space-3); color: var(--color-danger); background: #fff1f0; border: 1px solid #ffccc7; border-radius: 10px; }
 .delete-account-detail { display: grid; gap: var(--space-3); }
 .delete-account-detail div { display: flex; align-items: center; justify-content: space-between; gap: var(--space-3); padding-bottom: var(--space-3); border-bottom: 1px solid var(--color-border); }

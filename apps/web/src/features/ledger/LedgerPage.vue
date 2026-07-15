@@ -28,7 +28,7 @@
           </div>
         </div>
         <div class="ledger-dashboard__actions">
-          <RButton variant="secondary" @click="showCalendarModal = true"><NotebookText :size="15" /> 日报表</RButton>
+          <RButton variant="secondary" @click="showDailyReport = true"><NotebookText :size="15" /> 日报表</RButton>
           <RButton variant="secondary" aria-label="打开日历" @click="showCalendarModal = true"><CalendarDays :size="15" /> 日历模式</RButton>
           <RButton @click="openCreateModal('expense')"><Plus :size="16" /> 记一笔</RButton>
         </div>
@@ -165,6 +165,28 @@
     </RCard>
     </n-modal>
 
+    <n-modal v-model:show="showDailyReport" preset="card" class="rizhi-daily-report-modal" :bordered="false" :closable="false" :style="{ width: 'min(780px, calc(100vw - 48px))', borderRadius: '22px' }">
+      <section class="daily-report">
+        <header class="daily-report__header">
+          <div><span>DAILY REPORT</span><h2>日报表</h2><p>{{ ledgerView === 'year' ? yearLabel : monthLabel }}</p></div>
+          <button type="button" aria-label="关闭日报表" @click="showDailyReport = false">×</button>
+        </header>
+        <div class="daily-report__table-wrap">
+          <table class="daily-report__table">
+            <thead><tr><th>日期</th><th>收入</th><th>支出</th><th>结余</th></tr></thead>
+            <tbody>
+              <tr v-for="row in dailyReportRows" :key="row.key">
+                <td>{{ row.label }}</td><td>{{ formatAmount(row.income) }}</td><td>{{ formatAmount(row.expense) }}</td>
+                <td :class="row.net >= 0 ? 'positive' : 'negative'">{{ row.net >= 0 ? '+' : '-' }}{{ formatAmount(Math.abs(row.net)) }}</td>
+              </tr>
+              <tr v-if="!dailyReportRows.length"><td colspan="4" class="daily-report__empty">当前周期暂无交易记录</td></tr>
+            </tbody>
+            <tfoot v-if="dailyReportRows.length"><tr><th>平均</th><td>{{ formatAmount(dailyReportAverage.income) }}</td><td>{{ formatAmount(dailyReportAverage.expense) }}</td><td :class="dailyReportAverage.net >= 0 ? 'positive' : 'negative'">{{ dailyReportAverage.net >= 0 ? '+' : '-' }}{{ formatAmount(Math.abs(dailyReportAverage.net)) }}</td></tr></tfoot>
+          </table>
+        </div>
+      </section>
+    </n-modal>
+
     <div v-if="mode === 'records'" class="pagination">
       <span>当前筛选共 {{ filteredEntries.length }} 条交易</span>
     </div>
@@ -216,7 +238,7 @@
           </div>
 
           <div v-if="draftType === 'transfer'" class="ledger-form transfer-form">
-            <section class="form-section"><h3>转账信息</h3><div class="form-grid"><label :class="{ invalid: transferErrors.fromAccountId }"><span>转出账户</span><RSelect v-model="transferDraft.fromAccountId" :options="accountCreateOptions" placeholder="选择转出账户" /><em>{{ transferErrors.fromAccountId }}</em></label><label :class="{ invalid: transferErrors.toAccountId }"><span>转入账户</span><RSelect v-model="transferDraft.toAccountId" :options="accountCreateOptions" placeholder="选择转入账户" /><em>{{ transferErrors.toAccountId }}</em></label><label><span>备注</span><RInput v-model="transferDraft.note" placeholder="例如 支付宝转入微信" /></label></div></section>
+            <section class="form-section"><h3>转账信息</h3><div class="form-grid"><label :class="{ invalid: transferErrors.fromAccountId }"><span>转出账户</span><button type="button" class="account-picker-trigger" @click="openAccountPicker('from')"><span>{{ accountPickerAccountName(transferDraft.fromAccountId) }}</span><ChevronDown :size="16" /></button><em>{{ transferErrors.fromAccountId }}</em></label><label :class="{ invalid: transferErrors.toAccountId }"><span>转入账户</span><button type="button" class="account-picker-trigger" @click="openAccountPicker('to')"><span>{{ accountPickerAccountName(transferDraft.toAccountId) }}</span><ChevronDown :size="16" /></button><em>{{ transferErrors.toAccountId }}</em></label><label><span>备注</span><RInput v-model="transferDraft.note" placeholder="例如 支付宝转入微信" /></label></div></section>
             <RInlineFeedback v-if="transferErrors.form" tone="danger">{{ transferErrors.form }}</RInlineFeedback>
           </div>
           <div v-else class="ledger-form">
@@ -226,7 +248,7 @@
                 <label :class="{ invalid: draftErrors.date }"><span>发生日期</span><RDatePicker v-model="transactionDate" type="datetime" placeholder="选择日期时间" /><em>{{ draftErrors.date }}</em></label>
                 <label class="category-field" :class="{ invalid: draftErrors.categoryId }"><span>分类</span><div class="ledger-category-picker"><button v-for="category in currentRootCategories" :key="category.id" type="button" :class="{ active: draftCategoryId === category.id }" @click="selectTransactionRootCategory(category.id)"><img v-if="category.iconUrl" :src="category.iconUrl" alt="" /><i v-else>{{ categoryIconText(category) }}</i>{{ categoryDisplayName(category.id, category.name) }}</button></div><em>{{ draftErrors.categoryId }}</em></label>
                 <label v-if="currentSubCategories.length" class="category-field"><span>子分类</span><div class="ledger-category-picker ledger-category-picker--children"><button v-for="category in currentSubCategories" :key="category.id" type="button" :class="{ active: draftSubCategoryId === category.id }" @click="draftSubCategoryId = category.id"><img v-if="category.iconUrl" :src="category.iconUrl" alt="" /><i v-else>{{ categoryIconText(category) }}</i>{{ categoryDisplayName(category.id, category.name) }}</button><button type="button" :class="{ active: !draftSubCategoryId || draftSubCategoryId === 'none' }" @click="draftSubCategoryId = 'none'">不选择子分类</button></div></label>
-                <label :class="{ invalid: draftErrors.accountId }"><span>{{ draftType === "income" ? "收款账户" : "付款账户" }}</span><RSelect v-model="draftAccountId" :options="accountCreateOptions" placeholder="选择账户" /><em>{{ draftErrors.accountId }}</em></label>
+                <label :class="{ invalid: draftErrors.accountId }"><span>{{ draftType === "income" ? "收款账户" : "付款账户" }}</span><button type="button" class="account-picker-trigger" @click="openAccountPicker('draft')"><span>{{ accountPickerAccountName(draftAccountId) }}</span><ChevronDown :size="16" /></button><em>{{ draftErrors.accountId }}</em></label>
                 <label><span>{{ draftType === "income" ? "来源" : "商家" }}</span><RInput v-model="draftMerchant" :placeholder="draftType === 'income' ? '例如 工资 / 副业' : '例如 麦当劳 / 京东'" /></label>
               </div>
             </section>
@@ -268,6 +290,31 @@
             {{ draftType === "income" ? "保存收入" : draftType === "transfer" ? "确认转账" : "保存支出" }}
           </RButton>
         </footer>
+      </section>
+    </n-modal>
+
+    <n-modal v-model:show="showAccountPicker" :mask-closable="true" class="rizhi-account-picker-card" content-style="padding: 0;">
+      <section class="account-picker-modal">
+        <header>
+          <div><span>资金账户</span><h2>选择{{ accountPickerTitle }}</h2></div>
+          <button type="button" aria-label="关闭账户选择" @click="showAccountPicker = false">×</button>
+        </header>
+        <div class="account-picker-modal__content">
+          <button v-if="accountPickerTarget === 'draft'" type="button" class="account-picker-none" :class="{ active: !accountPickerSelectedId }" @click="selectPickerAccount(null)">
+            <i>账</i><span><strong>不选择账户</strong><small>仅记录收支，不影响资金账户余额</small></span>
+          </button>
+          <div v-for="section in accountPickerSections" :key="section.key" class="account-picker-section">
+            <h3>{{ section.title }}</h3>
+            <div class="account-picker-grid">
+              <button v-for="account in section.accounts" :key="account.id" type="button" :class="{ active: accountPickerSelectedId === account.id }" @click="selectPickerAccount(account.id)">
+                <img v-if="account.iconUrl" :src="account.iconUrl" alt="" />
+                <i v-else :style="{ background: account.color || '#3b82f6' }">{{ account.icon || account.name.slice(0, 1) }}</i>
+                <span><strong>{{ account.name }}</strong><small>{{ accountPickerBalance(account) }}</small></span>
+              </button>
+            </div>
+          </div>
+          <p v-if="!accountPickerSections.length" class="account-picker-empty">暂无可用账户，请先到资金页添加账户。</p>
+        </div>
       </section>
     </n-modal>
 
@@ -343,7 +390,7 @@ import RDataGate from "@/components/ui/RDataGate.vue";
 import RInlineFeedback from "@/components/ui/RInlineFeedback.vue";
 import REmptyState from "@/components/ui/REmptyState.vue";
 import { imageFileToPersistentUrl } from "@/utils/imageFiles";
-import type { AssetAddonRecord, TransactionRecord, TransactionType } from "@/domain/models";
+import type { AssetAddonRecord, MoneyAccountRecord, TransactionRecord, TransactionType } from "@/domain/models";
 import { assetAddonService } from "@/services/assetAddonService";
 import { accountService } from "@/services/accountService";
 import { transactionService } from "@/services/transactionService";
@@ -357,6 +404,7 @@ const route = useRoute();
 
 const mode = ref<"records" | "calendar">("records");
 const showCalendarModal = ref(false);
+const showDailyReport = ref(false);
 const ledgerView = ref<"month" | "year">("month");
 const chartMetric = ref<"expense" | "income" | "all">("expense");
 const categoryMetric = ref<"expense" | "income">("expense");
@@ -373,6 +421,8 @@ const selectedTransactionId = ref<string | null>(null);
 const showDeleteModal = ref(false);
 const showProtectedTransferModal = ref(false);
 const showUnsavedLedgerModal = ref(false);
+const showAccountPicker = ref(false);
+const accountPickerTarget = ref<"draft" | "from" | "to">("draft");
 const saving = ref(false);
 const deletingTransactionLoading = ref(false);
 const draftType = ref<"expense" | "income" | "transfer">("expense");
@@ -432,6 +482,32 @@ const accountOptions = computed(() => [
   ...store.accounts.map((account) => ({ label: account.name, value: account.id })),
 ]);
 const accountCreateOptions = computed(() => store.accounts.map((account) => ({ label: account.name, value: account.id })));
+const accountPickerSelectedId = computed(() => accountPickerTarget.value === "draft"
+  ? draftAccountId.value
+  : accountPickerTarget.value === "from" ? transferDraft.fromAccountId : transferDraft.toAccountId);
+const accountPickerTitle = computed(() => accountPickerTarget.value === "draft"
+  ? (draftType.value === "income" ? "收款账户" : "付款账户")
+  : accountPickerTarget.value === "from" ? "转出账户" : "转入账户");
+const accountPickerSections = computed<Array<{ key: string; title: string; accounts: MoneyAccountRecord[] }>>(() => {
+  const configured = store.categories
+    .filter((category) => category.domain === "account" && category.enabled !== false && !category.deletedAt)
+    .sort((left, right) => left.sort - right.sort);
+  if (!configured.length) {
+    return [
+      { key: "asset", title: "资产账户", accounts: store.accounts.filter((account) => account.direction === "asset") },
+      { key: "liability", title: "信用账户", accounts: store.accounts.filter((account) => account.direction === "liability") },
+    ].filter((section) => section.accounts.length);
+  }
+  const included = new Set<string | number>();
+  const sections = configured.map((category) => {
+    const accounts = store.accounts.filter((account) => account.accountTypeId === category.id);
+    accounts.forEach((account) => included.add(account.id));
+    return { key: String(category.id), title: category.name, accounts };
+  }).filter((section) => section.accounts.length);
+  const remaining = store.accounts.filter((account) => !included.has(account.id));
+  if (remaining.length) sections.push({ key: "other", title: "其他账户", accounts: remaining });
+  return sections;
+});
 const assetCreateOptions = computed(() => store.assets.map((asset) => ({ label: asset.name, value: asset.id })));
 const assetSearchResults = computed(() => {
   const query = assetSearchQuery.value.trim().toLowerCase();
@@ -467,6 +543,25 @@ const monthExpense = computed(() => periodEntries.value
   .filter((entry) => ledgerDirection(entry) === "expense")
   .reduce((sum, entry) => sum + entry.amount, 0));
 const monthNet = computed(() => monthIncome.value - monthExpense.value);
+const dailyReportRows = computed(() => {
+  const rows = new Map<string, { key: string; label: string; income: number; expense: number; net: number }>();
+  for (const entry of periodEntries.value) {
+    const date = new Date(displayOccurredAt(entry));
+    const key = toDateKey(date);
+    const row = rows.get(key) ?? { key, label: `${date.getMonth() + 1}/${date.getDate()}`, income: 0, expense: 0, net: 0 };
+    if (ledgerDirection(entry) === "income") row.income += entry.amount;
+    else row.expense += entry.amount;
+    row.net = row.income - row.expense;
+    rows.set(key, row);
+  }
+  return [...rows.values()].sort((left, right) => right.key.localeCompare(left.key));
+});
+const dailyReportAverage = computed(() => {
+  const count = Math.max(1, dailyReportRows.value.length);
+  const income = dailyReportRows.value.reduce((sum, row) => sum + row.income, 0) / count;
+  const expense = dailyReportRows.value.reduce((sum, row) => sum + row.expense, 0) / count;
+  return { income, expense, net: income - expense };
+});
 const categoryBreakdown = computed(() => buildCategoryBreakdown(filteredEntries.value));
 const recentMonths = computed(() => {
   const now = new Date();
@@ -880,6 +975,34 @@ function clearDraftErrors() {
   draftErrors.form = "";
 }
 
+function accountPickerAccountName(accountId: string | number | null) {
+  return accountId ? store.accounts.find((account) => account.id === accountId)?.name ?? "选择账户" : "不选择账户";
+}
+
+function accountPickerBalance(account: MoneyAccountRecord) {
+  const prefix = account.direction === "liability" && account.balance > 0 ? "-" : "";
+  return `${prefix}${formatAmount(account.balance)}`;
+}
+
+function openAccountPicker(target: "draft" | "from" | "to") {
+  accountPickerTarget.value = target;
+  showAccountPicker.value = true;
+}
+
+function selectPickerAccount(accountId: string | number | null) {
+  if (accountPickerTarget.value === "draft") {
+    draftAccountId.value = accountId;
+    draftErrors.accountId = "";
+  } else if (accountPickerTarget.value === "from") {
+    if (accountId) transferDraft.fromAccountId = accountId;
+    transferErrors.fromAccountId = "";
+  } else {
+    if (accountId) transferDraft.toAccountId = accountId;
+    transferErrors.toAccountId = "";
+  }
+  showAccountPicker.value = false;
+}
+
 function validateDraft() {
   clearDraftErrors();
   const amount = readAmount(draftAmount.value);
@@ -890,7 +1013,7 @@ function validateDraft() {
   }
   if (!transactionDate.value) draftErrors.date = "请选择发生日期。";
   if (!draftCategoryId.value) draftErrors.categoryId = "请选择分类。";
-  if (!draftAccountId.value) draftErrors.accountId = draftType.value === "income" ? "请选择收款账户。" : "请选择付款账户。";
+  if (!draftAccountId.value && draftType.value === "expense" && assetLinkMode.value !== "related") draftErrors.accountId = "作为附加项时必须选择付款账户。";
   if (draftType.value === "expense" && assetLinkMode.value !== "related" && !draftAssetId.value) {
     draftErrors.assetId = "作为附加项时必须选择关联资产。";
   }
@@ -1118,8 +1241,8 @@ function isAllFilter(value: string | number | null) {
   return value === null || value === "all";
 }
 
-function accountName(id: string) {
-  return store.accounts.find((account) => account.id === id)?.name ?? "-";
+function accountName(id?: string) {
+  return id ? store.accounts.find((account) => account.id === id)?.name ?? "-" : "未选择账户";
 }
 
 const transactionCategoryLabels: Record<string, string> = {
@@ -1306,7 +1429,7 @@ function editEntry(id: string) {
   draftAmount.value = String(entry.amount);
   draftCategoryId.value = entry.categoryId;
   draftSubCategoryId.value = entry.subCategoryId ?? "none";
-  draftAccountId.value = entry.accountId;
+  draftAccountId.value = entry.accountId ?? null;
   draftAssetId.value = entry.assetId ?? null;
   assetSearchQuery.value = entry.assetId ? store.assets.find((asset) => asset.id === entry.assetId)?.name ?? "" : "";
   draftMerchant.value = entry.merchant ?? "";
@@ -1328,7 +1451,7 @@ function applyRouteState() {
       typeFilter.value = ledgerDirection(entry);
       categoryFilter.value = entry.categoryId;
       subCategoryFilter.value = entry.subCategoryId ?? "all";
-      accountFilter.value = entry.accountId;
+      accountFilter.value = entry.accountId ?? "all";
 
       if (!isRepaymentTransaction(entry)) {
         editEntry(entry.id);
@@ -1455,7 +1578,7 @@ async function saveDraft() {
           subCategoryId,
           amount,
           occurredAt,
-          accountId: String(draftAccountId.value),
+          accountId: draftAccountId.value ? String(draftAccountId.value) : undefined,
           assetId: draftAssetId.value ? String(draftAssetId.value) : undefined,
           merchant: draftMerchant.value,
           note: draftNote.value,
@@ -1484,7 +1607,7 @@ async function saveDraft() {
         subCategoryId,
         amount,
         occurredAt,
-        accountId: String(draftAccountId.value),
+        accountId: draftAccountId.value ? String(draftAccountId.value) : undefined,
         assetId: draftAssetId.value ? String(draftAssetId.value) : undefined,
         merchant: draftMerchant.value,
         note: draftNote.value,
@@ -2554,6 +2677,43 @@ function fileToDataUrl(file: File) {
   background: var(--color-bg-hover);
   border-top: 1px solid var(--color-border);
 }
+
+.daily-report { overflow: hidden; background: #fff; border-radius: 22px; }
+.daily-report__header { position: relative; padding: 30px 36px 26px; text-align: center; border-bottom: 1px solid #edf0f5; }
+.daily-report__header span { display: block; color: var(--color-primary); font-size: 11px; font-weight: 800; letter-spacing: .12em; }
+.daily-report__header h2 { margin: 6px 0 3px; color: #182033; font-size: 30px; line-height: 1.2; }
+.daily-report__header p { margin: 0; color: var(--color-text-tertiary); font-size: 13px; }
+.daily-report__header button { position: absolute; top: 18px; right: 20px; display: grid; width: 32px; height: 32px; padding: 0; place-items: center; color: #69758a; background: #f5f7fb; border: 0; border-radius: 50%; cursor: pointer; font-size: 20px; }
+.daily-report__table-wrap { max-height: min(540px, calc(100dvh - 260px)); overflow: auto; }
+.daily-report__table { width: 100%; border-collapse: collapse; table-layout: fixed; }
+.daily-report__table th, .daily-report__table td { padding: 21px 18px; font-size: 16px; text-align: center; border-bottom: 1px solid #edf0f5; }
+.daily-report__table thead th { color: #4a5568; font-weight: 750; background: #fbfcfe; }
+.daily-report__table tbody td { color: #202939; font-variant-numeric: tabular-nums; }
+.daily-report__table tfoot th, .daily-report__table tfoot td { color: #27334a; font-weight: 750; background: #fbfcfe; border-bottom: 0; }
+.daily-report__table .positive { color: #12a775; }.daily-report__table .negative { color: #ed6269; }
+.daily-report__empty { height: 130px; color: var(--color-text-tertiary) !important; }
+
+.account-picker-modal { width: min(760px, calc(100vw - 48px)); overflow: hidden; background: var(--color-bg-card); border-radius: 18px; }
+.account-picker-modal > header { display: flex; align-items: flex-start; justify-content: space-between; padding: 26px 30px 20px; color: #fff; background: linear-gradient(120deg, #123373, #397ff0); }
+.account-picker-modal > header span { display: block; margin-bottom: 6px; font-size: 11px; font-weight: 700; letter-spacing: .08em; opacity: .78; text-transform: uppercase; }
+.account-picker-modal > header h2 { margin: 0; font-size: 24px; }
+.account-picker-modal > header > button { display: grid; width: 32px; height: 32px; padding: 0; place-items: center; color: #fff; border: 0; border-radius: 50%; background: rgba(255,255,255,.16); cursor: pointer; font-size: 20px; }
+.account-picker-modal__content { display: grid; gap: 22px; max-height: min(540px, calc(100dvh - 210px)); padding: 24px 30px 30px; overflow-y: auto; }
+.account-picker-none { display: grid; grid-template-columns: 36px minmax(0, 1fr); gap: 10px; align-items: center; min-height: 70px; padding: 12px; color: var(--color-text-primary); text-align: left; background: #fff; border: 1px dashed var(--color-border); border-radius: 12px; cursor: pointer; transition: border-color .16s ease, background .16s ease; }
+.account-picker-none:hover, .account-picker-none.active { border-color: var(--color-primary); background: var(--color-primary-light); }
+.account-picker-none i { display: grid; width: 36px; height: 36px; place-items: center; color: #64748b; font-size: 14px; font-style: normal; background: #e2e8f0; border-radius: 11px; }
+.account-picker-none span { display: grid; gap: 3px; min-width: 0; }.account-picker-none strong { font-size: 13px; }.account-picker-none small { color: var(--color-text-tertiary); font-size: 12px; }
+.account-picker-section { display: grid; gap: 12px; }
+.account-picker-section h3 { margin: 0; color: var(--color-text-secondary); font-size: 13px; }
+.account-picker-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; }
+.account-picker-grid > button { display: grid; grid-template-columns: 36px minmax(0, 1fr); gap: 10px; align-items: center; min-height: 70px; padding: 12px; color: var(--color-text-primary); text-align: left; background: #fff; border: 1px solid var(--color-border); border-radius: 12px; cursor: pointer; transition: border-color .16s ease, background .16s ease, box-shadow .16s ease; }
+.account-picker-grid > button:hover, .account-picker-grid > button.active { border-color: var(--color-primary); background: var(--color-primary-light); box-shadow: 0 5px 16px rgba(34, 105, 226, .1); }
+.account-picker-grid img, .account-picker-grid i { display: grid; width: 36px; height: 36px; place-items: center; color: #fff; border-radius: 11px; font-size: 14px; font-style: normal; object-fit: cover; }
+.account-picker-grid > button > span { display: grid; gap: 3px; min-width: 0; }
+.account-picker-grid strong, .account-picker-grid small { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.account-picker-grid strong { font-size: 13px; }.account-picker-grid small { color: var(--color-text-tertiary); font-size: 12px; }
+.account-picker-empty { margin: 0; padding: 32px; color: var(--color-text-tertiary); text-align: center; border: 1px dashed var(--color-border); border-radius: 12px; }
+.account-picker-trigger { display: flex; align-items: center; justify-content: space-between; width: 100%; min-height: 42px; padding: 0 12px; color: var(--color-text-primary); background: #fff; border: 1px solid var(--color-border); border-radius: 10px; cursor: pointer; font: inherit; text-align: left; }.account-picker-trigger:hover { border-color: var(--color-primary); }.account-picker-trigger > span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }.account-picker-trigger svg { flex: 0 0 auto; color: var(--color-text-tertiary); }
 
 @media (max-width: 1200px) {
   .ledger-filters,

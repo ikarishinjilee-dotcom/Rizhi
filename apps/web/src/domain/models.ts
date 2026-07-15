@@ -112,6 +112,7 @@ export type MoneyAccountRecord = TimestampFields & {
   type: AccountType;
   direction: AccountDirection;
   balance: number;
+  includeInTotalAssets?: boolean;
   institution?: string;
   creditLimit?: number;
   billDay?: number;
@@ -138,7 +139,8 @@ export type TransactionRecord = TimestampFields & {
   };
   amount: number;
   occurredAt: string;
-  accountId: ID;
+  /** 普通收支可不关联资金账户，此时不产生账户余额与资金流水。 */
+  accountId?: ID;
   relatedAccountId?: ID;
   assetId?: ID;
   assetSnapshot?: {
@@ -168,6 +170,7 @@ export type CategoryRecord = {
   domain: CategoryDomain;
   type?: TransactionType | AccountType | AssetCategoryKind;
   name: string;
+  note?: string;
   sort: number;
   parentId?: ID;
   color?: string;
@@ -182,6 +185,7 @@ export type CategoryRecord = {
   isSystem?: boolean;
   accountGroup?: AccountTypeGroup;
   accountDirection?: AccountDirection;
+  requiresBank?: boolean;
   deletedAt?: string;
 };
 

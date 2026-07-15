@@ -1,7 +1,7 @@
 <template>
   <main class="auth-page">
     <section class="auth-panel">
-      <div class="brand-mark">R</div>
+      <img class="brand-mark" :src="branding.mainLogoUrl" alt="Rizhi" />
       <div class="auth-heading">
         <span>Rizhi Account</span>
         <h1>创建日值账户</h1>
@@ -57,6 +57,7 @@ import RInlineFeedback from "@/components/ui/RInlineFeedback.vue";
 import RInput from "@/components/ui/RInput.vue";
 import { loadRegisterCaptcha, registerAccount } from "@/services/authService";
 import { settingsService } from "@/services/settingsService";
+import { getCachedSiteBranding, siteBrandingService } from "@/services/siteBrandingService";
 import { useAppDataStore } from "@/stores/appDataStore";
 
 const router = useRouter();
@@ -72,6 +73,7 @@ const captchaImage = ref("");
 const captchaLoading = ref(false);
 const submitting = ref(false);
 const errorMessage = ref("");
+const branding = ref(getCachedSiteBranding());
 const canSubmit = computed(() => (
   form.username.trim().length >= 3
   && form.password.length >= 8
@@ -118,7 +120,14 @@ async function submit() {
   }
 }
 
-onMounted(refreshCaptcha);
+onMounted(async () => {
+  await refreshCaptcha();
+  try {
+    branding.value = await siteBrandingService.get();
+  } catch {
+    // 注册页保留本地缓存或内置图标，不能因品牌配置请求失败阻断注册。
+  }
+});
 </script>
 
 <style scoped>
@@ -140,15 +149,10 @@ onMounted(refreshCaptcha);
 }
 
 .brand-mark {
-  width: 42px;
-  height: 42px;
-  display: grid;
-  place-items: center;
-  color: #fff;
-  background: var(--color-primary);
-  border-radius: var(--radius-md);
-  font-size: 20px;
-  font-weight: 800;
+	width: 42px;
+	height: 42px;
+	display: block;
+	object-fit: contain;
 }
 
 .auth-heading {

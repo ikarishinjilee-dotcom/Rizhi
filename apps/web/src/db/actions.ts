@@ -78,7 +78,7 @@ export type CreateTransactionInput = {
   businessType?: TransactionBusinessType;
   amount: number;
   occurredAt: string;
-  accountId: ID;
+  accountId?: ID;
   assetId?: ID;
   addonId?: ID;
   merchant?: string;
@@ -143,7 +143,10 @@ export type CreateAccountInput = {
   type: MoneyAccountRecord["type"];
   direction: MoneyAccountRecord["direction"];
   balance: number;
+  includeInTotalAssets?: boolean;
   institution?: string;
+  bankName?: string;
+  bankId?: ID;
   creditLimit?: number;
   billDay?: number;
   repaymentDay?: number;
@@ -421,7 +424,7 @@ export async function upgradeLegacyMidnightTransactionTimes() {
           updatedAt: nowIso(),
         })));
       }
-      affectedAccountIds.add(transaction.accountId);
+      if (transaction.accountId) affectedAccountIds.add(transaction.accountId);
       if (transaction.relatedAccountId) affectedAccountIds.add(transaction.relatedAccountId);
     }
 
@@ -434,8 +437,8 @@ export async function createTransaction(input: CreateTransactionInput) {
   assertPositiveAmount(input.amount);
 
   return rizhiDb.transaction("rw", [rizhiDb.assets, rizhiDb.accounts, rizhiDb.transactions, rizhiDb.accountFlows, rizhiDb.categories], async () => {
-    const account = await rizhiDb.accounts.get(input.accountId);
-    if (!account) throw new Error("账户不存在");
+    const account = input.accountId ? await rizhiDb.accounts.get(input.accountId) : undefined;
+    if (input.accountId && !account) throw new Error("账户不存在");
     const linkedAsset = input.assetId ? await rizhiDb.assets.get(input.assetId) : undefined;
 
     const timestamp = nowIso();
@@ -458,13 +461,14 @@ export async function createTransaction(input: CreateTransactionInput) {
       updatedAt: timestamp,
     }, true);
 
-    const balanceAfter = applyAccountDelta(account, input.type, input.amount);
-    const flow = await createFlow(account, transaction, balanceAfter);
-
     await rizhiDb.transactions.put(transaction);
-    await rizhiDb.accounts.put({ ...account, balance: balanceAfter, updatedAt: timestamp });
-    await rizhiDb.accountFlows.put(flow);
-    await recalculateAccountFlowBalances([account.id]);
+    if (account) {
+      const balanceAfter = applyAccountDelta(account, input.type, input.amount);
+      const flow = await createFlow(account, transaction, balanceAfter);
+      await rizhiDb.accounts.put({ ...account, balance: balanceAfter, updatedAt: timestamp });
+      await rizhiDb.accountFlows.put(flow);
+      await recalculateAccountFlowBalances([account.id]);
+    }
 
     return transaction;
   });
@@ -481,9 +485,9 @@ export async function updateTransaction(input: UpdateTransactionInput) {
     }
     assertManualTransactionEditable(oldTransaction);
 
-    const oldAccount = await rizhiDb.accounts.get(oldTransaction.accountId);
-    const newAccount = await rizhiDb.accounts.get(input.accountId);
-    if (!oldAccount || !newAccount) throw new Error("账户不存在");
+    const oldAccount = oldTransaction.accountId ? await rizhiDb.accounts.get(oldTransaction.accountId) : undefined;
+    const newAccount = input.accountId ? await rizhiDb.accounts.get(input.accountId) : undefined;
+    if ((oldTransaction.accountId && !oldAccount) || (input.accountId && !newAccount)) throw new Error("账户不存在");
     const linkedAsset = input.assetId ? await rizhiDb.assets.get(input.assetId) : undefined;
 
     const timestamp = nowIso();
@@ -505,12 +509,10 @@ export async function updateTransaction(input: UpdateTransactionInput) {
       updatedAt: timestamp,
     }, true);
 
-    const oldDelta = accountDelta(oldAccount, oldTransaction.type, oldTransaction.amount);
-    const newDelta = accountDelta(newAccount, input.type, input.amount);
-
     await rizhiDb.accountFlows.where("transactionId").equals(input.id).delete();
-
-    if (oldAccount.id === newAccount.id) {
+    if (oldAccount && newAccount && oldAccount.id === newAccount.id) {
+      const oldDelta = accountDelta(oldAccount, oldTransaction.type, oldTransaction.amount);
+      const newDelta = accountDelta(newAccount, input.type, input.amount);
       const balance = oldAccount.balance - oldDelta + newDelta;
       await rizhiDb.accounts.put({ ...oldAccount, balance, updatedAt: timestamp });
       await rizhiDb.accountFlows.put({
@@ -525,7 +527,9 @@ export async function updateTransaction(input: UpdateTransactionInput) {
         createdAt: timestamp,
         updatedAt: timestamp,
       });
-    } else {
+    } else if (oldAccount && newAccount) {
+      const oldDelta = accountDelta(oldAccount, oldTransaction.type, oldTransaction.amount);
+      const newDelta = accountDelta(newAccount, input.type, input.amount);
       const oldBalance = oldAccount.balance - oldDelta;
       const newBalance = newAccount.balance + newDelta;
       await rizhiDb.accounts.bulkPut([
@@ -544,10 +548,23 @@ export async function updateTransaction(input: UpdateTransactionInput) {
         createdAt: timestamp,
         updatedAt: timestamp,
       });
+    } else if (oldAccount) {
+      const oldDelta = accountDelta(oldAccount, oldTransaction.type, oldTransaction.amount);
+      await rizhiDb.accounts.put({ ...oldAccount, balance: oldAccount.balance - oldDelta, updatedAt: timestamp });
+    } else if (newAccount) {
+      const newDelta = accountDelta(newAccount, input.type, input.amount);
+      const balance = newAccount.balance + newDelta;
+      await rizhiDb.accounts.put({ ...newAccount, balance, updatedAt: timestamp });
+      await rizhiDb.accountFlows.put({
+        id: createId("flow"), accountId: newAccount.id, transactionId: input.id,
+        direction: newDelta >= 0 ? "in" : "out", amount: input.amount,
+        occurredAt: input.occurredAt, balanceAfter: balance, note: input.note,
+        createdAt: timestamp, updatedAt: timestamp,
+      });
     }
 
     await rizhiDb.transactions.put(updatedTransaction);
-    await recalculateAccountFlowBalances([oldAccount.id, newAccount.id]);
+    await recalculateAccountFlowBalances([oldAccount?.id, newAccount?.id].filter(Boolean) as ID[]);
     return updatedTransaction;
   });
 }
@@ -564,7 +581,7 @@ export async function convertTransactionToAssetAddon(input: ConvertTransactionTo
     if (!asset) throw new Error("资产不存在");
     assertAssetCanReceiveAddon(asset);
 
-    const oldAccount = await rizhiDb.accounts.get(oldTransaction.accountId);
+    const oldAccount = await rizhiDb.accounts.get(oldTransaction.accountId!);
     const newAccount = await rizhiDb.accounts.get(input.accountId);
     if (!oldAccount || !newAccount) throw new Error("账户不存在");
 
@@ -659,11 +676,12 @@ export async function deleteTransaction(id: ID) {
     const transaction = await rizhiDb.transactions.get(id);
     if (!transaction) throw new Error("交易记录不存在");
 
-    const account = await rizhiDb.accounts.get(transaction.accountId);
-    if (!account) throw new Error("账户不存在");
+    const account = transaction.accountId ? await rizhiDb.accounts.get(transaction.accountId) : undefined;
+    if (transaction.accountId && !account) throw new Error("账户不存在");
 
     const timestamp = nowIso();
     if (transaction.businessType === "balance_adjustment") {
+      if (!account || !transaction.accountId) throw new Error("余额调整缺少账户");
       const latestAdjustment = await rizhiDb.transactions
         .where("accountId")
         .equals(transaction.accountId)
@@ -684,6 +702,7 @@ export async function deleteTransaction(id: ID) {
     }
 
     if (transaction.businessType === "account_transfer" || transaction.type === "transfer") {
+      if (!account) throw new Error("转账记录缺少转出账户");
       if (!transaction.relatedAccountId) throw new Error("转账记录缺少转入账户");
       const targetAccount = await rizhiDb.accounts.get(transaction.relatedAccountId);
       if (!targetAccount) throw new Error("转入账户不存在");
@@ -708,6 +727,7 @@ export async function deleteTransaction(id: ID) {
     assertManualTransactionEditable(transaction);
 
     if (transaction.businessType === "debt_repayment" || transaction.type === "repayment") {
+      if (!account) throw new Error("还款记录缺少付款账户");
       if (!transaction.relatedAccountId) throw new Error("还款记录缺少负债账户");
       const liabilityAccount = await rizhiDb.accounts.get(transaction.relatedAccountId);
       if (!liabilityAccount) throw new Error("负债账户不存在");
@@ -723,12 +743,13 @@ export async function deleteTransaction(id: ID) {
       return;
     }
 
-    const balance = account.balance - accountDelta(account, transaction.type, transaction.amount);
-
-    await rizhiDb.accounts.put({ ...account, balance, updatedAt: timestamp });
+    if (account) {
+      const balance = account.balance - accountDelta(account, transaction.type, transaction.amount);
+      await rizhiDb.accounts.put({ ...account, balance, updatedAt: timestamp });
+    }
     await rizhiDb.accountFlows.where("transactionId").equals(id).delete();
     await rizhiDb.transactions.delete(id);
-    await recalculateAccountFlowBalances([account.id]);
+    if (account) await recalculateAccountFlowBalances([account.id]);
   });
 }
 
@@ -743,7 +764,10 @@ export async function createMoneyAccount(input: CreateAccountInput) {
     type: input.type,
     direction: input.direction,
     balance: input.balance,
+    includeInTotalAssets: input.includeInTotalAssets !== false,
     institution: input.institution?.trim() || undefined,
+    bankName: input.bankName?.trim() || undefined,
+    bankId: input.bankId,
     creditLimit: input.creditLimit,
     billDay: input.billDay,
     repaymentDay: input.repaymentDay,
@@ -780,7 +804,10 @@ export async function updateMoneyAccount(input: UpdateAccountInput) {
       type: input.type ?? account.type,
       direction: input.direction ?? account.direction,
       balance: nextBalance,
+      includeInTotalAssets: "includeInTotalAssets" in input ? input.includeInTotalAssets !== false : account.includeInTotalAssets !== false,
       institution: "institution" in input ? input.institution?.trim() || undefined : account.institution,
+      bankName: "bankName" in input ? input.bankName?.trim() || undefined : account.bankName,
+      bankId: "bankId" in input ? input.bankId : account.bankId,
       creditLimit: "creditLimit" in input ? input.creditLimit : account.creditLimit,
       billDay: "billDay" in input ? input.billDay : account.billDay,
       repaymentDay: "repaymentDay" in input ? input.repaymentDay : account.repaymentDay,
@@ -963,6 +990,7 @@ export async function updateAsset(input: UpdateAssetInput) {
     if (asset.purchaseTransactionId) {
       const purchaseTransaction = await rizhiDb.transactions.get(asset.purchaseTransactionId);
       if (purchaseTransaction) {
+        if (!purchaseTransaction.accountId) throw new Error("原付款交易缺少账户");
         affectedAccountIds.add(purchaseTransaction.accountId);
         const oldAccount = await rizhiDb.accounts.get(purchaseTransaction.accountId);
         if (!oldAccount) throw new Error("原付款账户不存在");
@@ -1153,7 +1181,7 @@ export async function revokeAssetTransfer(assetId: ID) {
 
     if (!transferTransaction) throw new Error("没有找到资产转让收入记录");
 
-    const account = await rizhiDb.accounts.get(transferTransaction.accountId);
+    const account = transferTransaction.accountId ? await rizhiDb.accounts.get(transferTransaction.accountId) : undefined;
     if (!account) throw new Error("收款账户不存在");
 
     const timestamp = nowIso();
@@ -1287,7 +1315,7 @@ export async function updateAssetAddonWithExpense(input: UpdateAddonInput) {
     if (addon.transactionId) {
       const oldTransaction = await rizhiDb.transactions.get(addon.transactionId);
       if (oldTransaction) {
-        const oldAccount = await rizhiDb.accounts.get(oldTransaction.accountId);
+        const oldAccount = oldTransaction.accountId ? await rizhiDb.accounts.get(oldTransaction.accountId) : undefined;
         const newAccount = input.paymentAccountId ? await rizhiDb.accounts.get(input.paymentAccountId) : undefined;
         if (!oldAccount) throw new Error("原账户不存在");
         affectedAccountIds.add(oldAccount.id);
@@ -1420,7 +1448,7 @@ export async function deleteAssetAddon(id: ID) {
     if (addon.transactionId) {
       const transaction = await rizhiDb.transactions.get(addon.transactionId);
       if (transaction) {
-        const account = await rizhiDb.accounts.get(transaction.accountId);
+        const account = transaction.accountId ? await rizhiDb.accounts.get(transaction.accountId) : undefined;
         if (!account) throw new Error("附加项关联账户不存在");
         const restoredBalance = account.balance - accountDelta(account, transaction.type, transaction.amount);
         await rizhiDb.accounts.put({ ...account, balance: restoredBalance, updatedAt: timestamp });

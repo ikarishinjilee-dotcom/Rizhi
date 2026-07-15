@@ -1,7 +1,7 @@
 <template>
   <main class="login-page">
     <section class="login-panel">
-      <div class="brand-mark">R</div>
+      <img class="brand-mark" :src="branding.mainLogoUrl" alt="Rizhi" />
       <div class="login-heading">
         <span>Rizhi Account</span>
         <h1>登录日值</h1>
@@ -29,12 +29,13 @@
 </template>
 
 <script setup lang="ts">
-import { computed, ref } from "vue";
+import { computed, onMounted, ref } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import RButton from "@/components/ui/RButton.vue";
 import RInlineFeedback from "@/components/ui/RInlineFeedback.vue";
 import RInput from "@/components/ui/RInput.vue";
 import { login } from "@/services/authService";
+import { getCachedSiteBranding, siteBrandingService } from "@/services/siteBrandingService";
 import { useAppDataStore } from "@/stores/appDataStore";
 
 const route = useRoute();
@@ -44,7 +45,16 @@ const username = ref("");
 const password = ref("");
 const submitting = ref(false);
 const errorMessage = ref("");
+const branding = ref(getCachedSiteBranding());
 const canSubmit = computed(() => username.value.trim().length >= 3 && password.value.length >= 6);
+
+onMounted(async () => {
+  try {
+    branding.value = await siteBrandingService.get();
+  } catch {
+    // 登录页保留本地缓存或内置图标，不能因品牌配置请求失败阻断登录。
+  }
+});
 
 async function submit() {
   if (!canSubmit.value || submitting.value) return;
@@ -83,15 +93,10 @@ async function submit() {
 }
 
 .brand-mark {
-  width: 42px;
-  height: 42px;
-  display: grid;
-  place-items: center;
-  color: #fff;
-  background: var(--color-primary);
-  border-radius: var(--radius-md);
-  font-size: 20px;
-  font-weight: 800;
+	width: 42px;
+	height: 42px;
+	display: block;
+	object-fit: contain;
 }
 
 .login-heading {

@@ -2,7 +2,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   getApiBaseUrl,
   getDataSource,
-  isRemoteDataSource,
+  isUniCloudDataSource,
   requireUniCloudMode,
 } from "@/services/apiConfig";
 
@@ -16,7 +16,7 @@ describe("apiConfig", () => {
     vi.stubEnv("VITE_API_BASE_URL", "https://example.test/rizhi-api/api/v1/");
 
     expect(getDataSource()).toBe("unicloud");
-    expect(isRemoteDataSource()).toBe(true);
+    expect(isUniCloudDataSource()).toBe(true);
     expect(getApiBaseUrl()).toBe("https://example.test/rizhi-api/api/v1");
   });
 
