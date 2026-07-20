@@ -6,6 +6,13 @@ const command = db.command;
 const userProfiles = db.collection("rizhi-user-profiles");
 const uniIdUsers = db.collection("uni-id-users");
 const siteBranding = db.collection("rizhi-site-branding");
+const permissions = db.collection("rizhi-permissions");
+const {
+  DEFAULT_PERMISSION_MATRIX,
+  clone: clonePermissionMatrix,
+  normalizePermissionMatrix,
+  hasPermission,
+} = require("./permissions");
 
 const collections = {
   assets: db.collection("rizhi-assets"),
@@ -380,8 +387,44 @@ function requireSuperAdmin(auth) {
   throw error;
 }
 
-async function listAdminUsers(auth) {
-	requireAdmin(auth);
+async function getPermissionMatrix() {
+  const result = await permissions.where({ key: "default" }).limit(1).get();
+  return normalizePermissionMatrix(result.data?.[0]?.matrix || DEFAULT_PERMISSION_MATRIX);
+}
+
+function requireFeaturePermission(auth, matrix, permission) {
+  if (hasPermission(auth, matrix, permission)) return;
+  const error = new Error("当前管理员没有执行此功能的权限");
+  error.statusCode = 403;
+  error.code = "FEATURE_FORBIDDEN";
+  error.details = { permission };
+  throw error;
+}
+
+async function listPermissionMatrix(auth) {
+  requireAdmin(auth);
+  return getPermissionMatrix();
+}
+
+async function updatePermissionMatrix(auth, body) {
+  requireSuperAdmin(auth);
+  const matrix = normalizePermissionMatrix(body?.matrix);
+  const existingResult = await permissions.where({ key: "default" }).limit(1).get();
+  const existing = existingResult.data?.[0];
+  const record = {
+    key: "default",
+    version: matrix.version,
+    matrix: clonePermissionMatrix(matrix),
+    updatedAt: now(),
+    updatedBy: auth.uid,
+  };
+  if (existing) await permissions.doc(existing._id).set(record);
+  else await permissions.add(record);
+  return matrix;
+}
+
+async function listAdminUsers(auth, matrix) {
+  requireFeaturePermission(auth, matrix, "system_users");
   const [result, profileResult] = await Promise.all([uniIdUsers
     .field({ username: true, nickname: true, avatar: true, role: true, status: true, register_date: true })
     .orderBy("register_date", "desc")
@@ -404,8 +447,8 @@ async function listAdminUsers(auth) {
   });
 }
 
-async function findAdminUserByUsername(auth, username) {
-	requireAdmin(auth);
+async function findAdminUserByUsername(auth, username, matrix) {
+  requireFeaturePermission(auth, matrix, "system_users");
   const normalizedUsername = String(username || "").trim();
   if (!normalizedUsername) throw new Error("请输入用户名");
   const result = await uniIdUsers.where({ username: normalizedUsername })
@@ -429,8 +472,8 @@ async function findAdminUserByUsername(auth, username) {
   };
 }
 
-async function updateUserStatus(auth, targetUserId, enabled) {
-	requireAdmin(auth);
+async function updateUserStatus(auth, targetUserId, enabled, matrix) {
+  requireFeaturePermission(auth, matrix, "system_users");
   if (!targetUserId) throw new Error("缺少用户 ID");
   if (targetUserId === auth.uid) throw new Error("不能停用自己的账户");
   const targetResult = await uniIdUsers.doc(targetUserId).get();
@@ -447,7 +490,8 @@ async function updateUserStatus(auth, targetUserId, enabled) {
   return { id: targetUserId, status };
 }
 
-async function updateAdminRole(auth, targetUserId, enabled) {
+async function updateAdminRole(auth, targetUserId, enabled, matrix) {
+  requireFeaturePermission(auth, matrix, "system_users");
   requireSuperAdmin(auth);
   if (!targetUserId) throw new Error("缺少用户 ID");
   if (!enabled && targetUserId === auth.uid) throw new Error("不能取消自己的管理员身份");
@@ -612,8 +656,8 @@ async function getSiteBranding() {
   };
 }
 
-async function updateSiteBranding(auth, body) {
-  requireAdmin(auth);
+async function updateSiteBranding(auth, body, matrix) {
+  requireFeaturePermission(auth, matrix, "branding");
   const existingResult = await siteBranding.where({ key: "default" }).limit(1).get();
   const existing = existingResult.data[0];
   const record = {
@@ -1209,19 +1253,20 @@ async function handleAddons(method, path, body, userId) {
   return null;
 }
 
-async function handleCategories(method, path, body, userId, query, auth) {
+async function handleCategories(method, path, body, userId, query, auth, matrix) {
+  const permissionForDomain = (domain) => domain === "bank" ? "banks" : domain === "account" ? "account_types" : "default_categories";
   if (method === "GET" && path === "/categories/defaults") {
-    requireAdmin(auth);
+    requireFeaturePermission(auth, matrix, "default_categories");
     return ok({ version: 1, exportedAt: new Date().toISOString(), categories: systemCategoryDefaults.map((item) => ({ ...item, parentId: undefined, enabled: true, isSystem: true })) });
   }
   if (method === "GET" && path === "/categories/export") {
-    requireAdmin(auth);
+    requireFeaturePermission(auth, matrix, "default_categories");
     await ensureSystemCategories();
     const categories = await findAll("categories", SYSTEM_USER_ID, "sort", "asc");
     return ok({ version: 1, exportedAt: new Date().toISOString(), categories: categories.map((item) => ({ ...item, parentId: undefined, isSystem: true })) });
   }
   if (method === "POST" && path === "/categories/import") {
-    requireAdmin(auth);
+    requireFeaturePermission(auth, matrix, "default_categories");
     if (!body || body.version !== 1 || !Array.isArray(body.categories)) throw new Error("默认分类备份格式无效");
     const categories = body.categories
       .filter((item) => item && String(item.name || "").trim())
@@ -1242,6 +1287,7 @@ async function handleCategories(method, path, body, userId, query, auth) {
     return ok({ importedCount: categories.length });
   }
   if (method === "GET" && path === "/categories") {
+    if (query.scope === "system") requireFeaturePermission(auth, matrix, permissionForDomain(query.domain));
     const allCategories = query.scope === "system"
       ? (await ensureSystemCategories(), await findAll("categories", SYSTEM_USER_ID, "sort", "asc"))
       : await ensureUserCategories(userId);
@@ -1257,7 +1303,7 @@ async function handleCategories(method, path, body, userId, query, auth) {
   }
   if (method === "POST" && path === "/categories") {
     const isSystemRequest = query.scope === "system";
-    if (isSystemRequest) requireAdmin(auth);
+    if (isSystemRequest) requireFeaturePermission(auth, matrix, permissionForDomain(body.domain));
     const ownerId = isSystemRequest ? SYSTEM_USER_ID : userId;
     if (!String(body.name || "").trim()) throw new Error("分类名称不能为空");
     return ok(await insert("categories", ownerId, {
@@ -1310,7 +1356,7 @@ async function handleCategories(method, path, body, userId, query, auth) {
       || await findOne("categories", userId, id);
     if (!existing) throw new Error("分类不存在");
     const isSystemCategory = existing.userId === SYSTEM_USER_ID;
-    if (isSystemCategory) requireAdmin(auth);
+    if (isSystemCategory) requireFeaturePermission(auth, matrix, permissionForDomain(existing.domain));
     const ownerId = isSystemCategory ? SYSTEM_USER_ID : userId;
     const nextCategory = normalizeCategory({ ...withoutInternalFields(existing), ...body });
     if (nextCategory.parentId && nextCategory.enabled !== false) {
@@ -1336,7 +1382,7 @@ async function handleCategories(method, path, body, userId, query, auth) {
     const existing = await findOne("categories", SYSTEM_USER_ID, id)
       || await findOne("categories", userId, id);
     if (!existing) throw new Error("分类不存在或已被删除");
-    if (existing.userId === SYSTEM_USER_ID) requireAdmin(auth);
+    if (existing.userId === SYSTEM_USER_ID) requireFeaturePermission(auth, matrix, permissionForDomain(existing.domain));
     const usage = await categoryUsage(existing.userId, id);
     if (usage.accounts > 0) {
       throw new Error(`该账户类型已被 ${usage.accounts} 个资金账户使用，不能删除。请先在资金页将这些账户改为其他类型或删除。`);
@@ -1419,22 +1465,29 @@ async function route(event) {
   }
   const auth = await authenticate(event, token);
   const userId = auth.uid;
+  const permissionMatrix = await getPermissionMatrix();
   if (method === "POST" && path === "/auth/me") {
     return ok({ uid: userId, role: auth.role || [], permission: auth.permission || [] });
   }
   if (method === "GET" && path === "/admin/users") {
-    return ok(await listAdminUsers(auth));
+    return ok(await listAdminUsers(auth, permissionMatrix));
   }
   if (method === "GET" && path === "/admin/users/search") {
-    return ok(await findAdminUserByUsername(auth, query.username));
+    return ok(await findAdminUserByUsername(auth, query.username, permissionMatrix));
+  }
+  if (method === "GET" && path === "/admin/permissions") {
+    return ok(await listPermissionMatrix(auth));
+  }
+  if (method === "PATCH" && path === "/admin/permissions") {
+    return ok(await updatePermissionMatrix(auth, body));
   }
   const adminRoleMatch = path.match(/^\/admin\/users\/([^/]+)\/admin-role$/);
   if (method === "PATCH" && adminRoleMatch) {
-    return ok(await updateAdminRole(auth, decodeURIComponent(adminRoleMatch[1]), body.enabled === true));
+    return ok(await updateAdminRole(auth, decodeURIComponent(adminRoleMatch[1]), body.enabled === true, permissionMatrix));
   }
   const userStatusMatch = path.match(/^\/admin\/users\/([^/]+)\/status$/);
   if (method === "PATCH" && userStatusMatch) {
-    return ok(await updateUserStatus(auth, decodeURIComponent(userStatusMatch[1]), body.enabled === true));
+    return ok(await updateUserStatus(auth, decodeURIComponent(userStatusMatch[1]), body.enabled === true, permissionMatrix));
   }
   if (method === "POST" && path === "/files/images") {
     return ok(await uploadImage(userId, body), 201);
@@ -1452,7 +1505,7 @@ async function route(event) {
     return ok(await getSiteBranding());
   }
   if (method === "PATCH" && path === "/site-branding") {
-    return ok(await updateSiteBranding(auth, body));
+    return ok(await updateSiteBranding(auth, body, permissionMatrix));
   }
   if (method === "POST" && path === "/auth/claim-local-data") {
     return ok(await claimLocalData(userId));
@@ -1472,7 +1525,7 @@ async function route(event) {
   if (assetResult) return assetResult;
   const addonResult = await handleAddons(method, path, body, userId);
   if (addonResult) return addonResult;
-  const categoryResult = await handleCategories(method, path, body, userId, query, auth);
+  const categoryResult = await handleCategories(method, path, body, userId, query, auth, permissionMatrix);
   if (categoryResult) return categoryResult;
 
   return fail(501, "NOT_MIGRATED", "该业务接口尚未迁移到 uniCloud");

@@ -61,6 +61,7 @@
 	import AdminUsersPanel from "./AdminUsersPanel.vue";
 	import { findAdminUserByUsername, listAdminUsers, setUserAdminRole, setUserEnabled, type AdminUser } from "@/services/adminService";
 	import { isAdmin, isSuperAdmin } from "@/services/authService";
+	import { getCloudPermissionMatrix, updateCloudPermissionMatrix, normalizePermissionMatrix, type PartialPermissionMatrix, type PermissionKey, type PermissionMatrix } from "@/services/permissionService";
 	const activeTab = ref<"asset" | "account" | "bank" | "branding" | "permissions" | "users">("asset");
 	const users = ref<AdminUser[]>([]), loading = ref(false), savingUserId = ref(""), message = ref("");
 	const messageTone = ref<"success" | "danger">("success"), confirmVisible = ref(false), pendingUser = ref<AdminUser | null>(null);
@@ -80,8 +81,6 @@
 		{ key: "banks", label: "银行管理", description: "维护银行名称、图标和备注" },
 		{ key: "branding", label: "网站与首页", description: "维护网站图标、首页文案和主视觉" },
 	] as const;
-	type PermissionKey = (typeof permissionRows)[number]["key"];
-	type PermissionMatrix = Record<(typeof permissionRoles)[number]["key"], Record<PermissionKey, boolean>>;
 	const permissionMatrixVersion = "2";
 	const permissionDefaults: PermissionMatrix = {
 		super_admin: Object.fromEntries(permissionRows.map((item) => [item.key, true])) as Record<PermissionKey, boolean>,
@@ -89,6 +88,7 @@
 		user: Object.fromEntries(permissionRows.map((item) => [item.key, false])) as Record<PermissionKey, boolean>,
 	};
 	const permissionMatrix = ref<PermissionMatrix>(loadPermissionMatrix());
+	const permissionMatrixLoadedFromCloud = ref(false);
 	function loadPermissionMatrix(): PermissionMatrix {
 		try {
 			if (localStorage.getItem("rizhi_permission_matrix_version") !== permissionMatrixVersion) {
@@ -96,7 +96,7 @@
 			}
 			const stored = localStorage.getItem("rizhi_permission_matrix");
 			if (!stored) return structuredClone(permissionDefaults);
-			const parsed = JSON.parse(stored) as Partial<PermissionMatrix>;
+			const parsed = JSON.parse(stored) as PartialPermissionMatrix;
 			return {
 				super_admin: { ...permissionDefaults.super_admin, ...(parsed.super_admin || {}) },
 				admin: { ...permissionDefaults.admin, ...(parsed.admin || {}) },
@@ -104,8 +104,17 @@
 			};
 		} catch { return structuredClone(permissionDefaults); }
 	}
-	function savePermissionMatrix() {
+	async function loadCloudPermissionMatrix() {
 		try {
+			permissionMatrix.value = await getCloudPermissionMatrix();
+			permissionMatrixLoadedFromCloud.value = true;
+		} catch {
+			permissionMatrixLoadedFromCloud.value = false;
+		}
+	}
+	async function savePermissionMatrix() {
+		try {
+			if (permissionMatrixLoadedFromCloud.value) permissionMatrix.value = await updateCloudPermissionMatrix(permissionMatrix.value);
 			localStorage.setItem("rizhi_permission_matrix", JSON.stringify(permissionMatrix.value));
 			localStorage.setItem("rizhi_permission_matrix_version", permissionMatrixVersion);
 			permissionMessageTone.value = "success";
@@ -130,7 +139,7 @@
 	async function confirmStatusChange() { if (!pendingStatusUser.value) return; savingUserId.value = pendingStatusUser.value.id; try { await setUserEnabled(pendingStatusUser.value.id, pendingStatusUser.value.status === 1); statusConfirmVisible.value = false; message.value = pendingStatusUser.value.status === 1 ? "用户账户已恢复。" : "用户账户已停用。"; messageTone.value = "success"; await loadUsers() } catch (error) { message.value = error instanceof Error ? error.message : "账户状态更新失败"; messageTone.value = "danger" } finally { savingUserId.value = "" } }
 	onMounted(() => {
 		permissionMatrix.value = loadPermissionMatrix();
-		if (canManagePermission("system_users")) void loadUsers();
+		void loadCloudPermissionMatrix().finally(() => { if (canManagePermission("system_users")) void loadUsers(); });
 	});
 </script>
 <style scoped>
