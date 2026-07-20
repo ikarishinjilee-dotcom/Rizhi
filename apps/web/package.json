@@ -13,6 +13,7 @@
     "build:production": "vue-tsc -b && vite build --mode production",
     "preview": "vite preview",
     "test": "vitest run",
+    "test:performance": "vitest run src/services/__tests__/backupPerformance.test.ts --reporter=verbose",
     "test:e2e": "playwright test",
     "typecheck": "vue-tsc -b"
   },

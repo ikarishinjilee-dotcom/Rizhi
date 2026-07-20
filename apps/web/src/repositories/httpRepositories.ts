@@ -6,6 +6,7 @@ import type {
   AssetRepository,
   CategoryRepository,
   CategoryUsage,
+  CategoryDefaultsBackup,
   CreateAccountInput,
   CreateAddonInput,
   CreateAssetInput,
@@ -54,30 +55,40 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
         payload: init?.body ? JSON.parse(String(init.body)) : {},
       }
     : undefined;
-  const response = await fetch(`${apiBaseUrl}${path}`, {
-    ...init,
-    method: useUniCloudTransport ? "POST" : requestedMethod,
-    body: useUniCloudTransport ? JSON.stringify(cloudPayload) : init?.body,
-    cache: "no-store",
-    headers: useUniCloudTransport
-      ? requestedMethod === "GET"
-        ? undefined
-        : { "Content-Type": "text/plain;charset=UTF-8" }
-      : {
-          "Content-Type": "application/json",
-          "X-Rizhi-User-ID": userId,
-          ...init?.headers,
-        },
-  });
-  const payload = await response.json().catch(() => ({})) as ApiSuccess<T> | ApiFailure;
+  // A new cloud user can trigger several initial reads together. Older cloud
+  // functions may briefly report a duplicate while seeding defaults; retry only
+  // safe read requests so mutations are never submitted twice.
+  for (let attempt = 0; attempt < 2; attempt += 1) {
+    const response = await fetch(`${apiBaseUrl}${path}`, {
+      ...init,
+      method: useUniCloudTransport ? "POST" : requestedMethod,
+      body: useUniCloudTransport ? JSON.stringify(cloudPayload) : init?.body,
+      cache: "no-store",
+      headers: useUniCloudTransport
+        ? requestedMethod === "GET"
+          ? undefined
+          : { "Content-Type": "text/plain;charset=UTF-8" }
+        : {
+            "Content-Type": "application/json",
+            "X-Rizhi-User-ID": userId,
+            ...init?.headers,
+          },
+    });
+    const payload = await response.json().catch(() => ({})) as ApiSuccess<T> | ApiFailure;
 
-  if (!response.ok || "error" in payload) {
+    if (response.ok && !("error" in payload)) return payload.data;
+
     const message = "error" in payload ? payload.error.message : `HTTP ${response.status}`;
     if (response.status === 401 && useUniCloudTransport) handleUnauthorized();
+    const isDefaultSeedCollision = /document is already exists|duplicate|文档.*已存在/i.test(message);
+    if (requestedMethod === "GET" && attempt === 0 && isDefaultSeedCollision) {
+      await new Promise((resolve) => window.setTimeout(resolve, 350));
+      continue;
+    }
     throw new Error(message);
   }
 
-  return payload.data;
+  throw new Error("请求失败");
 }
 
 function jsonBody(input: unknown): RequestInit {
@@ -233,11 +244,13 @@ export const httpCategoryRepository: CategoryRepository = {
   },
 
   create(input: CreateCategoryInput) {
-    return request<CategoryRecord>("/categories", { method: "POST", ...jsonBody(input) });
+    const { scope, ...body } = input;
+    const query = scope ? `?scope=${encodeURIComponent(scope)}` : "";
+    return request<CategoryRecord>(`/categories${query}`, { method: "POST", ...jsonBody(body) });
   },
 
   update(input: UpdateCategoryInput) {
-    const { id, ...body } = input;
+    const { id, scope, ...body } = input;
     return request<CategoryRecord>(`/categories/${encodeURIComponent(id)}`, { method: "PATCH", ...jsonBody(body) });
   },
 
@@ -253,5 +266,17 @@ export const httpCategoryRepository: CategoryRepository = {
     const { fromCategoryId, ...body } = input;
     const result = await request<{ migratedCount: number }>(`/categories/${encodeURIComponent(fromCategoryId)}/migrate-transactions`, { method: "POST", ...jsonBody(body) });
     return result.migratedCount;
+  },
+
+  exportDefaults() {
+    return request<CategoryDefaultsBackup>("/categories/export?scope=system");
+  },
+
+  getBuiltinDefaults() {
+    return request<CategoryDefaultsBackup>("/categories/defaults");
+  },
+
+  async importDefaults(backup: CategoryDefaultsBackup) {
+    await request("/categories/import", { method: "POST", ...jsonBody(backup) });
   },
 };

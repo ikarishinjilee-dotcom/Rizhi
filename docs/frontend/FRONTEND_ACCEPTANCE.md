@@ -301,3 +301,6 @@ npm.cmd run build
 - P1：核心流程无法完成。
 - P2：明显体验问题或样式错乱。
 - P3：轻微文案、细节、优化项。
+# 当前版本验收说明（2026-07-16）
+
+本清单现在同时适用于本地 IndexedDB 模式和 uniCloud 登录后的 Web 模式。正式 Web 构建使用 `npm.cmd run build:production`，产物是 `apps/web/dist`；不要使用 `apps/uni-app/dist/build/h5` 作为 PC Web 部署包。

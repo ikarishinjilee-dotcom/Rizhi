@@ -17,3 +17,6 @@
 - [验收清单](./BACKEND_ACCEPTANCE.md)
 - [旧部署说明](./DEPLOYMENT.md)
 - [SQLite 结构化方案](./SQLITE_SCHEMA_PLAN.md)
+# 历史资料说明（2026-07-16）
+
+本目录仅保留 Fastify + SQLite 退役方案，用于迁移核对。当前正式后端是 uniCloud + uni-id；本目录中的启动、备份、恢复和 API 命令不可用于当前版本。

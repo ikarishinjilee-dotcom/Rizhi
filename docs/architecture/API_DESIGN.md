@@ -1,131 +1,138 @@
-# 日值 API 设计文档
+# 日值 API 设计
 
-## 文档状态
+> 当前正式 API 为 uniCloud URL 化云函数 `rizhi-api`。旧 Fastify API 见 `docs/legacy/fastify/`，不属于当前运行时。
 
-当前后端为 Fastify + TypeScript，Base URL 为：
+## 1. 地址与请求格式
+
+生产和测试环境的 API 地址由 `VITE_API_BASE_URL` 注入，统一业务前缀为：
 
 ```text
-/api/v1
+https://<cloud-function-domain>/rizhi-api/api/v1
 ```
 
-前端可通过 `VITE_DATA_SOURCE=http` 切换到 HTTP 模式。当前仍是单用户本地 API，暂未包含正式登录、多用户协作和权限系统。
-
-## 通用约定
-
-请求和响应均使用 JSON。
-
-```http
-Content-Type: application/json
-```
-
-成功响应统一为：
+Web 端使用 POST transport，业务真实方法放在请求体：
 
 ```json
 {
-  "data": {}
+  "__rizhiTransport": true,
+  "method": "GET",
+  "token": "<uni-id-token>",
+  "payload": {}
 }
 ```
 
-错误响应统一为：
+成功响应：
+
+```json
+{ "data": {} }
+```
+
+失败响应：
 
 ```json
 {
   "error": {
-    "code": "VALIDATION_ERROR",
+    "code": "REQUEST_FAILED",
     "message": "错误说明",
     "details": {}
   }
 }
 ```
 
-## 通用接口
+## 2. 认证
 
-- `GET /health`
-- `GET /snapshot`
-- `POST /reset`
-- `GET /export`
-- `POST /import`
+- `/auth/login`、`/auth/captcha`、`/auth/register` 不要求已有 token。
+- 其他业务接口通过 token 获取 uid。
+- 客户端不得在业务 payload 中指定或覆盖用户归属。
+- token 失效时 API 返回 401，前端清理会话并跳转登录页。
 
-## 资产接口
+## 3. 接口分组
 
-- `GET /assets`
-- `GET /assets/{assetId}`
-- `POST /assets`
-- `PATCH /assets/{assetId}`
-- `DELETE /assets/{assetId}`
-- `POST /assets/{assetId}/transfer`
-- `POST /assets/{assetId}/transfer/revoke`
+### 健康与数据
 
-资产写入规则：
+```text
+GET  /health
+GET  /snapshot
+GET  /export
+POST /import
+POST /reset
+POST /auth/claim-local-data
+```
 
-- `categoryId` 必须指向启用、未删除的资产分类。
-- 如传入 `paymentAccountId`，必须联动资产购买交易、账户流水和账户余额。
-- 编辑资产购买信息时，必须回滚旧账户影响，再写入新影响。
+### 认证与用户
 
-## 资产附加项接口
+```text
+POST /auth/login
+POST /auth/captcha
+POST /auth/register
+POST /auth/me
+GET  /profile
+PATCH /profile
+```
 
-- `POST /assets/{assetId}/addons`
-- `PATCH /assets/{assetId}/addons/{addonId}`
-- `PATCH /addons/{addonId}`
+### 站点与文件
 
-附加项写入规则：
+```text
+POST  /files/images
+POST  /files/migrate-images
+GET   /site-branding
+PATCH /site-branding
+```
 
-- 支持支出和收入方向。
-- 如传入账户，必须联动交易、账户流水和余额。
-- 已转让或已处置资产不能新增或编辑附加项。
+### 资产与附加项
 
-## 记账接口
+```text
+POST   /assets
+PATCH  /assets/{assetId}
+DELETE /assets/{assetId}
+POST   /assets/{assetId}/transfer
+POST   /assets/{assetId}/transfer/revoke
+POST   /assets/{assetId}/addons
+PATCH  /addons/{addonId}
+DELETE /addons/{addonId}
+```
 
-- `GET /transactions`
-- `POST /transactions/expense`
-- `POST /transactions/income`
-- `PATCH /transactions/{transactionId}`
-- `DELETE /transactions/{transactionId}`
-- `POST /transactions/repayment`
-- `POST /transactions/convert-to-asset-addon`
+### 交易与资金账户
 
-记账规则：
+```text
+POST   /transactions/expense
+POST   /transactions/income
+PATCH  /transactions/{transactionId}
+DELETE /transactions/{transactionId}
+POST   /transactions/repayment
+POST   /transactions/convert-to-asset-addon
+POST   /accounts/transfer
+POST   /accounts
+PATCH  /accounts/{accountId}
+DELETE /accounts/{accountId}
+```
 
-- 普通交易会联动账户流水和账户余额。
-- 系统生成交易不能直接编辑或删除。
-- 交易分类必须存在、启用、未删除，并且类型匹配。
+### 分类与管理员
 
-## 账户接口
+```text
+GET    /categories
+POST   /categories
+PATCH  /categories/{categoryId}
+DELETE /categories/{categoryId}
+GET    /categories/{categoryId}/usage
+POST   /categories/{categoryId}/migrate-transactions
+GET    /admin/users
+PATCH  /admin/users/{userId}/admin-role
+PATCH  /admin/users/{userId}/status
+```
 
-- `GET /accounts`
-- `POST /accounts`
-- `PATCH /accounts/{accountId}`
-- `DELETE /accounts/{accountId}`
-- `POST /accounts/transfer`
-- `GET /accounts/{accountId}/flows`
+## 4. 写入约束
 
-账户规则：
+- 金额必须为有限且大于 0 的数值。
+- 资产采购、附加项、转账和还款需要同步账户余额与账户流水。
+- 已转让或已处置资产不能继续接收附加项或重复转让。
+- 有流水或业务引用的账户、分类不能直接删除。
+- 交易分类必须启用、未删除，并与收入/支出用途匹配。
+- 图片先由 `/files/images` 上传，再将 file ID 和 URL 写入附件模型。
 
-- 有账户流水的账户不能删除。
-- 转账生成两条账户流水。
-- 还款必须从资产账户到负债账户，且金额不能超过负债余额。
+## 5. 事实来源
 
-## 分类接口
-
-- `GET /categories`
-- `POST /categories`
-- `GET /categories/{categoryId}/usage`
-- `PATCH /categories/{categoryId}`
-- `DELETE /categories/{categoryId}`
-- `POST /categories/{categoryId}/migrate-transactions`
-
-分类规则：
-
-- `GET /categories` 支持 `domain`、`type`、`enabled` 过滤。
-- 资产分类由用户自定义名称，后端统一把资产分类 `type` 归为 `other`。
-- 停用分类不影响历史数据，但不能再用于新增或编辑资产/交易。
-- 删除分类前必须检查资产、账户、交易和子分类占用。
-- 交易分类迁移只允许同类型迁移。
-
-## 暂未实现
-
-- 正式认证。
-- 多用户协作。
-- 附件 multipart 上传。
-- 独立设置接口。
-- SQLite 结构化表。
+- Web 仓储契约：`apps/web/src/repositories/contracts.ts`。
+- Web HTTP 实现：`apps/web/src/repositories/httpRepositories.ts`。
+- 云端路由：`apps/uni-app/uniCloud-alipay/cloudfunctions/rizhi-api/index.js`。
+- 数据库约束：`apps/uni-app/uniCloud-alipay/database/*.schema.json`。

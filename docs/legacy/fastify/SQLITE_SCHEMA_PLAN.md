@@ -316,3 +316,6 @@ CREATE INDEX idx_account_flows_transaction ON account_flows(transaction_id);
 3. 新增测试：默认数据可迁移到结构化表。
 4. 新增测试：迁移后表计数和关键外键一致。
 5. 暂不切换运行时读写，先让迁移脚本可重复、可验证。
+# 历史资料说明（2026-07-16）
+
+SQLite 结构化迁移已停止推进。当前数据模型以 uniCloud Schema、云函数和 Web 仓储契约为准；本文仅用于理解早期建模决策。

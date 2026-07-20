@@ -1260,7 +1260,7 @@ export async function createAssetAddonWithExpense(input: CreateAddonInput) {
       merchant: input.merchant,
       paymentAccountId: input.paymentAccountId,
       transactionId,
-      includedInCost: direction === "expense" && input.includedInCost,
+      includedInCost: input.includedInCost,
       notes: input.notes,
       attachments: normalizeAttachments(input.attachments) ?? imageUrlsToAttachments(input.imageUrl, input.imageUrls, undefined, "附加项图片"),
       createdAt: timestamp,
@@ -1304,7 +1304,7 @@ export async function updateAssetAddonWithExpense(input: UpdateAddonInput) {
       purchaseDate: input.purchaseDate,
       merchant: input.merchant,
       paymentAccountId: input.paymentAccountId,
-      includedInCost: direction === "expense" && input.includedInCost,
+      includedInCost: input.includedInCost,
       notes: input.notes,
       attachments: input.attachments
         ? normalizeAttachments(input.attachments)

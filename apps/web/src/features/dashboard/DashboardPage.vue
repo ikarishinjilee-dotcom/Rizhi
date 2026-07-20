@@ -17,31 +17,7 @@
 						:src="homeBranding.homeHeroUrl" alt="" /><img class="dashboard-welcome__hero--fallback"
 						src="/dashboard-hero.png" alt="" /></div>
 			</section>
-			<section class="dashboard-entry-grid" aria-label="快速入口">
-				<button class="dashboard-entry dashboard-entry--purple" type="button"
-					@click="router.push('/assets')"><span class="dashboard-entry__icon">
-						<Package :size="32" :stroke-width="1.8" />
-					</span><span class="dashboard-entry__arrow">
-						<ChevronRight :size="15" :stroke-width="2" />
-					</span><strong>物品</strong>
-					<p>管理物品信息与所在位置，<br />物品去向清晰可查。</p>
-				</button>
-				<button class="dashboard-entry dashboard-entry--blue" type="button"
-					@click="router.push('/ledger')"><span class="dashboard-entry__icon">▤</span><span
-						class="dashboard-entry__arrow">
-						<ChevronRight :size="15" :stroke-width="2" />
-					</span><strong>记账</strong>
-					<p>轻松记录每一笔收支，<br />分类清晰，账目一目了然。</p>
-				</button>
-				<button class="dashboard-entry dashboard-entry--green" type="button"
-					@click="router.push('/funds')"><span class="dashboard-entry__icon">◔</span><span
-						class="dashboard-entry__arrow">
-						<ChevronRight :size="15" :stroke-width="2" />
-					</span><strong>资产</strong>
-					<p>全面管理各类资产与负债，<br />掌握净资产变化趋势。</p>
-				</button>
-
-			</section>
+			<DashboardQuickEntryGrid @navigate="(path) => router.push(path)" />
 			<header class="page-head">
 				<div>
 					<h1>数据总览</h1>
@@ -61,53 +37,10 @@
 			</div>
 
 			<div class="panel-grid panel-grid--three panel-grid--bottom">
-				<RCard>
-					<section class="chart-card">
-						<h3>本月收支趋势</h3>
-						<div class="chart-card__lines">
-							<div class="chart-card__y-axis" aria-hidden="true">
-								<span v-for="tick in trendTicks" :key="tick.label"
-									:style="{ top: `${tick.top}%` }">{{ tick.label }}</span>
-							</div>
-							<svg viewBox="0 0 300 140" role="img" aria-label="本月收支趋势">
-								<defs>
-									<linearGradient id="dashboard-income-fill" x1="0" x2="0" y1="0" y2="1">
-										<stop offset="0" stop-color="#2f7cff" stop-opacity=".2" />
-										<stop offset="1" stop-color="#2f7cff" stop-opacity="0" />
-									</linearGradient>
-									<linearGradient id="dashboard-expense-fill" x1="0" x2="0" y1="0" y2="1">
-										<stop offset="0" stop-color="#f05268" stop-opacity=".16" />
-										<stop offset="1" stop-color="#f05268" stop-opacity="0" />
-									</linearGradient>
-								</defs>
-								<path v-if="incomeTrendPath" class="trend-area income-area"
-									:d="`${incomeTrendPath} L 290 126 L 10 126 Z`" />
-								<path v-if="expenseTrendPath" class="trend-area expense-area"
-									:d="`${expenseTrendPath} L 290 126 L 10 126 Z`" />
-								<g class="chart-grid" aria-hidden="true">
-									<line v-for="tick in trendTicks" :key="tick.label" x1="0" x2="300" :y1="tick.y"
-										:y2="tick.y" />
-								</g>
-								<path v-if="incomeTrendPath" class="trend-line" :d="incomeTrendPath" />
-								<path v-if="expenseTrendPath" class="trend-line expense" :d="expenseTrendPath" />
-								<g v-for="point in trendPointMarkers" :key="`${point.type}-${point.index}`"
-									@mouseenter="hoveredTrendPoint = point" @mouseleave="hoveredTrendPoint = null">
-									<circle class="trend-hit-area" :cx="point.x" :cy="point.y" r="9" />
-								</g>
-							</svg>
-							<div v-if="hoveredTrendPoint" class="chart-card__tooltip">
-								<span>{{ hoveredTrendPoint.day }}日 ·
-									{{ hoveredTrendPoint.type === 'income' ? '收入' : '支出' }}</span>
-								<strong>{{ formatTrendAmount(hoveredTrendPoint.value) }}</strong>
-							</div>
-							<div v-if="!incomeTrendPoints && !expenseTrendPoints" class="chart-empty">本月暂无收支趋势</div>
-						</div>
-						<div class="chart-card__legend">
-							<RTag tone="info">收入</RTag>
-							<RTag tone="danger">支出</RTag>
-						</div>
-					</section>
-				</RCard>
+				<DashboardTrendCard :trend-ticks="trendTicks" :income-trend-path="incomeTrendPath"
+					:expense-trend-path="expenseTrendPath" :income-trend-points="incomeTrendPoints"
+					:expense-trend-points="expenseTrendPoints" :trend-point-markers="trendPointMarkers"
+					:format-trend-amount="formatTrendAmount" />
 				<AssetMiniList title="日均成本最高的物品 TOP5" :items="dailyCostTop" @select="goAsset" />
 				<AssetMiniList title="最近交易记录" :items="recentLedger" @select="goLedgerTransaction" />
 			</div>
@@ -118,13 +51,13 @@
 <script setup lang="ts">
 	import AssetMiniList from "@/components/business/AssetMiniList.vue";
 	import StatCard from "@/components/business/StatCard.vue";
-	import RCard from "@/components/ui/RCard.vue";
-	import RTag from "@/components/ui/RTag.vue";
 	import RDataGate from "@/components/ui/RDataGate.vue";
-	import { ChevronRight, Package } from "@lucide/vue";
+	import DashboardTrendCard from "./DashboardTrendCard.vue";
+	import DashboardQuickEntryGrid from "./DashboardQuickEntryGrid.vue";
 	import { assetTotalCost } from "@/domain/assetCalculations";
 	import type { AssetRecord, TransactionRecord } from "@/domain/models";
 	import { useAppDataStore } from "@/stores/appDataStore";
+	import { formatAmount } from "@/utils/formatters";
 	import { computed, onBeforeUnmount, onMounted, ref } from "vue";
 	import { useRouter } from "vue-router";
 	import { getCachedSiteBranding, SITE_BRANDING_UPDATED_EVENT, siteBrandingService, type SiteBranding } from "@/services/siteBrandingService";
@@ -266,7 +199,6 @@
 	const incomeTrendPath = computed(() => toSmoothPath(incomeTrendValues.value, 300, 140, trendMax.value));
 	const expenseTrendPath = computed(() => toSmoothPath(expenseTrendValues.value, 300, 140, trendMax.value));
 	type TrendPoint = { x : number; y : number; index : number; day : number; value : number; type : "income" | "expense" };
-	const hoveredTrendPoint = ref<TrendPoint | null>(null);
 	const trendPointMarkers = computed<TrendPoint[]>(() => [
 		...trendCoordinates(incomeTrendValues.value, 300, 140, trendMax.value).map((point, index) => ({ ...point, index, day: index + 1, value: incomeTrendValues.value[index], type: "income" as const })),
 		...trendCoordinates(expenseTrendValues.value, 300, 140, trendMax.value).map((point, index) => ({ ...point, index, day: index + 1, value: expenseTrendValues.value[index], type: "expense" as const })),
@@ -400,10 +332,6 @@
 		if (transaction.type === "transfer") return formatAmount(transaction.amount);
 		const sign = transactionTone(transaction) === "success" ? "+" : "-";
 		return `${sign}${formatAmount(transaction.amount)}`;
-	}
-
-	function formatAmount(value : number) {
-		return `¥${Math.abs(value).toLocaleString("zh-CN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 	}
 
 	function formatSignedAmount(value : number) {
@@ -546,87 +474,6 @@
 		mask-image: radial-gradient(ellipse at center, #000 48%, rgba(0, 0, 0, .78) 72%, transparent 100%);
 	}
 
-	.dashboard-entry-grid {
-		display: grid;
-		grid-template-columns: repeat(3, minmax(0, 1fr));
-		gap: 32px;
-		width: min(100%, 1030px);
-		margin: 0 auto;
-	}
-
-	.dashboard-entry {
-		position: relative;
-		min-height: 244px;
-		padding: 30px 30px 28px;
-		color: #132653;
-		text-align: left;
-		background: rgba(255, 255, 255, .92);
-		border: 1px solid rgba(216, 226, 244, .84);
-		border-radius: 24px;
-		box-shadow: 0 20px 46px rgba(60, 91, 150, .11);
-		cursor: pointer;
-		transition: transform .2s ease, box-shadow .2s ease;
-	}
-
-	.dashboard-entry:hover {
-		transform: translateY(-4px);
-		box-shadow: 0 26px 54px rgba(60, 91, 150, .18);
-	}
-
-	.dashboard-entry__icon {
-		display: grid;
-		width: 68px;
-		height: 68px;
-		place-items: center;
-		border-radius: 20px;
-		font-size: 34px;
-		font-weight: 800;
-	}
-
-	.dashboard-entry--blue .dashboard-entry__icon {
-		color: #2475f5;
-		background: #eaf2ff;
-	}
-
-	.dashboard-entry--green .dashboard-entry__icon {
-		color: #16b982;
-		background: #eafbf4;
-	}
-
-	.dashboard-entry--purple .dashboard-entry__icon {
-		color: #7256e8;
-		background: #f0edff;
-	}
-
-	.dashboard-entry__arrow {
-		position: absolute;
-		top: 31px;
-		right: 30px;
-		display: grid;
-		width: 24px;
-		height: 24px;
-		place-items: center;
-		color: #2475f5;
-		border: 1.5px solid currentColor;
-		border-radius: 50%;
-		font-size: 20px;
-		line-height: 0;
-	}
-
-	.dashboard-entry strong {
-		display: block;
-		margin-top: 18px;
-		font-size: 22px;
-		font-weight: 900;
-	}
-
-	.dashboard-entry p {
-		margin: 10px 0 0;
-		color: #627395;
-		font-size: 15px;
-		line-height: 1.8;
-	}
-
 	.page-head h1 {
 		margin: 0;
 		font-size: var(--font-section-title);
@@ -656,124 +503,6 @@
 
 	.panel-grid--bottom {
 		align-items: stretch;
-	}
-
-	.chart-card {
-		height: 100%;
-		padding: var(--space-4);
-	}
-
-	.chart-card h3 {
-		margin: 0 0 var(--space-3);
-		font-size: var(--font-card-title);
-	}
-
-	.chart-card__lines {
-		position: relative;
-		height: 150px;
-		padding: 0 4px 0 34px;
-		border-bottom: 1px solid var(--color-border-soft);
-	}
-
-	.chart-card svg {
-		width: 100%;
-		height: 100%;
-	}
-
-	.chart-card__y-axis {
-		position: absolute;
-		inset: 0 auto 0 0;
-		width: 30px;
-		color: var(--color-text-tertiary);
-		font-size: 10px;
-		text-align: right;
-	}
-
-	.chart-card__y-axis span {
-		position: absolute;
-		right: 0;
-		transform: translateY(-50%);
-		white-space: nowrap;
-	}
-
-	.chart-grid line {
-		stroke: var(--color-border-soft);
-		stroke-dasharray: 3 5;
-		stroke-width: 1;
-	}
-
-	.chart-card .trend-area {
-		stroke: none;
-	}
-
-	.chart-card .income-area {
-		fill: url(#dashboard-income-fill);
-	}
-
-	.chart-card .expense-area {
-		fill: url(#dashboard-expense-fill);
-	}
-
-	.chart-card .trend-line {
-		fill: none;
-		stroke: var(--color-primary);
-		stroke-width: 2.2;
-		stroke-linecap: round;
-		stroke-linejoin: round;
-	}
-
-	.chart-card .trend-line.expense {
-		stroke: var(--color-danger);
-	}
-
-	.chart-card .trend-hit-area {
-		fill: transparent;
-		stroke: transparent;
-		pointer-events: all;
-		cursor: crosshair;
-	}
-
-	.chart-card__tooltip {
-		position: absolute;
-		top: 12px;
-		right: 12px;
-		display: grid;
-		gap: 3px;
-		min-width: 116px;
-		padding: 8px 10px;
-		background: rgba(255, 255, 255, 0.96);
-		border: 1px solid var(--color-border-soft);
-		border-radius: 10px;
-		box-shadow: 0 10px 24px rgba(15, 23, 42, 0.12);
-		pointer-events: none;
-	}
-
-	.chart-card__tooltip span {
-		color: var(--color-text-tertiary);
-		font-size: 11px;
-	}
-
-	.chart-card__tooltip strong {
-		color: var(--color-text-primary);
-		font-size: 13px;
-	}
-
-	.chart-empty {
-		display: grid;
-		height: 100%;
-		place-items: center;
-		color: var(--color-text-tertiary);
-		background: var(--color-bg-hover);
-		border: 1px dashed var(--color-border);
-		border-radius: var(--radius-md);
-		font-size: var(--font-caption);
-	}
-
-	.chart-card__legend {
-		display: flex;
-		gap: var(--space-2);
-		justify-content: center;
-		margin-top: var(--space-3);
 	}
 
 	@media (max-width: 1440px) {
@@ -841,8 +570,5 @@
 			gap: 14px;
 		}
 
-		.dashboard-entry {
-			min-height: 176px;
-		}
 	}
 </style>

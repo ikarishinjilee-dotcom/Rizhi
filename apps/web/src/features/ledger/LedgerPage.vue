@@ -3,320 +3,183 @@
     <section class="ledger-page">
     <div v-if="mode === 'records'" class="ledger-dashboard">
       <header class="ledger-dashboard__toolbar">
-        <div class="ledger-period-controls">
-          <button type="button" class="ledger-icon-button" aria-label="上个月" @click="shiftCalendarMonth(-1)"><ChevronLeft :size="16" /></button>
-          <div class="ledger-month-picker">
-            <button type="button" class="ledger-month-select" aria-label="选择月份" @click="openMonthPicker">
-              {{ ledgerView === 'year' ? yearLabel : monthLabel }} <ChevronDown :size="15" />
-            </button>
-            <div v-if="showMonthPicker" class="ledger-month-picker__popover" :class="{ 'is-year-picker': ledgerView === 'year' }">
-              <div v-if="ledgerView === 'month'" class="ledger-month-picker__years">
-                <button v-for="year in monthPickerYears" :key="year" type="button" :class="{ active: year === monthPickerYear }" @click="monthPickerYear = year">{{ year }}</button>
-              </div>
-              <div v-if="ledgerView === 'month'" class="ledger-month-picker__months">
-                <button v-for="month in 12" :key="month" type="button" :class="{ active: monthPickerYear === new Date(calendarMonth).getFullYear() && month === new Date(calendarMonth).getMonth() + 1 }" @click="selectPickerMonth(month)">{{ month }}月</button>
-              </div>
-              <div v-else class="ledger-month-picker__year-grid">
-                <button v-for="year in monthPickerYears" :key="year" type="button" :class="{ active: year === new Date(calendarMonth).getFullYear() }" @click="selectPickerYear(year)">{{ year }}</button>
-              </div>
-            </div>
-          </div>
-          <button type="button" class="ledger-icon-button" aria-label="下个月" @click="shiftCalendarMonth(1)"><ChevronRight :size="16" /></button>
-          <div class="ledger-mode-switch">
-            <button :class="{ active: ledgerView === 'month' }" type="button" @click="ledgerView = 'month'">月</button>
-            <button :class="{ active: ledgerView === 'year' }" type="button" @click="ledgerView = 'year'">年</button>
-          </div>
-        </div>
-        <div class="ledger-dashboard__actions">
-          <RButton variant="secondary" @click="showDailyReport = true"><NotebookText :size="15" /> 日报表</RButton>
-          <RButton variant="secondary" aria-label="打开日历" @click="showCalendarModal = true"><CalendarDays :size="15" /> 日历模式</RButton>
-          <RButton @click="openCreateModal('expense')"><Plus :size="16" /> 记一笔</RButton>
-        </div>
+        <LedgerFilterToolbar
+          :ledger-view="ledgerView"
+          :month-label="monthLabel"
+          :year-label="yearLabel"
+          :show-month-picker="showMonthPicker"
+          :month-picker-years="monthPickerYears"
+          :month-picker-year="monthPickerYear"
+          :calendar-month="calendarMonth"
+          :show-filter-panel="showFilterPanel"
+          :type-filter="typeFilter"
+          :category-filter="categoryFilter"
+          :sub-category-filter="subCategoryFilter"
+          :account-filter="accountFilter"
+          :type-options="typeOptions"
+          :category-options="categoryOptions"
+          :sub-category-filter-options="subCategoryFilterOptions"
+          :account-options="accountOptions"
+          @shift-month="shiftCalendarMonth"
+          @open-month-picker="openMonthPicker"
+          @select-picker-year="selectPickerYear"
+          @select-picker-month="selectPickerMonth"
+          @set-ledger-view="ledgerView = $event"
+          @open-daily-report="showDailyReport = true"
+          @open-calendar="showCalendarModal = true"
+          @create-entry="openCreateModal"
+          @update:type-filter="typeFilter = $event"
+          @update:category-filter="categoryFilter = $event"
+          @update:sub-category-filter="subCategoryFilter = $event"
+          @update:account-filter="accountFilter = $event"
+        />
       </header>
 
-      <div v-if="showFilterPanel" class="ledger-filter-panel">
-        <RSelect v-model="typeFilter" :options="typeOptions" placeholder="全部类型" />
-        <RSelect v-model="categoryFilter" :options="categoryOptions" placeholder="全部一级分类" />
-        <RSelect v-model="subCategoryFilter" :options="subCategoryFilterOptions" placeholder="全部子分类" />
-        <RSelect v-model="accountFilter" :options="accountOptions" placeholder="全部账户" />
-        <div class="ledger-filter-panel__actions">
-          <RButton variant="danger" @click="openCreateModal('expense')">支出</RButton>
-          <RButton @click="openCreateModal('income')">收入</RButton>
-        </div>
-      </div>
-
-      <section class="ledger-overview ledger-surface">
-        <div class="ledger-section-title"><span>收支总览</span><small>{{ monthLabel }}</small></div>
-        <div class="ledger-overview__grid">
-          <article><span>收入</span><strong class="success">{{ formatAmount(monthIncome) }}</strong><i class="ledger-stat-icon income">↗</i></article>
-          <article><span>支出</span><strong class="danger">{{ formatAmount(monthExpense) }}</strong><i class="ledger-stat-icon expense">↗</i></article>
-          <article><span>结余</span><strong :class="monthNet >= 0 ? 'success' : 'danger'">{{ monthNet >= 0 ? '' : '-' }}{{ formatAmount(monthNet) }}</strong><i class="ledger-stat-icon balance">□</i></article>
-          <article><span>日均支出</span><strong>{{ formatAmount(dailyExpenseAverage) }}</strong><i class="ledger-stat-icon average">▥</i></article>
-        </div>
-      </section>
+      <LedgerOverviewCards :month-label="monthLabel" :month-income="monthIncome" :month-expense="monthExpense" :month-net="monthNet" :daily-expense-average="dailyExpenseAverage" />
 
       <div class="ledger-content-grid">
-        <div class="ledger-content-grid__left">
-          <section class="ledger-surface ledger-chart-panel">
-            <div class="ledger-section-title"><span>{{ ledgerView === 'year' ? '月收支统计' : '日收支统计' }}</span><div class="ledger-chart-tabs"><button :class="{ active: chartMetric === 'expense' }" @click="chartMetric = 'expense'">支出</button><button :class="{ active: chartMetric === 'income' }" @click="chartMetric = 'income'">收入</button><button :class="{ active: chartMetric === 'all' }" @click="chartMetric = 'all'">全部</button></div></div>
-            <VChart class="ledger-echart" :option="dailyChartOption" autoresize @click="handleDailyChartClick" />
-          </section>
+        <LedgerStatisticsPanel
+          :ledger-view="ledgerView"
+          :chart-metric="chartMetric"
+          :category-metric="categoryMetric"
+          :daily-chart-option="dailyChartOption"
+          :category-summary="categorySummary"
+          :category-summary-total="categorySummaryTotal"
+          :hovered-category="hoveredCategory"
+          :category-segment-path="categorySegmentPath"
+          :format-amount="formatAmount"
+          @update:chart-metric="chartMetric = $event"
+          @update:category-metric="categoryMetric = $event"
+          @chart-click="handleDailyChartClick"
+          @donut-move="handleDonutMouseMove"
+          @clear-category-hover="hoveredCategoryKey = null"
+        />
 
-          <section class="ledger-surface ledger-category-panel">
-            <div class="ledger-section-title"><span>分类统计</span><div class="ledger-chart-tabs"><button :class="{ active: categoryMetric === 'expense' }" type="button" @click="categoryMetric = 'expense'">支出</button><button :class="{ active: categoryMetric === 'income' }" type="button" @click="categoryMetric = 'income'">收入</button></div></div>
-            <div v-if="categorySummary.length" class="ledger-category-summary">
-              <div class="ledger-donut" @mousemove="handleDonutMouseMove" @mouseleave="hoveredCategoryKey = null"><svg viewBox="0 0 152 152" aria-hidden="true"><path v-for="(item, index) in categorySummary" :key="item.key" :d="categorySegmentPath(index)" :fill="item.color" /></svg><span>总计<strong>{{ formatAmount(categorySummaryTotal) }}</strong></span><div v-if="hoveredCategory" class="ledger-donut-tooltip"><i :style="{ background: hoveredCategory.color }"></i><strong>{{ hoveredCategory.name }}</strong><b>{{ formatAmount(hoveredCategory.total) }}</b><em>{{ hoveredCategory.percent }}%</em></div></div>
-              <div class="ledger-category-summary__list">
-                <div v-for="item in categorySummary" :key="item.key">
-                  <span class="ledger-category-name"><img v-if="item.iconUrl" :src="item.iconUrl" alt="" /><i v-else :style="{ background: item.color }">{{ item.icon || item.name.slice(0, 1) }}</i>{{ item.name }}</span><strong>{{ formatAmount(item.total) }}</strong><em>{{ item.percent }}%</em>
-                  <b><i :style="{ width: `${item.percent}%`, background: item.color }"></i></b>
-                </div>
-              </div>
-            </div>
-            <REmptyState v-else title="暂无分类数据" description="选择其他月份或新增一笔记账。" />
-          </section>
-        </div>
-
-        <section class="ledger-surface ledger-day-panel">
-          <div class="ledger-day-panel__head">
-            <div class="ledger-day-panel__date">
-              <button type="button" aria-label="前一天" @click="shiftSelectedDate(-1)"><ChevronLeft :size="15" /></button>
-              <div><strong>{{ selectedDateDisplay }}</strong><span>{{ selectedDateContextLabel }}</span></div>
-              <button type="button" aria-label="后一天" @click="shiftSelectedDate(1)"><ChevronRight :size="15" /></button>
-            </div>
-            <div class="ledger-day-panel__totals"><b class="income">收入：{{ formatAmount(selectedDayIncome) }}</b><b class="expense">支出：{{ formatAmount(selectedDayExpense) }}</b></div>
-          </div>
-          <div class="ledger-day-panel__columns"><span>分类</span><span>关联账户</span><span>金额</span></div>
-          <div v-if="selectedDayEntries.length" class="ledger-day-list">
-            <div v-for="entry in selectedDayEntries" :key="entry.id" class="ledger-day-row" data-testid="ledger-row" role="button" tabindex="0" @click="openEntryDetail(entry.id)" @keydown.enter="openEntryDetail(entry.id)">
-              <span class="ledger-day-row__category"><img v-if="summaryCategoryForEntry(entry).iconUrl" :src="summaryCategoryForEntry(entry).iconUrl" alt="" /><i v-else>{{ categoryInitial(entry) }}</i><strong>{{ categoryLabel(entry) }}</strong></span>
-              <span class="ledger-day-row__note ledger-account-cell"><img v-if="accountForEntry(entry)?.iconUrl" :src="accountForEntry(entry)?.iconUrl" alt="" /><i v-else :style="{ background: accountForEntry(entry)?.color || '#edf4ff', color: accountForEntry(entry)?.color ? '#fff' : 'var(--color-primary)' }">{{ accountForEntry(entry)?.icon || accountForEntry(entry)?.name?.slice(0, 1) || '账' }}</i>{{ accountRelationLabel(entry) }}</span>
-              <strong class="ledger-day-row__amount" :class="isPositive(entry.type) ? 'positive' : 'negative'">{{ amountPrefix(entry) }}{{ formatAmount(entry.amount) }}</strong>
-            </div>
-          </div>
-          <REmptyState v-else title="这一天暂无交易" description="选择其他日期或记录一笔新账。" />
-          <button type="button" class="ledger-detail-link" @click="showCalendarModal = true">查看账单明细 →</button>
-        </section>
+        <LedgerDayEntriesPanel
+          ref="dayEntriesPanel"
+          :selected-date-display="selectedDateDisplay"
+          :selected-date-context-label="selectedDateContextLabel"
+          :selected-date-key="selectedDateKey"
+          :selected-day-income="selectedDayIncome"
+          :selected-day-expense="selectedDayExpense"
+          :selected-day-entries="selectedDayEntries"
+          :summary-category-for-entry="summaryCategoryForEntry"
+          :category-initial="categoryInitial"
+          :category-label="categoryLabel"
+          :entry-display-name="entryDisplayName"
+          :entry-source-label="entrySourceLabel"
+          :account-for-entry="accountForEntry"
+          :account-relation-label="accountRelationLabel"
+          :is-positive="isPositive"
+          :amount-prefix="amountPrefix"
+          :format-amount="formatAmount"
+          @shift-date="shiftSelectedDate"
+          @open-date-picker="openDatePicker"
+          @date-change="handleDatePickerChange"
+          @open-entry="openEntryDetail"
+          @open-calendar="showCalendarModal = true"
+        />
       </div>
     </div>
 
-    <n-modal v-model:show="showCalendarModal" preset="card" class="rizhi-calendar-modal" :bordered="false" :style="{ width: 'min(1180px, calc(100vw - 48px))', height: 'min(720px, calc(100dvh - 48px))', maxHeight: 'calc(100dvh - 48px)' }">
-    <RCard>
-      <div class="ledger-calendar">
-        <div class="calendar-toolbar">
-          <div>
-            <span>日历视图</span>
-            <strong>{{ calendarTitle }}</strong>
-          </div>
-          <div class="calendar-actions">
-            <button type="button" @click="shiftCalendarMonth(-1)">上个月</button>
-            <button type="button" @click="goCurrentMonth">本月</button>
-            <button type="button" @click="shiftCalendarMonth(1)">下个月</button>
-          </div>
-        </div>
+    <LedgerCalendarModal
+      v-model:show="showCalendarModal"
+      :calendar-title="calendarTitle"
+      :weekdays="weekdays"
+      :calendar-days="calendarDays"
+      :selected-date-key="selectedDateKey"
+      :selected-date-label="selectedDateLabel"
+      :selected-day-income="selectedDayIncome"
+      :selected-day-expense="selectedDayExpense"
+      :selected-day-net="selectedDayNet"
+      :selected-day-entries="selectedDayEntries"
+      :format-amount="formatAmount"
+      :compact-amount="compactAmount"
+      :tag-tone="tagTone"
+      :transaction-type-label="transactionTypeLabel"
+      :category-label="categoryLabel"
+      :account-relation-label="accountRelationLabel"
+      :is-positive="isPositive"
+      :is-repayment-transaction="isRepaymentTransaction"
+      :amount-prefix="amountPrefix"
+      @shift-month="shiftCalendarMonth"
+      @current-month="goCurrentMonth"
+      @select-date="selectedDateKey = $event"
+    />
 
-        <div class="calendar-layout">
-          <div class="calendar-board">
-            <div v-for="weekday in weekdays" :key="weekday" class="calendar-weekday">{{ weekday }}</div>
-            <button
-              v-for="day in calendarDays"
-              :key="day.key"
-              type="button"
-              class="calendar-day"
-              :class="{ muted: !day.inMonth, today: day.isToday, selected: day.dateKey === selectedDateKey }"
-              @click="selectedDateKey = day.dateKey"
-            >
-              <span>{{ day.day }}</span>
-              <div v-if="day.count" class="day-summary">
-                <em v-if="day.income" class="positive">+{{ compactAmount(day.income) }}</em>
-                <em v-if="day.expense" class="negative">-{{ compactAmount(day.expense) }}</em>
-                <strong :class="day.net >= 0 ? 'net-positive' : 'net-negative'">{{ day.net >= 0 ? "+" : "-" }}{{ compactAmount(Math.abs(day.net)) }}</strong>
-              </div>
-              <small v-if="day.count">{{ day.count }} 笔</small>
-            </button>
-          </div>
-
-          <aside class="calendar-detail">
-            <div class="calendar-detail__head">
-              <span>选中日期</span>
-              <strong>{{ selectedDateLabel }}</strong>
-            </div>
-            <div class="calendar-detail__summary">
-              <div><span>收入</span><strong class="positive">{{ formatAmount(selectedDayIncome) }}</strong></div>
-              <div><span>支出</span><strong class="negative">{{ formatAmount(selectedDayExpense) }}</strong></div>
-              <div><span>净流入</span><strong :class="selectedDayNet >= 0 ? 'positive' : 'negative'">{{ selectedDayNet >= 0 ? "" : "-" }}{{ formatAmount(selectedDayNet) }}</strong></div>
-            </div>
-            <div v-if="selectedDayEntries.length" class="calendar-entry-list">
-              <div v-for="entry in selectedDayEntries" :key="entry.id" class="calendar-entry">
-                <RTag :tone="tagTone(entry.type)">{{ transactionTypeLabel(entry.type) }}</RTag>
-                <div>
-                  <strong>{{ entry.merchant || entry.note || categoryLabel(entry) }}</strong>
-                  <span>{{ categoryLabel(entry) }} / {{ accountRelationLabel(entry) }}</span>
-                </div>
-                <em :class="isPositive(entry.type) ? 'positive' : isRepaymentTransaction(entry) ? 'warning' : 'negative'">
-                  {{ amountPrefix(entry) }}{{ formatAmount(entry.amount) }}
-                </em>
-              </div>
-            </div>
-            <div v-else class="calendar-empty">这一天暂无交易</div>
-          </aside>
-        </div>
-      </div>
-    </RCard>
-    </n-modal>
-
-    <n-modal v-model:show="showDailyReport" preset="card" class="rizhi-daily-report-modal" :bordered="false" :closable="false" :style="{ width: 'min(780px, calc(100vw - 48px))', borderRadius: '22px' }">
-      <section class="daily-report">
-        <header class="daily-report__header">
-          <div><span>DAILY REPORT</span><h2>日报表</h2><p>{{ ledgerView === 'year' ? yearLabel : monthLabel }}</p></div>
-          <button type="button" aria-label="关闭日报表" @click="showDailyReport = false">×</button>
-        </header>
-        <div class="daily-report__table-wrap">
-          <table class="daily-report__table">
-            <thead><tr><th>日期</th><th>收入</th><th>支出</th><th>结余</th></tr></thead>
-            <tbody>
-              <tr v-for="row in dailyReportRows" :key="row.key">
-                <td>{{ row.label }}</td><td>{{ formatAmount(row.income) }}</td><td>{{ formatAmount(row.expense) }}</td>
-                <td :class="row.net >= 0 ? 'positive' : 'negative'">{{ row.net >= 0 ? '+' : '-' }}{{ formatAmount(Math.abs(row.net)) }}</td>
-              </tr>
-              <tr v-if="!dailyReportRows.length"><td colspan="4" class="daily-report__empty">当前周期暂无交易记录</td></tr>
-            </tbody>
-            <tfoot v-if="dailyReportRows.length"><tr><th>平均</th><td>{{ formatAmount(dailyReportAverage.income) }}</td><td>{{ formatAmount(dailyReportAverage.expense) }}</td><td :class="dailyReportAverage.net >= 0 ? 'positive' : 'negative'">{{ dailyReportAverage.net >= 0 ? '+' : '-' }}{{ formatAmount(Math.abs(dailyReportAverage.net)) }}</td></tr></tfoot>
-          </table>
-        </div>
-      </section>
-    </n-modal>
+    <LedgerDailyReport v-model="showDailyReport" :period-label="ledgerView === 'year' ? yearLabel : monthLabel" :rows="dailyReportRows" :average="dailyReportAverage" />
 
     <div v-if="mode === 'records'" class="pagination">
       <span>当前筛选共 {{ filteredEntries.length }} 条交易</span>
     </div>
 
-    <n-modal v-model:show="showDetailModal" preset="card" :bordered="false" :style="{ width: 'min(520px, calc(100vw - 48px))', borderRadius: '18px' }">
-      <section v-if="selectedTransaction" class="ledger-entry-detail">
-        <header><div><span>记账详情</span><h2>{{ categoryLabel(selectedTransaction) }}</h2></div><button type="button" aria-label="关闭详情" @click="showDetailModal = false">×</button></header>
-        <div class="ledger-entry-detail__amount" :class="isPositive(selectedTransaction.type) ? 'positive' : 'negative'">{{ amountPrefix(selectedTransaction) }}{{ formatAmount(selectedTransaction.amount) }}</div>
-        <dl>
-          <div><dt>发生时间</dt><dd>{{ formatDateTime(displayOccurredAt(selectedTransaction)) }}</dd></div>
-          <div><dt>账户</dt><dd>{{ accountRelationLabel(selectedTransaction) }}</dd></div>
-          <div><dt>商家 / 来源</dt><dd>{{ selectedTransaction.merchant || '-' }}</dd></div>
-          <div><dt>备注</dt><dd>{{ selectedTransaction.note || '-' }}</dd></div>
-        </dl>
-        <footer><RButton variant="secondary" @click="showDetailModal = false">关闭</RButton><RButton v-if="!isRepaymentTransaction(selectedTransaction) && !isTransferTransaction(selectedTransaction)" variant="secondary" @click="editSelectedEntry">编辑</RButton><RButton variant="danger" :disabled="isProtectedTransaction(selectedTransaction)" @click="deleteSelectedEntry">删除</RButton></footer>
-      </section>
-    </n-modal>
+    <LedgerEntryDetailModal
+      v-model:show="showDetailModal"
+      :selected-transaction="selectedTransaction"
+      :entry-display-name="entryDisplayName"
+      :entry-source-label="entrySourceLabel"
+      :asset-name="assetName"
+      :category-label="categoryLabel"
+      :account-relation-label="accountRelationLabel"
+      :display-occurred-at="displayOccurredAt"
+      :amount-prefix="amountPrefix"
+      :format-amount="formatAmount"
+      :is-positive="isPositive"
+      :is-repayment-transaction="isRepaymentTransaction"
+      :is-transfer-transaction="isTransferTransaction"
+      :is-protected-transaction="isProtectedTransaction"
+      @edit="editSelectedEntry"
+      @delete="deleteSelectedEntry"
+    />
 
-    <n-modal
-      v-model:show="showModal"
-      preset="card"
-      :bordered="false"
-      :closable="false"
-      :mask-closable="false"
-      class="rizhi-ledger-modal-card"
-      content-style="padding: 0;"
-      :style="{ width: 'min(860px, calc(100vw - 48px))', height: 'min(720px, calc(100dvh - 48px))', maxHeight: 'calc(100dvh - 48px)', borderRadius: '18px', overflow: 'hidden' }"
+    <LedgerEntryModalShell
+      v-model="showModal"
+      :draft-type="draftType"
+      :saving="saving"
+      @close="requestCloseLedgerModal"
+      @save="saveDraft"
+      @switch-draft-type="switchDraftType"
     >
-      <section class="ledger-modal" :class="{ income: draftType === 'income', transfer: draftType === 'transfer' }">
-        <header class="ledger-modal__hero">
-          <div>
-            <div class="ledger-modal__tabs"><button type="button" :class="{ active: draftType === 'expense' }" @click="switchDraftType('expense')">支出</button><button type="button" :class="{ active: draftType === 'income' }" @click="switchDraftType('income')">收入</button><button type="button" :class="{ active: draftType === 'transfer' }" @click="switchDraftType('transfer')">转账</button></div>
-            <span>{{ draftType === "income" ? "Income" : draftType === "transfer" ? "Transfer" : "Expense" }}</span>
-            <h2>{{ draftType === "income" ? "记录一笔收入" : draftType === "transfer" ? "记录一次账户转账" : "记录一笔日常支出" }}</h2>
-            <p>{{ draftType === "income" ? "收入会增加所选账户余额。" : draftType === "transfer" ? "转账会生成转出和转入两条账户流水。" : "支出会减少现金账户余额，或增加信用/负债账户欠款。" }}</p>
-          </div>
-          <button type="button" @click="requestCloseLedgerModal">×</button>
-        </header>
+      <LedgerEntryEditorForm
+        v-model:draft-amount="draftAmount"
+        v-model:draft-category-id="draftCategoryId"
+        v-model:draft-sub-category-id="draftSubCategoryId"
+        v-model:draft-account-id="draftAccountId"
+        v-model:draft-asset-id="draftAssetId"
+        v-model:asset-search-query="assetSearchQuery"
+        v-model:draft-merchant="draftMerchant"
+        v-model:draft-note="draftNote"
+        v-model:asset-link-mode="assetLinkMode"
+        v-model:transaction-date="transactionDate"
+        v-model:transfer-draft="transferDraft"
+        :draft-type="draftType"
+        :draft-errors="draftErrors"
+        :transfer-errors="transferErrors"
+        :current-root-categories="currentRootCategories"
+        :current-sub-categories="currentSubCategories"
+        :asset-create-options="assetCreateOptions"
+        :asset-search-results="assetSearchResults"
+        :selected-asset-name="selectedAssetName"
+        :draft-receipt-name="draftReceiptName"
+        :open-account-picker="openAccountPicker"
+        :account-picker-account-name="accountPickerAccountName"
+        :select-transaction-root-category="selectTransactionRootCategory"
+        :category-display-name="categoryDisplayName"
+        :category-icon-text="categoryIconText"
+        @select-receipt="selectReceipt"
+      />
 
-        <div class="ledger-modal__body">
-          <div class="amount-panel" :class="{ invalid: draftErrors.amount }">
-            <span>金额</span>
-            <div class="amount-input">
-              <strong>¥</strong>
-              <input v-model="draftAmount" placeholder="0.00" />
-            </div>
-            <em>{{ draftErrors.amount }}</em>
-            <p>{{ draftType === "income" ? "收入会增加所选账户余额。" : draftType === "transfer" ? "金额会从转出账户扣除并转入目标账户。" : "支出会同步写入账户流水。" }}</p>
-          </div>
+    </LedgerEntryModalShell>
 
-          <div v-if="draftType === 'transfer'" class="ledger-form transfer-form">
-            <section class="form-section"><h3>转账信息</h3><div class="form-grid"><label :class="{ invalid: transferErrors.fromAccountId }"><span>转出账户</span><button type="button" class="account-picker-trigger" @click="openAccountPicker('from')"><span>{{ accountPickerAccountName(transferDraft.fromAccountId) }}</span><ChevronDown :size="16" /></button><em>{{ transferErrors.fromAccountId }}</em></label><label :class="{ invalid: transferErrors.toAccountId }"><span>转入账户</span><button type="button" class="account-picker-trigger" @click="openAccountPicker('to')"><span>{{ accountPickerAccountName(transferDraft.toAccountId) }}</span><ChevronDown :size="16" /></button><em>{{ transferErrors.toAccountId }}</em></label><label><span>备注</span><RInput v-model="transferDraft.note" placeholder="例如 支付宝转入微信" /></label></div></section>
-            <RInlineFeedback v-if="transferErrors.form" tone="danger">{{ transferErrors.form }}</RInlineFeedback>
-          </div>
-          <div v-else class="ledger-form">
-            <section class="form-section">
-              <h3>交易信息</h3>
-              <div class="form-grid">
-                <label :class="{ invalid: draftErrors.date }"><span>发生日期</span><RDatePicker v-model="transactionDate" type="datetime" placeholder="选择日期时间" /><em>{{ draftErrors.date }}</em></label>
-                <label class="category-field" :class="{ invalid: draftErrors.categoryId }"><span>分类</span><div class="ledger-category-picker"><button v-for="category in currentRootCategories" :key="category.id" type="button" :class="{ active: draftCategoryId === category.id }" @click="selectTransactionRootCategory(category.id)"><img v-if="category.iconUrl" :src="category.iconUrl" alt="" /><i v-else>{{ categoryIconText(category) }}</i>{{ categoryDisplayName(category.id, category.name) }}</button></div><em>{{ draftErrors.categoryId }}</em></label>
-                <label v-if="currentSubCategories.length" class="category-field"><span>子分类</span><div class="ledger-category-picker ledger-category-picker--children"><button v-for="category in currentSubCategories" :key="category.id" type="button" :class="{ active: draftSubCategoryId === category.id }" @click="draftSubCategoryId = category.id"><img v-if="category.iconUrl" :src="category.iconUrl" alt="" /><i v-else>{{ categoryIconText(category) }}</i>{{ categoryDisplayName(category.id, category.name) }}</button><button type="button" :class="{ active: !draftSubCategoryId || draftSubCategoryId === 'none' }" @click="draftSubCategoryId = 'none'">不选择子分类</button></div></label>
-                <label :class="{ invalid: draftErrors.accountId }"><span>{{ draftType === "income" ? "收款账户" : "付款账户" }}</span><button type="button" class="account-picker-trigger" @click="openAccountPicker('draft')"><span>{{ accountPickerAccountName(draftAccountId) }}</span><ChevronDown :size="16" /></button><em>{{ draftErrors.accountId }}</em></label>
-                <label><span>{{ draftType === "income" ? "来源" : "商家" }}</span><RInput v-model="draftMerchant" :placeholder="draftType === 'income' ? '例如 工资 / 副业' : '例如 麦当劳 / 京东'" /></label>
-              </div>
-            </section>
-
-            <section v-if="draftType === 'expense'" class="form-section">
-              <h3>资产关联（可选）</h3>
-              <div class="asset-link-box" :class="{ invalid: draftErrors.assetId }">
-                <RSelect v-model="draftAssetId" :options="assetCreateOptions" placeholder="选择已有资产" />
-                <RInput v-model="assetSearchQuery" placeholder="搜索资产名称、品牌或型号" />
-                <div v-if="assetSearchQuery.trim()" class="asset-search-results">
-                  <button v-for="asset in assetSearchResults" :key="asset.id" type="button" :class="{ active: draftAssetId === asset.id }" @click="draftAssetId = asset.id; assetSearchQuery = asset.name">
-                    <strong>{{ asset.name }}</strong><span>{{ [asset.brand, asset.model].filter(Boolean).join(' / ') || '未填写规格' }}</span>
-                  </button>
-                  <span v-if="!assetSearchResults.length" class="asset-search-empty">没有找到匹配资产</span>
-                </div>
-                <div v-else-if="draftAssetId" class="asset-selected-hint">已选择：{{ selectedAssetName }}</div>
-                <em>{{ draftErrors.assetId }}</em>
-                <div class="link-options">
-                  <label><input v-model="assetLinkMode" type="radio" value="related" /> 仅作为相关支出</label>
-                  <label><input v-model="assetLinkMode" type="radio" value="addon-included" /> 作为附加项并计入资产成本</label>
-                  <label><input v-model="assetLinkMode" type="radio" value="addon-excluded" /> 作为附加项但不计入成本</label>
-                </div>
-              </div>
-            </section>
-
-            <section class="form-section">
-              <h3>备注与凭证</h3>
-              <RInput v-model="draftNote" placeholder="添加备注，例如订单号、用途、说明" />
-              <input ref="receiptFileInput" class="hidden-file" type="file" accept="image/png,image/jpeg,image/webp,application/pdf" @change="selectReceipt" />
-              <button type="button" class="receipt-box" @click="receiptFileInput?.click()">＋ {{ draftReceiptName || '上传凭证' }}</button>
-            </section>
-            <RInlineFeedback v-if="draftErrors.form" tone="danger">{{ draftErrors.form }}</RInlineFeedback>
-          </div>
-        </div>
-
-        <footer class="ledger-modal__footer">
-          <RButton variant="secondary" @click="requestCloseLedgerModal">取消</RButton>
-          <RButton :variant="draftType === 'income' ? 'primary' : 'danger'" :loading="saving" @click="saveDraft">
-            {{ draftType === "income" ? "保存收入" : draftType === "transfer" ? "确认转账" : "保存支出" }}
-          </RButton>
-        </footer>
-      </section>
-    </n-modal>
-
-    <n-modal v-model:show="showAccountPicker" :mask-closable="true" class="rizhi-account-picker-card" content-style="padding: 0;">
-      <section class="account-picker-modal">
-        <header>
-          <div><span>资金账户</span><h2>选择{{ accountPickerTitle }}</h2></div>
-          <button type="button" aria-label="关闭账户选择" @click="showAccountPicker = false">×</button>
-        </header>
-        <div class="account-picker-modal__content">
-          <button v-if="accountPickerTarget === 'draft'" type="button" class="account-picker-none" :class="{ active: !accountPickerSelectedId }" @click="selectPickerAccount(null)">
-            <i>账</i><span><strong>不选择账户</strong><small>仅记录收支，不影响资金账户余额</small></span>
-          </button>
-          <div v-for="section in accountPickerSections" :key="section.key" class="account-picker-section">
-            <h3>{{ section.title }}</h3>
-            <div class="account-picker-grid">
-              <button v-for="account in section.accounts" :key="account.id" type="button" :class="{ active: accountPickerSelectedId === account.id }" @click="selectPickerAccount(account.id)">
-                <img v-if="account.iconUrl" :src="account.iconUrl" alt="" />
-                <i v-else :style="{ background: account.color || '#3b82f6' }">{{ account.icon || account.name.slice(0, 1) }}</i>
-                <span><strong>{{ account.name }}</strong><small>{{ accountPickerBalance(account) }}</small></span>
-              </button>
-            </div>
-          </div>
-          <p v-if="!accountPickerSections.length" class="account-picker-empty">暂无可用账户，请先到资金页添加账户。</p>
-        </div>
-      </section>
-    </n-modal>
+    <LedgerAccountPickerModal
+      v-model="showAccountPicker"
+      :title="accountPickerTitle"
+      :target="accountPickerTarget"
+      :selected-id="accountPickerSelectedId"
+      :sections="accountPickerSections"
+      :balance="accountPickerBalance"
+      @select="selectPickerAccount"
+    />
 
     <DeleteConfirmModal
       v-model:show="showDeleteModal"
@@ -372,24 +235,24 @@
 <script setup lang="ts">
 import { computed, onMounted, reactive, ref, watch } from "vue";
 import { useRoute, useRouter } from "vue-router";
-import { NModal } from "naive-ui";
-import { CalendarDays, ChevronDown, ChevronLeft, ChevronRight, NotebookText, Plus } from "@lucide/vue";
-import VChart from "vue-echarts";
 import { BarChart } from "echarts/charts";
 import { GridComponent, LegendComponent, TooltipComponent } from "echarts/components";
 import { use } from "echarts/core";
 import { CanvasRenderer } from "echarts/renderers";
 import DeleteConfirmModal from "@/components/business/DeleteConfirmModal.vue";
-import RButton from "@/components/ui/RButton.vue";
-import RCard from "@/components/ui/RCard.vue";
-import RDatePicker from "@/components/ui/RDatePicker.vue";
-import RInput from "@/components/ui/RInput.vue";
-import RSelect from "@/components/ui/RSelect.vue";
-import RTag from "@/components/ui/RTag.vue";
+import LedgerOverviewCards from "@/components/business/LedgerOverviewCards.vue";
+import LedgerStatisticsPanel from "@/components/business/LedgerStatisticsPanel.vue";
+import LedgerDayEntriesPanel from "@/components/business/LedgerDayEntriesPanel.vue";
+import LedgerDailyReport from "@/components/business/LedgerDailyReport.vue";
+import LedgerAccountPickerModal from "@/components/business/LedgerAccountPickerModal.vue";
+import LedgerCalendarModal from "@/components/business/LedgerCalendarModal.vue";
+import LedgerEntryDetailModal from "@/components/business/LedgerEntryDetailModal.vue";
+import LedgerEntryModalShell from "@/components/business/LedgerEntryModalShell.vue";
+import LedgerEntryEditorForm from "@/components/business/LedgerEntryEditorForm.vue";
+import LedgerFilterToolbar from "@/components/business/LedgerFilterToolbar.vue";
 import RDataGate from "@/components/ui/RDataGate.vue";
-import RInlineFeedback from "@/components/ui/RInlineFeedback.vue";
-import REmptyState from "@/components/ui/REmptyState.vue";
 import { imageFileToPersistentUrl } from "@/utils/imageFiles";
+import { compactAmount, formatAmount, formatDateTime } from "@/utils/formatters";
 import type { AssetAddonRecord, MoneyAccountRecord, TransactionRecord, TransactionType } from "@/domain/models";
 import { assetAddonService } from "@/services/assetAddonService";
 import { accountService } from "@/services/accountService";
@@ -426,7 +289,7 @@ const accountPickerTarget = ref<"draft" | "from" | "to">("draft");
 const saving = ref(false);
 const deletingTransactionLoading = ref(false);
 const draftType = ref<"expense" | "income" | "transfer">("expense");
-const transferDraft = reactive({ fromAccountId: null as string | number | null, toAccountId: null as string | number | null, note: "" });
+let transferDraft = reactive({ fromAccountId: null as string | number | null, toAccountId: null as string | number | null, note: "" });
 const transferErrors = reactive({ fromAccountId: "", toAccountId: "", form: "" });
 const draftAmount = ref("");
 const draftCategoryId = ref<string | number | null>(null);
@@ -438,7 +301,6 @@ const draftMerchant = ref("");
 const draftNote = ref("");
 const draftReceiptUrl = ref("");
 const draftReceiptName = ref("");
-const receiptFileInput = ref<HTMLInputElement | null>(null);
 const assetLinkMode = ref<"related" | "addon-included" | "addon-excluded">("related");
 const transactionDate = ref<number | null>(Date.now());
 const draftErrors = reactive({
@@ -454,6 +316,7 @@ const deletingTransactionId = ref<string | null>(null);
 const protectedAssetId = ref<string | null>(null);
 const calendarMonth = ref(startOfMonth(new Date()).getTime());
 const selectedDateKey = ref(toDateKey(new Date()));
+const dayEntriesPanel = ref<{ openDatePicker: () => void } | null>(null);
 const initialLedgerDraftSnapshot = ref("");
 
 const transactionCategories = computed(() => store.categories.filter((category) => category.domain === "transaction"));
@@ -745,6 +608,11 @@ function categorySegmentPath(index: number) {
   const inner = 42;
   const startPercent = categorySummary.value.slice(0, index).reduce((sum, item) => sum + item.percent, 0);
   const endPercent = startPercent + categorySummary.value[index].percent;
+  // SVG arcs with identical start/end points are treated as an empty path.
+  // Handle a single 100% category explicitly so the donut remains visible.
+  if (endPercent - startPercent >= 99.999) {
+    return `M 76 12 A ${outer} ${outer} 0 1 1 76 140 A ${outer} ${outer} 0 1 1 76 12 Z`;
+  }
   const start = ((startPercent / 100) * Math.PI * 2) - Math.PI / 2;
   const end = ((endPercent / 100) * Math.PI * 2) - Math.PI / 2;
   const largeArc = endPercent - startPercent > 50 ? 1 : 0;
@@ -940,22 +808,6 @@ function goCurrentMonth() {
   selectedDateKey.value = toDateKey(today);
 }
 
-function formatAmount(value: number) {
-  return `¥${Math.abs(value).toLocaleString("zh-CN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
-}
-
-function compactAmount(value: number) {
-  if (value >= 10000) return `${(value / 10000).toFixed(1)}万`;
-  if (value >= 1000) return `${(value / 1000).toFixed(1)}k`;
-  return value.toFixed(value % 1 === 0 ? 0 : 1);
-}
-
-function formatDateTime(value: string) {
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return value;
-  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")} ${String(date.getHours()).padStart(2, "0")}:${String(date.getMinutes()).padStart(2, "0")}`;
-}
-
 function parseAmount(value: string) {
   const amount = Number(value.replace(/[¥,\s]/g, ""));
   if (!Number.isFinite(amount) || amount <= 0) throw new Error("请输入正确金额");
@@ -1022,7 +874,7 @@ function validateDraft() {
 
 function categoryName(id: string) {
   const category = store.categories.find((item) => item.id === id);
-  return category ? categoryDisplayName(id, category.name) : categoryDisplayName(id, "-");
+  return category ? categoryDisplayName(id, category.name) : categoryDisplayName(id, "未分类");
 }
 
 function selectDefaultDateForMonth(month: Date) {
@@ -1066,7 +918,32 @@ function rootTransactionCategory(id: string) {
   return category;
 }
 
+function openDatePicker() {
+  dayEntriesPanel.value?.openDatePicker();
+}
+
+function handleDatePickerChange(event: Event) {
+  const value = (event.target as HTMLInputElement).value;
+  if (!value) return;
+  selectedDateKey.value = value;
+  calendarMonth.value = startOfMonth(parseDateKey(value)).getTime();
+}
+
+function rootAssetCategory(id: string) {
+  let category = store.categories.find((item) => item.id === id && item.domain === "asset");
+  while (category?.parentId) {
+    category = store.categories.find((item) => item.id === category?.parentId && item.domain === "asset");
+  }
+  return category;
+}
+
 function summaryCategoryForEntry(entry: TransactionRecord) {
+  // 资产购买记账使用交易分类保存，但分类统计应按实际购买资产的分类归类。
+  if ((entry.businessType === "asset_purchase" || entry.categoryId === "tx-asset-purchase" || entry.businessType === "asset_addon" || entry.businessType === "asset_transfer") && entry.assetId) {
+    const asset = store.assets.find((item) => item.id === entry.assetId);
+    const assetCategory = asset ? rootAssetCategory(asset.categoryId) : undefined;
+    if (assetCategory) return assetCategory;
+  }
   const directCategory = rootTransactionCategory(entry.categoryId);
   if (directCategory) return directCategory;
 
@@ -1088,9 +965,10 @@ function summaryCategoryForEntry(entry: TransactionRecord) {
 }
 
 function categoryLabel(entry: TransactionRecord) {
-  const category = entry.categorySnapshot?.categoryName ?? categoryName(entry.categoryId);
+  const usesAssetCategory = Boolean(entry.assetId && (entry.businessType === "asset_purchase" || entry.businessType === "asset_addon" || entry.businessType === "asset_transfer" || entry.categoryId === "tx-asset-purchase"));
+  const category = usesAssetCategory ? summaryCategoryForEntry(entry).name : entry.categorySnapshot?.categoryName ?? categoryName(entry.categoryId);
   const subCategory = entry.categorySnapshot?.subCategoryName ?? (entry.subCategoryId ? categoryName(entry.subCategoryId) : "");
-  return subCategory && subCategory !== "-" ? `${category} / ${subCategory}` : category;
+  return subCategory && subCategory !== "-" && !usesAssetCategory ? `${category} / ${subCategory}` : category;
 }
 
 function chartTooltip(day: { label: string; expense: number; income: number }) {
@@ -1117,7 +995,7 @@ function selectPickerYear(year: number) {
 }
 
 function categoryInitial(entry: TransactionRecord) {
-  const label = entry.categorySnapshot?.categoryName ?? categoryName(entry.categoryId);
+  const label = categoryLabel(entry);
   return label.trim().slice(0, 1) || "账";
 }
 
@@ -1159,8 +1037,9 @@ function buildCategoryBreakdown(entries: TransactionRecord[]) {
   for (const entry of entries) {
     const direction = ledgerDirection(entry);
     if (!direction) continue;
-    const categoryNameValue = entry.categorySnapshot?.categoryName ?? categoryName(entry.categoryId);
-    const categoryKey = `${direction}:${entry.categoryId}:${categoryNameValue}`;
+    const summaryCategory = summaryCategoryForEntry(entry);
+    const categoryNameValue = summaryCategory.name;
+    const categoryKey = `${direction}:${summaryCategory.id}:${categoryNameValue}`;
     const group = groups.get(categoryKey) ?? {
       key: categoryKey,
       categoryName: categoryNameValue,
@@ -1260,8 +1139,8 @@ const transactionCategoryLabels: Record<string, string> = {
   "tx-asset-part-transfer": "资产部件收入",
 };
 
-function categoryDisplayName(id: string, fallback: string) {
-  return transactionCategoryLabels[id] || fallback;
+function categoryDisplayName(id: string | number, fallback: string) {
+  return transactionCategoryLabels[String(id)] || fallback;
 }
 
 function categoryIconText(category: { icon?: string; name: string }) {
@@ -1278,6 +1157,20 @@ function accountRelationLabel(entry: TransactionRecord) {
     return `${accountName(entry.accountId)} → ${accountName(entry.relatedAccountId)}`;
   }
   return accountName(entry.accountId);
+}
+
+function entryDisplayName(entry: TransactionRecord) {
+  if (entry.addonId) {
+    const addon = store.assetAddons.find((item) => item.id === entry.addonId);
+    if (addon?.name) return addon.name;
+  }
+  return entry.merchant?.trim() || entry.note?.trim() || (entry.assetId ? assetName(entry) : transactionTypeLabel(entry.type));
+}
+
+function entrySourceLabel(entry: TransactionRecord) {
+  if (entry.addonId || entry.businessType === "asset_addon") return "附加项";
+  if (entry.businessType === "asset_purchase" || entry.businessType === "asset_transfer" || entry.assetId) return "资产流水";
+  return "";
 }
 
 function assetName(entry: TransactionRecord) {
@@ -2372,83 +2265,11 @@ function fileToDataUrl(file: File) {
   color: var(--color-text-secondary);
 }
 
-.ledger-modal {
-  display: flex;
-  flex-direction: column;
-  width: 100%;
-  height: 100%;
-  max-height: calc(100dvh - 48px);
-  overflow: hidden;
-  background: var(--color-bg-card);
-}
-
-.ledger-modal__hero {
-  display: flex;
-  flex: 0 0 auto;
-  justify-content: space-between;
-  gap: var(--space-6);
-  padding: 28px 32px;
-  color: #fff;
-  background:
-    radial-gradient(circle at 84% 18%, rgba(255, 255, 255, 0.25), transparent 26%),
-    linear-gradient(135deg, #f04438, #ff776d);
-}
-
-.ledger-modal.income .ledger-modal__hero {
-  background:
-    radial-gradient(circle at 84% 18%, rgba(255, 255, 255, 0.25), transparent 26%),
-    linear-gradient(135deg, #0f9f6e, #16a36a);
-}
-
 .calendar-entry > .r-tag {
   justify-content: center;
   box-sizing: border-box;
   line-height: 1;
   vertical-align: middle;
-}
-
-.ledger-modal.transfer .ledger-modal__hero {
-  background: radial-gradient(circle at 84% 18%, rgba(255, 255, 255, 0.25), transparent 26%), linear-gradient(135deg, #356fe8, #5b8ff5);
-}
-
-.ledger-modal__hero span {
-  font-size: var(--font-caption);
-  font-weight: 800;
-  opacity: 0.86;
-  text-transform: uppercase;
-}
-
-.ledger-modal__hero h2 {
-  margin: var(--space-2) 0;
-  font-size: 24px;
-}
-
-.ledger-modal__hero p {
-  margin: 0;
-  opacity: 0.85;
-}
-
-.ledger-modal__hero > button {
-  width: 32px;
-  height: 32px;
-  color: #fff;
-  background: rgba(255, 255, 255, 0.16);
-  border: 0;
-  border-radius: 50%;
-  cursor: pointer;
-}
-
-.ledger-modal__body {
-  display: grid;
-  flex: 1 1 auto;
-  min-height: 0;
-  overflow-y: auto;
-  grid-template-columns: 250px 1fr;
-  gap: var(--space-6);
-  min-height: 0;
-  overflow: auto;
-  height: 0;
-  padding: 28px 32px;
 }
 
 .amount-panel {
@@ -2653,66 +2474,7 @@ function fileToDataUrl(file: File) {
 .ledger-category-picker button img, .ledger-category-picker button i { display: grid; width: 20px; height: 20px; place-items: center; border-radius: 6px; font-size: 11px; font-style: normal; object-fit: cover; }
 .ledger-category-picker--children { padding-left: 10px; border-left: 2px solid var(--color-primary-light); }
 
-.ledger-modal .hidden-file {
-  position: absolute;
-  width: 1px;
-  height: 1px;
-  overflow: hidden;
-  clip: rect(0 0 0 0);
-  clip-path: inset(50%);
-  white-space: nowrap;
-}
-
 .receipt-box:hover { color: var(--color-primary); border-color: var(--color-primary); background: #f4f8ff; }
-
-.ledger-modal.transfer .ledger-form { align-content: start; }
-.ledger-modal.transfer .form-section { padding-bottom: 0; border-bottom: 0; }
-
-.ledger-modal__footer {
-  display: flex;
-  flex: 0 0 auto;
-  justify-content: flex-end;
-  gap: var(--space-3);
-  padding: 20px 32px;
-  background: var(--color-bg-hover);
-  border-top: 1px solid var(--color-border);
-}
-
-.daily-report { overflow: hidden; background: #fff; border-radius: 22px; }
-.daily-report__header { position: relative; padding: 30px 36px 26px; text-align: center; border-bottom: 1px solid #edf0f5; }
-.daily-report__header span { display: block; color: var(--color-primary); font-size: 11px; font-weight: 800; letter-spacing: .12em; }
-.daily-report__header h2 { margin: 6px 0 3px; color: #182033; font-size: 30px; line-height: 1.2; }
-.daily-report__header p { margin: 0; color: var(--color-text-tertiary); font-size: 13px; }
-.daily-report__header button { position: absolute; top: 18px; right: 20px; display: grid; width: 32px; height: 32px; padding: 0; place-items: center; color: #69758a; background: #f5f7fb; border: 0; border-radius: 50%; cursor: pointer; font-size: 20px; }
-.daily-report__table-wrap { max-height: min(540px, calc(100dvh - 260px)); overflow: auto; }
-.daily-report__table { width: 100%; border-collapse: collapse; table-layout: fixed; }
-.daily-report__table th, .daily-report__table td { padding: 21px 18px; font-size: 16px; text-align: center; border-bottom: 1px solid #edf0f5; }
-.daily-report__table thead th { color: #4a5568; font-weight: 750; background: #fbfcfe; }
-.daily-report__table tbody td { color: #202939; font-variant-numeric: tabular-nums; }
-.daily-report__table tfoot th, .daily-report__table tfoot td { color: #27334a; font-weight: 750; background: #fbfcfe; border-bottom: 0; }
-.daily-report__table .positive { color: #12a775; }.daily-report__table .negative { color: #ed6269; }
-.daily-report__empty { height: 130px; color: var(--color-text-tertiary) !important; }
-
-.account-picker-modal { width: min(760px, calc(100vw - 48px)); overflow: hidden; background: var(--color-bg-card); border-radius: 18px; }
-.account-picker-modal > header { display: flex; align-items: flex-start; justify-content: space-between; padding: 26px 30px 20px; color: #fff; background: linear-gradient(120deg, #123373, #397ff0); }
-.account-picker-modal > header span { display: block; margin-bottom: 6px; font-size: 11px; font-weight: 700; letter-spacing: .08em; opacity: .78; text-transform: uppercase; }
-.account-picker-modal > header h2 { margin: 0; font-size: 24px; }
-.account-picker-modal > header > button { display: grid; width: 32px; height: 32px; padding: 0; place-items: center; color: #fff; border: 0; border-radius: 50%; background: rgba(255,255,255,.16); cursor: pointer; font-size: 20px; }
-.account-picker-modal__content { display: grid; gap: 22px; max-height: min(540px, calc(100dvh - 210px)); padding: 24px 30px 30px; overflow-y: auto; }
-.account-picker-none { display: grid; grid-template-columns: 36px minmax(0, 1fr); gap: 10px; align-items: center; min-height: 70px; padding: 12px; color: var(--color-text-primary); text-align: left; background: #fff; border: 1px dashed var(--color-border); border-radius: 12px; cursor: pointer; transition: border-color .16s ease, background .16s ease; }
-.account-picker-none:hover, .account-picker-none.active { border-color: var(--color-primary); background: var(--color-primary-light); }
-.account-picker-none i { display: grid; width: 36px; height: 36px; place-items: center; color: #64748b; font-size: 14px; font-style: normal; background: #e2e8f0; border-radius: 11px; }
-.account-picker-none span { display: grid; gap: 3px; min-width: 0; }.account-picker-none strong { font-size: 13px; }.account-picker-none small { color: var(--color-text-tertiary); font-size: 12px; }
-.account-picker-section { display: grid; gap: 12px; }
-.account-picker-section h3 { margin: 0; color: var(--color-text-secondary); font-size: 13px; }
-.account-picker-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; }
-.account-picker-grid > button { display: grid; grid-template-columns: 36px minmax(0, 1fr); gap: 10px; align-items: center; min-height: 70px; padding: 12px; color: var(--color-text-primary); text-align: left; background: #fff; border: 1px solid var(--color-border); border-radius: 12px; cursor: pointer; transition: border-color .16s ease, background .16s ease, box-shadow .16s ease; }
-.account-picker-grid > button:hover, .account-picker-grid > button.active { border-color: var(--color-primary); background: var(--color-primary-light); box-shadow: 0 5px 16px rgba(34, 105, 226, .1); }
-.account-picker-grid img, .account-picker-grid i { display: grid; width: 36px; height: 36px; place-items: center; color: #fff; border-radius: 11px; font-size: 14px; font-style: normal; object-fit: cover; }
-.account-picker-grid > button > span { display: grid; gap: 3px; min-width: 0; }
-.account-picker-grid strong, .account-picker-grid small { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.account-picker-grid strong { font-size: 13px; }.account-picker-grid small { color: var(--color-text-tertiary); font-size: 12px; }
-.account-picker-empty { margin: 0; padding: 32px; color: var(--color-text-tertiary); text-align: center; border: 1px dashed var(--color-border); border-radius: 12px; }
 .account-picker-trigger { display: flex; align-items: center; justify-content: space-between; width: 100%; min-height: 42px; padding: 0 12px; color: var(--color-text-primary); background: #fff; border: 1px solid var(--color-border); border-radius: 10px; cursor: pointer; font: inherit; text-align: left; }.account-picker-trigger:hover { border-color: var(--color-primary); }.account-picker-trigger > span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }.account-picker-trigger svg { flex: 0 0 auto; color: var(--color-text-tertiary); }
 
 @media (max-width: 1200px) {
@@ -2863,18 +2625,17 @@ function fileToDataUrl(file: File) {
 .ledger-day-panel__date > div { min-width: 112px; text-align: center; }
 .ledger-day-panel__date button { display: grid; width: 28px; height: 28px; padding: 0; place-items: center; color: var(--color-text-secondary); background: var(--color-surface-soft); border: 1px solid var(--color-border); border-radius: 8px; cursor: pointer; }
 .ledger-day-panel__date button:hover { color: var(--color-primary); border-color: color-mix(in srgb, var(--color-primary) 35%, var(--color-border)); }
+.ledger-day-panel__date .ledger-calendar-date-button { margin-left: 2px; color: var(--color-primary); background: #edf4ff; border-color: #cfe0ff; }
+.ledger-date-picker-input { position: absolute; width: 1px; height: 1px; opacity: 0; pointer-events: none; }
 .ledger-day-panel__columns { display: grid; grid-template-columns: 1fr 1fr auto; gap: 12px; padding: 12px 24px; color: var(--color-text-tertiary); font-size: 12px; background: var(--color-bg-hover); } .ledger-day-panel__columns span:last-child { text-align: right; }
-.ledger-day-list { flex: 1; } .ledger-day-row, .ledger-day-panel__columns { display: grid; grid-template-columns: minmax(180px, 1.15fr) minmax(180px, 1fr) 112px; gap: 12px; align-items: center; } .ledger-day-row { position: relative; min-height: 61px; padding: 10px 24px; border-bottom: 1px solid var(--color-border); }
+.ledger-day-list { flex: 1; } .ledger-day-row, .ledger-day-panel__columns { display: grid; grid-template-columns: minmax(125px, 1fr) minmax(130px, 1fr) minmax(130px, 1fr) 112px; gap: 12px; align-items: center; } .ledger-day-row { position: relative; min-height: 61px; padding: 10px 24px; border-bottom: 1px solid var(--color-border); }
 .ledger-day-panel__columns { padding: 10px 24px; color: var(--color-text-tertiary); background: var(--color-bg-soft); font-size: 12px; } .ledger-day-panel__columns span:last-child { text-align: right; }
 .ledger-day-row { cursor: pointer; transition: background .16s ease; } .ledger-day-row:hover, .ledger-day-row:focus-visible { background: #f7faff; outline: none; } .ledger-day-row__category { display: flex; align-items: center; gap: 10px; min-width: 0; } .ledger-day-row__category i, .ledger-day-row__category img { display: grid; width: 30px; height: 30px; flex: 0 0 auto; place-items: center; color: var(--color-primary); border-radius: 50%; background: #edf4ff; font-style: normal; font-size: 13px; object-fit: cover; }
-.ledger-day-row__category strong, .ledger-day-row__note { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; } .ledger-day-row__note { color: var(--color-text-tertiary); } .ledger-account-cell { display: flex; align-items: center; gap: 8px; min-width: 0; } .ledger-account-cell img, .ledger-account-cell i { display: grid; width: 24px; height: 24px; flex: 0 0 auto; place-items: center; border-radius: 7px; font-size: 11px; font-style: normal; object-fit: cover; } .ledger-day-row__amount { text-align: right; white-space: nowrap; } .ledger-day-row__amount.positive { color: var(--color-success); } .ledger-day-row__amount.negative { color: var(--color-danger); }
-.ledger-entry-detail header { display: flex; align-items: flex-start; justify-content: space-between; } .ledger-entry-detail header span { color: var(--color-text-secondary); font-size: 13px; } .ledger-entry-detail h2 { margin: 5px 0 0; font-size: 22px; } .ledger-entry-detail header button { border: 0; background: transparent; color: var(--color-text-secondary); font-size: 24px; cursor: pointer; }
-.ledger-modal__tabs { display: inline-flex; gap: 4px; width: fit-content; margin-bottom: 16px; padding: 4px; background: rgba(0,0,0,.12); border-radius: 999px; } .ledger-modal__tabs button { width: auto; min-width: 62px; height: 32px; padding: 0 14px; color: rgba(255,255,255,.82); background: transparent; border: 0; border-radius: 999px; cursor: pointer; font: inherit; font-size: 13px; font-weight: 700; line-height: 32px; white-space: nowrap; } .ledger-modal__tabs button.active { color: var(--color-text-primary); background: #fff; box-shadow: 0 2px 8px rgba(15, 23, 42, .14); }
-.ledger-entry-detail__amount { margin: 26px 0; font-size: 32px; font-weight: 700; } .ledger-entry-detail__amount.positive { color: var(--color-success); } .ledger-entry-detail__amount.negative { color: var(--color-danger); } .ledger-entry-detail dl { margin: 0; border-top: 1px solid var(--color-border); } .ledger-entry-detail dl > div { display: flex; justify-content: space-between; gap: 20px; padding: 13px 0; border-bottom: 1px solid var(--color-border); } .ledger-entry-detail dt { color: var(--color-text-secondary); } .ledger-entry-detail dd { margin: 0; text-align: right; } .ledger-entry-detail footer { display: flex; justify-content: flex-end; gap: 10px; margin-top: 22px; }
+.ledger-day-row__category strong, .ledger-day-row__note { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; } .ledger-day-row__name { display: flex; min-width: 0; align-items: center; gap: 8px; overflow: hidden; color: var(--color-text-secondary); } .ledger-day-row__name strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 600; } .ledger-day-row__name em { flex: 0 0 auto; padding: 2px 6px; color: var(--color-primary); background: var(--color-primary-light); border-radius: 999px; font-size: 11px; font-style: normal; line-height: 1.3; } .ledger-day-row__note { color: var(--color-text-tertiary); } .ledger-account-cell { display: flex; align-items: center; gap: 8px; min-width: 0; } .ledger-account-cell img, .ledger-account-cell i { display: grid; width: 24px; height: 24px; flex: 0 0 auto; place-items: center; border-radius: 7px; font-size: 11px; font-style: normal; object-fit: cover; } .ledger-day-row__amount { text-align: right; white-space: nowrap; } .ledger-day-row__amount.positive { color: var(--color-success); } .ledger-day-row__amount.negative { color: var(--color-danger); }
 .ledger-detail-link { margin: auto auto 0; padding: 17px; color: var(--color-primary); border: 0; background: transparent; cursor: pointer; font-size: 14px; }
 .calendar-entry > .r-tag { display: inline-flex; align-items: center; justify-content: center; box-sizing: border-box; line-height: 1; }
 @media (max-width: 1100px) { .ledger-content-grid { grid-template-columns: 1fr; } .ledger-filter-panel { grid-template-columns: repeat(2,minmax(0,1fr)); } }
-@media (max-width: 760px) { .ledger-dashboard__toolbar { align-items: stretch; flex-direction: column; } .ledger-dashboard__actions { justify-content: stretch; } .ledger-dashboard__actions > * { flex: 1; } .ledger-overview__grid { grid-template-columns: repeat(2,minmax(0,1fr)); } .ledger-filter-panel { grid-template-columns: 1fr; } .ledger-category-summary { grid-template-columns: 1fr; justify-items: center; } .ledger-day-row, .ledger-day-panel__columns { grid-template-columns: minmax(0, 1fr) minmax(120px, .8fr) 92px; } }
+@media (max-width: 760px) { .ledger-dashboard__toolbar { align-items: stretch; flex-direction: column; } .ledger-dashboard__actions { justify-content: stretch; } .ledger-dashboard__actions > * { flex: 1; } .ledger-overview__grid { grid-template-columns: repeat(2,minmax(0,1fr)); } .ledger-filter-panel { grid-template-columns: 1fr; } .ledger-category-summary { grid-template-columns: 1fr; justify-items: center; } .ledger-day-panel { overflow-x: auto; } .ledger-day-list, .ledger-day-panel__columns { min-width: 560px; } .ledger-day-row, .ledger-day-panel__columns { grid-template-columns: 125px 130px 130px 92px; } }
 @media (max-width: 760px) { .asset-link-box { grid-template-columns: 1fr; } .asset-link-box > .r-select, .asset-link-box > .r-input { grid-column: 1 / -1; } }
 </style>
 

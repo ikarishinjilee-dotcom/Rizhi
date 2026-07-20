@@ -1,6 +1,5 @@
 import { createRouter, createWebHashHistory, createWebHistory } from "vue-router";
 import { hasActiveSession, isAdmin, isUniCloudMode, refreshCurrentIdentity } from "@/services/authService";
-import AdminPage from "@/features/admin/AdminPage.vue";
 
 const history = import.meta.env.VITE_ROUTER_MODE === "hash"
   ? createWebHashHistory()
@@ -18,8 +17,8 @@ export const router = createRouter({
     { path: "/ledger", component: () => import("@/features/ledger/LedgerPage.vue") },
     { path: "/funds", component: () => import("@/features/funds/FundsPage.vue") },
     { path: "/me", redirect: "/settings" },
-    { path: "/admin", component: AdminPage, meta: { admin: true } },
-    { path: "/settings/categories", redirect: "/admin" },
+    { path: "/admin", component: () => import("@/features/admin/AdminPage.vue"), meta: { admin: true } },
+    { path: "/settings/categories", component: () => import("@/features/settings/SettingsPage.vue"), meta: { title: "分类管理", section: "categories" } },
     { path: "/settings", component: () => import("@/features/settings/SettingsPage.vue"), meta: { title: "设置中心", section: "overview" } },
     { path: "/settings/profile", component: () => import("@/features/settings/SettingsPage.vue"), meta: { title: "个人资料", section: "profile" } },
     { path: "/settings/data", component: () => import("@/features/settings/SettingsPage.vue"), meta: { title: "数据管理", section: "data" } },
@@ -28,16 +27,14 @@ export const router = createRouter({
 });
 
 router.beforeEach(async (to) => {
-  if (!isUniCloudMode()) return true;
-  if (to.meta.public) return hasActiveSession() ? { path: "/dashboard" } : true;
-  if (!hasActiveSession()) {
-    return {
-      path: "/login",
-      query: { redirect: to.fullPath },
-    };
+  const uniCloudMode = isUniCloudMode();
+  if (uniCloudMode && to.meta.public) return hasActiveSession() ? { path: "/dashboard" } : true;
+  if (uniCloudMode && !hasActiveSession()) {
+    return { path: "/login", query: { redirect: to.fullPath } };
   }
   if (to.meta.admin) {
-    if (!isAdmin()) await refreshCurrentIdentity();
+    // 管理中心必须始终校验当前会话的角色；本地模式也不能因为跳过云端会话检查而绕过权限。
+    if (!isAdmin() && uniCloudMode) await refreshCurrentIdentity();
     if (!isAdmin()) return { path: "/dashboard" };
   }
   return true;

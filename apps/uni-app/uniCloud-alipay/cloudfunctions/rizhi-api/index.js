@@ -42,6 +42,33 @@ const systemCategoryDefaults = [
   { id: "asset-sports", domain: "asset", type: "sports", name: "运动器材", sort: 40, color: "#16A36A" },
   { id: "asset-subscription", domain: "asset", type: "subscription", name: "订阅服务", sort: 50, color: "#111827" },
   { id: "asset-other", domain: "asset", type: "other", name: "其他物品", sort: 90, color: "#64748B" },
+  { id: "tx-meals", domain: "transaction", type: "expense", name: "三餐", sort: 110, color: "#F04438" },
+  { id: "tx-snacks", domain: "transaction", type: "expense", name: "零食", sort: 120, color: "#F59E0B" },
+  { id: "tx-clothing", domain: "transaction", type: "expense", name: "衣服", sort: 130, color: "#8B5CF6" },
+  { id: "tx-transport-default", domain: "transaction", type: "expense", name: "交通", sort: 140, color: "#1677FF" },
+  { id: "tx-travel", domain: "transaction", type: "expense", name: "旅行", sort: 150, color: "#16A36A" },
+  { id: "tx-children", domain: "transaction", type: "expense", name: "孩子", sort: 160, color: "#F97316" },
+  { id: "tx-pets", domain: "transaction", type: "expense", name: "宠物", sort: 170, color: "#A855F7" },
+  { id: "tx-phone-network", domain: "transaction", type: "expense", name: "话费网费", sort: 180, color: "#0EA5E9" },
+  { id: "tx-tobacco-alcohol", domain: "transaction", type: "expense", name: "烟酒", sort: 190, color: "#64748B" },
+  { id: "tx-study", domain: "transaction", type: "expense", name: "学习", sort: 200, color: "#14B8A6" },
+  { id: "tx-daily-default", domain: "transaction", type: "expense", name: "日用品", sort: 210, color: "#06B6D4" },
+  { id: "tx-housing", domain: "transaction", type: "expense", name: "住房", sort: 220, color: "#0F766E" },
+  { id: "tx-beauty", domain: "transaction", type: "expense", name: "美妆", sort: 230, color: "#EC4899" },
+  { id: "tx-medical", domain: "transaction", type: "expense", name: "医疗", sort: 240, color: "#EF4444" },
+  { id: "tx-red-envelope", domain: "transaction", type: "expense", name: "发红包", sort: 250, color: "#F43F5E" },
+  { id: "tx-auto-fuel", domain: "transaction", type: "expense", name: "汽车/加油", sort: 260, color: "#475569" },
+  { id: "tx-entertainment", domain: "transaction", type: "expense", name: "娱乐", sort: 270, color: "#7C3AED" },
+  { id: "tx-gifts", domain: "transaction", type: "expense", name: "请客送礼", sort: 280, color: "#DB2777" },
+  { id: "tx-electronics", domain: "transaction", type: "expense", name: "电器数码", sort: 290, color: "#2563EB" },
+  { id: "tx-sports-default", domain: "transaction", type: "expense", name: "运动", sort: 300, color: "#16A34A" },
+  { id: "tx-other-expense", domain: "transaction", type: "expense", name: "其它", sort: 390, color: "#94A3B8" },
+  { id: "tx-salary-default", domain: "transaction", type: "income", name: "工资", sort: 510, color: "#16A36A" },
+  { id: "tx-living-expense", domain: "transaction", type: "income", name: "生活费", sort: 520, color: "#22C55E" },
+  { id: "tx-income-red-envelope", domain: "transaction", type: "income", name: "收红包", sort: 530, color: "#F43F5E" },
+  { id: "tx-windfall", domain: "transaction", type: "income", name: "外快", sort: 540, color: "#0EA5E9" },
+  { id: "tx-stocks-funds", domain: "transaction", type: "income", name: "股票基金", sort: 550, color: "#7C3AED" },
+  { id: "tx-other-income", domain: "transaction", type: "income", name: "其它", sort: 590, color: "#94A3B8" },
   { id: "bank-icbc", domain: "bank", name: "中国工商银行", sort: 10, color: "#E60012", icon: "工" },
   { id: "bank-abc", domain: "bank", name: "中国农业银行", sort: 20, color: "#009882", icon: "农" },
   { id: "bank-boc", domain: "bank", name: "中国银行", sort: 30, color: "#B40A19", icon: "中" },
@@ -70,7 +97,68 @@ async function ensureSystemCategories() {
   const missing = systemCategoryDefaults
     .filter((item) => !ids.has(item.id))
     .map((item) => ({ ...normalizeCategory(item), userId: SYSTEM_USER_ID, enabled: true, isSystem: true }));
-  if (missing.length) await collections.categories.add(missing);
+  // Multiple page requests can initialize the defaults at the same time. Add
+  // one document at a time and treat a concurrent duplicate as success.
+  for (const category of missing) {
+    try {
+      await collections.categories.add(category);
+    } catch (error) {
+      const message = String(error?.message || error || "");
+      if (!/already exists|duplicate|已存在/i.test(message)) throw error;
+    }
+  }
+}
+
+async function ensureUserCategories(userId) {
+  await ensureSystemCategories();
+  const [systemResult, userResult] = await Promise.all([
+    collections.categories.where({ userId: SYSTEM_USER_ID }).get(),
+    collections.categories.where({ userId }).get(),
+  ]);
+  const systemCategories = systemResult.data || [];
+  const userCategories = userResult.data || [];
+  const bySource = new Map(userCategories.filter((item) => item.sourceCategoryId).map((item) => [item.sourceCategoryId, item]));
+  const missing = systemCategories.filter((item) => !bySource.has(item.id));
+  if (!missing.length) return userCategories;
+
+  const idMap = new Map(missing.map((item) => [item.id, newId("cat")]));
+  for (const source of missing) {
+    const copy = {
+      // A cloud query includes the document's internal `_id`. Never carry it
+      // into a per-user copy, otherwise CloudBase rejects it as an existing
+      // document and every snapshot for a new user fails to load.
+      ...normalizeCategory(withoutInternalFields(source)),
+      id: idMap.get(source.id),
+      userId,
+      parentId: source.parentId ? idMap.get(source.parentId) || bySource.get(source.parentId)?.id : undefined,
+      sourceCategoryId: source.id,
+      isSystem: false,
+      enabled: source.enabled !== false,
+      createdAt: now(),
+      updatedAt: now(),
+    };
+    await collections.categories.add(copy);
+  }
+
+  // Existing records may still point to the old shared system category IDs.
+  for (const source of missing) {
+    const targetId = idMap.get(source.id);
+    await Promise.all([
+      collections.assets.where({ userId, categoryId: source.id }).update({ categoryId: targetId }),
+      collections.accounts.where({ userId, accountTypeId: source.id }).update({ accountTypeId: targetId }),
+      collections.accounts.where({ userId, bankId: source.id }).update({ bankId: targetId }),
+      collections.transactions.where({ userId, categoryId: source.id }).update({ categoryId: targetId }),
+      collections.transactions.where({ userId, subCategoryId: source.id }).update({ subCategoryId: targetId }),
+    ]);
+  }
+  return [...userCategories, ...missing.map((source) => ({
+    ...normalizeCategory(source),
+    id: idMap.get(source.id),
+    userId,
+    parentId: source.parentId ? idMap.get(source.parentId) || bySource.get(source.parentId)?.id : undefined,
+    sourceCategoryId: source.id,
+    isSystem: false,
+  }))];
 }
 
 async function clearUserBusinessData(userId) {
@@ -242,12 +330,19 @@ async function registerWithPassword(event, body) {
   const password = String(body.password || "");
   const captcha = String(body.captcha || "").trim();
   if (!username || !password || !captcha || !body.deviceId) throw new Error("请完整填写注册信息");
+  assertValidUsername(username);
   return invokeUniId(event, "registerUser", {
     username,
     nickname,
     password,
     captcha,
   }, body.deviceId);
+}
+
+function assertValidUsername(username) {
+  if (!/^[A-Za-z0-9_]{3,32}$/.test(username)) {
+    throw new Error("用户名仅支持 3-32 位英文字母、数字或下划线，不支持中文、空格和其他符号");
+  }
 }
 
 async function claimLocalData(userId) {
@@ -286,7 +381,7 @@ function requireSuperAdmin(auth) {
 }
 
 async function listAdminUsers(auth) {
-  requireAdmin(auth);
+	requireAdmin(auth);
   const [result, profileResult] = await Promise.all([uniIdUsers
     .field({ username: true, nickname: true, avatar: true, role: true, status: true, register_date: true })
     .orderBy("register_date", "desc")
@@ -309,8 +404,33 @@ async function listAdminUsers(auth) {
   });
 }
 
+async function findAdminUserByUsername(auth, username) {
+	requireAdmin(auth);
+  const normalizedUsername = String(username || "").trim();
+  if (!normalizedUsername) throw new Error("请输入用户名");
+  const result = await uniIdUsers.where({ username: normalizedUsername })
+    .field({ username: true, nickname: true, avatar: true, role: true, status: true, register_date: true })
+    .limit(1)
+    .get();
+  const user = result.data?.[0];
+  if (!user) throw new Error("未找到该用户名对应的用户");
+  const profileResult = await userProfiles.where({ userId: user._id }).limit(1).get();
+  const profile = profileResult.data?.[0];
+  const avatarUrls = await getTemporaryFileUrls(profile?.avatarFileId ? [profile.avatarFileId] : []);
+  return {
+    id: user._id,
+    username: user.username || "",
+    nickname: profile?.displayName || user.nickname || "",
+    avatar: avatarUrls.get(profile?.avatarFileId) || user.avatar || "",
+    roles: Array.isArray(user.role) ? user.role : [],
+    status: user.status,
+    isCurrent: user._id === auth.uid,
+    registeredAt: user.register_date,
+  };
+}
+
 async function updateUserStatus(auth, targetUserId, enabled) {
-  requireAdmin(auth);
+	requireAdmin(auth);
   if (!targetUserId) throw new Error("缺少用户 ID");
   if (targetUserId === auth.uid) throw new Error("不能停用自己的账户");
   const targetResult = await uniIdUsers.doc(targetUserId).get();
@@ -553,20 +673,14 @@ async function remove(name, userId, id) {
 }
 
 async function getSnapshot(userId) {
-  await ensureSystemCategories();
+  await ensureUserCategories(userId);
   const [rawAssets, rawAssetAddons, accounts, transactions, accountFlows, categories] = await Promise.all([
     findAll("assets", userId),
     findAll("assetAddons", userId),
     findAll("accounts", userId, "createdAt", "asc"),
     findAll("transactions", userId, "occurredAt", "desc"),
     findAll("accountFlows", userId, "occurredAt", "desc"),
-    Promise.all([
-      findAll("categories", SYSTEM_USER_ID, "sort", "asc"),
-      findAll("categories", userId, "sort", "asc"),
-    ]).then(([systemCategories, userCategories]) => [
-      ...systemCategories,
-      ...userCategories.filter((item) => item.domain === "transaction"),
-    ]),
+    findAll("categories", userId, "sort", "asc"),
   ]);
   const [assets, assetAddons] = await Promise.all([
     resolveRecordAttachmentUrls(rawAssets),
@@ -581,16 +695,14 @@ async function importSnapshot(userId, snapshot) {
     if (!Array.isArray(source[name])) throw new Error(`缺少数据集合：${name}`);
   }
 
-  for (const name of collectionNames) {
+  await Promise.all(collectionNames.map(async (name) => {
     await collections[name].where({ userId }).remove();
-    const records = name === "categories"
-      ? source[name].filter((record) => record.domain === "transaction")
-      : source[name];
+    const records = source[name];
     for (let index = 0; index < records.length; index += 100) {
       const batch = records.slice(index, index + 100).map((record) => ({ ...record, userId }));
       if (batch.length) await collections[name].add(batch);
     }
-  }
+  }));
   return getSnapshot(userId);
 }
 
@@ -1026,20 +1138,22 @@ async function revokeAssetTransfer(userId, assetId) {
   return null;
 }
 
-async function categoryUsage(userId, id) {
-  const [assets, accounts, directTransactions, subTransactions, children] = await Promise.all([
-    collections.assets.where({ categoryId: id }).count(),
-    collections.accounts.where({ accountTypeId: id }).count(),
-    collections.transactions.where({ userId, categoryId: id }).count(),
-    collections.transactions.where({ userId, subCategoryId: id }).count(),
-    collections.categories.where({ userId, parentId: id }).count(),
+async function categoryUsage(ownerId, id) {
+  const [assets, accountTypes, banks, directTransactions, subTransactions, children] = await Promise.all([
+    collections.assets.where({ userId: ownerId, categoryId: id }).count(),
+    collections.accounts.where({ userId: ownerId, accountTypeId: id }).count(),
+    collections.accounts.where({ userId: ownerId, bankId: id }).count(),
+    collections.transactions.where({ userId: ownerId, categoryId: id }).count(),
+    collections.transactions.where({ userId: ownerId, subCategoryId: id }).count(),
+    collections.categories.where({ userId: ownerId, parentId: id }).count(),
   ]);
   return {
     assets: assets.total,
     transactions: directTransactions.total + subTransactions.total,
     childCategories: children.total,
-    accounts: accounts.total,
-    total: assets.total + accounts.total + directTransactions.total + subTransactions.total + children.total,
+    accounts: accountTypes.total,
+    banks: banks.total,
+    total: assets.total + accountTypes.total + banks.total + directTransactions.total + subTransactions.total + children.total,
   };
 }
 
@@ -1096,22 +1210,55 @@ async function handleAddons(method, path, body, userId) {
 }
 
 async function handleCategories(method, path, body, userId, query, auth) {
-  if (method === "GET" && path === "/categories") {
+  if (method === "GET" && path === "/categories/defaults") {
+    requireAdmin(auth);
+    return ok({ version: 1, exportedAt: new Date().toISOString(), categories: systemCategoryDefaults.map((item) => ({ ...item, parentId: undefined, enabled: true, isSystem: true })) });
+  }
+  if (method === "GET" && path === "/categories/export") {
+    requireAdmin(auth);
     await ensureSystemCategories();
-    const [systemCategories, userCategories] = await Promise.all([
-      findAll("categories", SYSTEM_USER_ID, "sort", "asc"),
-      findAll("categories", userId, "sort", "asc"),
-    ]);
-    const all = await resolveCategoryIconUrls([...systemCategories, ...userCategories.filter((item) => item.domain === "transaction")].map(normalizeCategory));
+    const categories = await findAll("categories", SYSTEM_USER_ID, "sort", "asc");
+    return ok({ version: 1, exportedAt: new Date().toISOString(), categories: categories.map((item) => ({ ...item, parentId: undefined, isSystem: true })) });
+  }
+  if (method === "POST" && path === "/categories/import") {
+    requireAdmin(auth);
+    if (!body || body.version !== 1 || !Array.isArray(body.categories)) throw new Error("默认分类备份格式无效");
+    const categories = body.categories
+      .filter((item) => item && String(item.name || "").trim())
+      .map((item, index) => ({
+        ...normalizeCategory(item),
+        id: String(item.id || newId("cat")),
+        userId: SYSTEM_USER_ID,
+        parentId: undefined,
+        sort: Number.isFinite(Number(item.sort)) ? Number(item.sort) : index * 10 + 10,
+        name: String(item.name).trim(),
+        isSystem: true,
+        enabled: item.enabled !== false,
+        createdAt: item.createdAt || now(),
+        updatedAt: now(),
+      }));
+    await collections.categories.where({ userId: SYSTEM_USER_ID }).remove();
+    if (categories.length) await collections.categories.add(categories);
+    return ok({ importedCount: categories.length });
+  }
+  if (method === "GET" && path === "/categories") {
+    const allCategories = query.scope === "system"
+      ? (await ensureSystemCategories(), await findAll("categories", SYSTEM_USER_ID, "sort", "asc"))
+      : await ensureUserCategories(userId);
+    const all = await resolveCategoryIconUrls(allCategories.map(normalizeCategory));
     return ok(all
       .filter((item) => !query.domain || item.domain === query.domain)
       .filter((item) => !query.type || item.type === query.type)
-      .filter((item) => !query.scope || categoryHasScope(item, query.scope))
+      .filter((item) => !query.scope
+        || query.scope === "system"
+        || query.scope === "user"
+        || categoryHasScope(item, query.scope))
       .filter((item) => query.enabled === undefined || String(item.enabled !== false) === query.enabled));
   }
   if (method === "POST" && path === "/categories") {
-    requireAdmin(auth);
-    const ownerId = SYSTEM_USER_ID;
+    const isSystemRequest = query.scope === "system";
+    if (isSystemRequest) requireAdmin(auth);
+    const ownerId = isSystemRequest ? SYSTEM_USER_ID : userId;
     if (!String(body.name || "").trim()) throw new Error("分类名称不能为空");
     return ok(await insert("categories", ownerId, {
       ...normalizeCategory(body),
@@ -1119,10 +1266,18 @@ async function handleCategories(method, path, body, userId, query, auth) {
       name: String(body.name).trim(),
       sort: Number(body.sort || 999),
       enabled: body.enabled !== false,
+      isSystem: isSystemRequest,
     }), 201);
   }
   const usageMatch = path.match(/^\/categories\/([^/]+)\/usage$/);
-  if (method === "GET" && usageMatch) return ok(await categoryUsage(userId, decodeURIComponent(usageMatch[1])));
+  if (method === "GET" && usageMatch) {
+    requireAdmin(auth);
+    const id = decodeURIComponent(usageMatch[1]);
+    const existing = await findOne("categories", SYSTEM_USER_ID, id)
+      || await findOne("categories", userId, id);
+    if (!existing) throw new Error("分类不存在或已被删除");
+    return ok(await categoryUsage(existing.userId, id));
+  }
   const migrateMatch = path.match(/^\/categories\/([^/]+)\/migrate-transactions$/);
   if (method === "POST" && migrateMatch) {
     const fromId = decodeURIComponent(migrateMatch[1]);
@@ -1153,9 +1308,10 @@ async function handleCategories(method, path, body, userId, query, auth) {
   if (method === "PATCH") {
     const existing = await findOne("categories", SYSTEM_USER_ID, id)
       || await findOne("categories", userId, id);
-    requireAdmin(auth);
     if (!existing) throw new Error("分类不存在");
-    const ownerId = existing.userId === SYSTEM_USER_ID ? SYSTEM_USER_ID : userId;
+    const isSystemCategory = existing.userId === SYSTEM_USER_ID;
+    if (isSystemCategory) requireAdmin(auth);
+    const ownerId = isSystemCategory ? SYSTEM_USER_ID : userId;
     const nextCategory = normalizeCategory({ ...withoutInternalFields(existing), ...body });
     if (nextCategory.parentId && nextCategory.enabled !== false) {
       const parent = await findOne("categories", SYSTEM_USER_ID, nextCategory.parentId)
@@ -1179,9 +1335,16 @@ async function handleCategories(method, path, body, userId, query, auth) {
   if (method === "DELETE") {
     const existing = await findOne("categories", SYSTEM_USER_ID, id)
       || await findOne("categories", userId, id);
-    requireAdmin(auth);
-    const usage = await categoryUsage(userId, id);
-    if (usage.total > 0) throw new Error("分类仍有业务记录或子分类，不能删除");
+    if (!existing) throw new Error("分类不存在或已被删除");
+    if (existing.userId === SYSTEM_USER_ID) requireAdmin(auth);
+    const usage = await categoryUsage(existing.userId, id);
+    if (usage.accounts > 0) {
+      throw new Error(`该账户类型已被 ${usage.accounts} 个资金账户使用，不能删除。请先在资金页将这些账户改为其他类型或删除。`);
+    }
+    if (usage.assets > 0) throw new Error(`该分类已被 ${usage.assets} 个资产使用，不能删除。`);
+    if (usage.transactions > 0) throw new Error(`该分类已有 ${usage.transactions} 条记账记录，不能删除。`);
+    if (usage.childCategories > 0) throw new Error(`该分类下还有 ${usage.childCategories} 个子分类，不能删除。`);
+    if (usage.banks > 0) throw new Error(`该银行已被 ${usage.banks} 个资金账户关联，不能删除。请先在资金页更换或移除这些账户的银行。`);
     await remove("categories", existing.userId === SYSTEM_USER_ID ? SYSTEM_USER_ID : userId, id);
     return ok(null);
   }
@@ -1261,6 +1424,9 @@ async function route(event) {
   }
   if (method === "GET" && path === "/admin/users") {
     return ok(await listAdminUsers(auth));
+  }
+  if (method === "GET" && path === "/admin/users/search") {
+    return ok(await findAdminUserByUsername(auth, query.username));
   }
   const adminRoleMatch = path.match(/^\/admin\/users\/([^/]+)\/admin-role$/);
   if (method === "PATCH" && adminRoleMatch) {

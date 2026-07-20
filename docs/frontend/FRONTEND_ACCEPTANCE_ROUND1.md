@@ -128,3 +128,6 @@ npm.cmd run test:e2e
 ```
 
 自动化验收入口已恢复稳定。下一步可以继续做人工验收主链路，或处理 `A-002` 的构建体积优化。
+# 当前版本补充说明（2026-07-16）
+
+本文是第一轮验收记录，不等同于当前完整验收标准。当前发布前检查请使用 `docs/testing/TEST_STRATEGY.md` 和 `docs/frontend/FRONTEND_ACCEPTANCE.md`。

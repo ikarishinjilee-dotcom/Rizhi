@@ -22,6 +22,8 @@ import {
 import { rizhiDb } from "@/db/rizhiDb";
 import { resetSeedDatabase, seedDatabaseIfNeeded } from "@/db/seed";
 import { categoryHasScope, transactionTypeToScope } from "@/domain/categoryScopes";
+import { mockCategories } from "@/data/mock";
+import { defaultTransactionCategoryTemplates } from "@/data/defaultCategoryTemplates";
 import type {
   AccountRepository,
   AppDataRepository,
@@ -39,6 +41,38 @@ import type { CategoryRecord, CategoryScope, ID, TransactionRecord } from "@/dom
 function createId(prefix: string) {
   const randomId = globalThis.crypto?.randomUUID?.() ?? `${Date.now()}-${Math.random().toString(36).slice(2)}`;
   return `${prefix}-${randomId}`;
+}
+
+async function ensureLocalUserCategoryCopy() {
+  const copyVersion = "user-category-copy-v2";
+  let systemCategories = await rizhiDb.categories.where("isSystem").equals(1).toArray();
+  if (!systemCategories.length) {
+    const builtInAssets = mockCategories.filter((category) =>
+      category.domain === "asset" && !category.parentId,
+    );
+    const builtInDefaults = [...builtInAssets, ...defaultTransactionCategoryTemplates];
+    await rizhiDb.categories.bulkPut(builtInDefaults.map((category) => ({
+      ...category,
+      isSystem: true,
+      enabled: true,
+      parentId: undefined,
+    })));
+    systemCategories = await rizhiDb.categories.where("isSystem").equals(1).toArray();
+  }
+  const initialized = await rizhiDb.metadata.get(copyVersion);
+  if (initialized) return;
+  const defaults = systemCategories.filter((category) =>
+    (category.domain === "asset" || category.domain === "transaction") && !category.parentId,
+  );
+  if (defaults.length) {
+    await rizhiDb.categories.bulkPut(defaults.map((category) => ({
+      ...category,
+      id: createId("cat"),
+      parentId: undefined,
+      isSystem: false,
+    })));
+  }
+  await rizhiDb.metadata.put({ key: copyVersion, value: "true" });
 }
 
 function defaultCategoryType(input: CreateCategoryInput): CategoryRecord["type"] {
@@ -122,6 +156,7 @@ async function validateMigrationTarget(input: MigrateCategoryTransactionsInput) 
 export const indexedDbAppDataRepository: AppDataRepository = {
   async initialize() {
     await seedDatabaseIfNeeded();
+    await ensureLocalUserCategoryCopy();
     await upgradeLegacyMidnightTransactionTimes();
   },
 
@@ -187,7 +222,11 @@ export const indexedDbCategoryRepository: CategoryRepository = {
     return categories
       .filter((category) => !input.domain || category.domain === input.domain)
       .filter((category) => !input.type || category.type === input.type)
-      .filter((category) => !input.scope || categoryHasScope(category, input.scope))
+      .filter((category) => input.scope === "system"
+        ? category.isSystem === true
+        : input.scope === "user"
+          ? category.isSystem !== true
+          : !input.scope || categoryHasScope(category, input.scope))
       .filter((category) => input.enabled === undefined || (category.enabled !== false) === input.enabled)
       .sort((left, right) => left.sort - right.sort || left.name.localeCompare(right.name, "zh-CN"));
   },
@@ -311,6 +350,38 @@ export const indexedDbCategoryRepository: CategoryRepository = {
     }
 
     await rizhiDb.categories.delete(id);
+  },
+
+  async exportDefaults() {
+    const categories = await rizhiDb.categories.where("isSystem").equals(1).toArray();
+    return { version: 1 as const, exportedAt: new Date().toISOString(), categories };
+  },
+
+  async getBuiltinDefaults() {
+    const current = await rizhiDb.categories.where("isSystem").equals(1).toArray();
+    const source = current.length ? current : mockCategories;
+    const nonTransaction = source.filter((category) => category.domain !== "transaction" && !category.parentId);
+    const categories = [...nonTransaction, ...defaultTransactionCategoryTemplates].map((category) => ({
+      ...category,
+      parentId: undefined,
+      enabled: true,
+      isSystem: true,
+    }));
+    return { version: 1 as const, exportedAt: new Date().toISOString(), categories };
+  },
+
+  async importDefaults(backup) {
+    const categories = backup.categories.map((category) => ({
+      ...category,
+      id: createId("cat"),
+      parentId: undefined,
+      isSystem: true,
+      enabled: category.enabled !== false,
+    }));
+    await rizhiDb.transaction("rw", rizhiDb.categories, async () => {
+      await rizhiDb.categories.where("isSystem").equals(1).delete();
+      await rizhiDb.categories.bulkPut(categories as CategoryRecord[]);
+    });
   },
 
   usage: getCategoryUsage,

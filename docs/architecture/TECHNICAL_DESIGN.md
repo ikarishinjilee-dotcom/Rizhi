@@ -807,3 +807,16 @@ MVP 暂定决策：
 - 转账独立于记账分类，只生成账户流水，不计入收入支出统计。
 - 还款作为负债联动业务，默认不计入日常支出统计。
 - 删除有关联数据时必须提示影响范围。
+# 当前版本补充说明（2026-07-16）
+
+当前架构已经从“PC 本地 MVP + 规划中的 Fastify”进入“PC Web + uniCloud 正式后端”阶段。本文早期章节仍可用于理解 UI 和领域拆分，但以下事实优先：
+
+- Web 入口：`apps/web/src/app/main.ts`。
+- Web 路由：`apps/web/src/app/router.ts`。
+- 数据源选择：`apps/web/src/repositories/index.ts`。
+- 云端 HTTP 实现：`apps/web/src/repositories/httpRepositories.ts`。
+- 本地实现：`apps/web/src/repositories/indexedDbRepositories.ts`。
+- 云函数：`apps/uni-app/uniCloud-alipay/cloudfunctions/rizhi-api/index.js`。
+- 正式部署：`npm.cmd run deploy:web:production`。
+
+后续新功能应优先进入 `services -> repositories -> 云函数/本地实现` 的边界，不应在页面中直接操作 IndexedDB 或拼接云函数请求。

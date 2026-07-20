@@ -27,28 +27,14 @@
       </header>
 
       <div class="asset-modal__body">
-        <aside class="asset-uploader">
-          <div class="asset-uploader__preview">
-            <img v-if="coverImage" :src="coverImage" :alt="draft.name || '资产图片'" />
-            <span v-else>{{ previewSymbol }}</span>
-          </div>
-          <strong>资产主图</strong>
-          <p>支持商品图、订单截图或实拍图。上传多张后，可在资产详情页通过缩略图切换查看。</p>
-          <input ref="fileInput" data-testid="asset-image-input" class="asset-uploader__file" type="file" accept="image/*" multiple @change="handleImageFiles" />
-          <RButton variant="secondary" @click="fileInput?.click()">选择图片</RButton>
-          <div v-if="draft.imageUrls.length" class="asset-uploader__thumbs">
-            <button
-              v-for="(image, index) in draft.imageUrls"
-              :key="imageKey(image, index)"
-              :class="{ active: draft.imageUrl === image }"
-              type="button"
-              @click="draft.imageUrl = image"
-            >
-              <img :src="image" :alt="imageAlt(index)" />
-              <span data-testid="asset-image-remove" @click.stop="openRemoveImageConfirm(index)">×</span>
-            </button>
-          </div>
-        </aside>
+        <AssetImageUploader
+          :draft="draft"
+          :cover-image="coverImage"
+          :preview-symbol="previewSymbol"
+          @select-images="handleImageFiles"
+          @select-image="draft.imageUrl = $event"
+          @remove-image="openRemoveImageConfirm"
+        />
 
         <div class="asset-form">
           <section class="form-section">
@@ -64,7 +50,7 @@
                 v-for="category in assetRootCategories"
                 :key="category.id"
                 :data-testid="`asset-category-option-${category.id}`"
-                :class="{ active: draft.categoryId === category.id }"
+                :class="{ active: selectedRootCategoryId === category.id }"
                 type="button"
                 @click="selectRootCategory(category.id)"
               >
@@ -136,6 +122,7 @@
 import { computed, reactive, ref, watch } from "vue";
 import { NModal } from "naive-ui";
 import DeleteConfirmModal from "@/components/business/DeleteConfirmModal.vue";
+import AssetImageUploader from "@/components/business/AssetImageUploader.vue";
 import RButton from "@/components/ui/RButton.vue";
 import RDatePicker from "@/components/ui/RDatePicker.vue";
 import RInput from "@/components/ui/RInput.vue";
@@ -182,7 +169,6 @@ const emit = defineEmits<{
 }>();
 
 const store = useAppDataStore();
-const fileInput = ref<HTMLInputElement | null>(null);
 const showRemoveImageModal = ref(false);
 const showUnsavedModal = ref(false);
 const pendingRemoveImageIndex = ref<number | null>(null);
@@ -322,14 +308,6 @@ function confirmClose() {
   showUnsavedModal.value = false;
   initialDraftSnapshot.value = serializeDraft();
   emit("update:show", false);
-}
-
-function imageKey(image: string, index: number) {
-  return `${image.slice(0, 32)}-${index}`;
-}
-
-function imageAlt(index: number) {
-  return `资产图片 ${index + 1}`;
 }
 
 async function handleImageFiles(event: Event) {

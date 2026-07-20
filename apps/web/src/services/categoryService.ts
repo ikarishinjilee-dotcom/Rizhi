@@ -1,4 +1,4 @@
-import { categoryRepository, type CreateCategoryInput, type ListCategoriesInput, type MigrateCategoryTransactionsInput, type UpdateCategoryInput } from "@/repositories";
+import { categoryRepository, type CategoryDefaultsBackup, type CreateCategoryInput, type ListCategoriesInput, type MigrateCategoryTransactionsInput, type UpdateCategoryInput } from "@/repositories";
 import type { ID } from "@/domain/models";
 
 export const categoryService = {
@@ -25,6 +25,18 @@ export const categoryService = {
   migrateTransactions(input: MigrateCategoryTransactionsInput) {
     return categoryRepository.migrateTransactions(input);
   },
+
+  exportDefaults() {
+    return categoryRepository.exportDefaults();
+  },
+
+  getBuiltinDefaults() {
+    return categoryRepository.getBuiltinDefaults();
+  },
+
+  importDefaults(backup: CategoryDefaultsBackup) {
+    return categoryRepository.importDefaults(backup);
+  },
 };
 
-export type { CreateCategoryInput, ListCategoriesInput, MigrateCategoryTransactionsInput, UpdateCategoryInput };
+export type { CategoryDefaultsBackup, CreateCategoryInput, ListCategoriesInput, MigrateCategoryTransactionsInput, UpdateCategoryInput };

@@ -180,6 +180,8 @@ export type CreateCategoryInput = {
   accountDirection?: CategoryRecord["accountDirection"];
   requiresBank?: boolean;
   deletedAt?: string;
+  /** Internal admin-only target; omitted for normal user categories. */
+  scope?: "system" | "user";
 };
 
 export type UpdateCategoryInput = Partial<CreateCategoryInput> & {
@@ -189,7 +191,7 @@ export type UpdateCategoryInput = Partial<CreateCategoryInput> & {
 export type ListCategoriesInput = {
   domain?: CategoryDomain;
   type?: CategoryRecord["type"];
-  scope?: CategoryScope;
+  scope?: CategoryScope | "system" | "user";
   enabled?: boolean;
 };
 
@@ -205,6 +207,12 @@ export type CategoryUsage = {
   childCategories: number;
   accounts: number;
   total: number;
+};
+
+export type CategoryDefaultsBackup = {
+  version: 1;
+  exportedAt: string;
+  categories: CreateCategoryInput[];
 };
 
 export type AppDataRepository = {
@@ -252,4 +260,7 @@ export type CategoryRepository = {
   delete(id: ID): Promise<void>;
   usage(id: ID): Promise<CategoryUsage>;
   migrateTransactions(input: MigrateCategoryTransactionsInput): Promise<number>;
+  exportDefaults(): Promise<CategoryDefaultsBackup>;
+  getBuiltinDefaults(): Promise<CategoryDefaultsBackup>;
+  importDefaults(backup: CategoryDefaultsBackup): Promise<void>;
 };

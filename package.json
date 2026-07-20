@@ -25,6 +25,7 @@
     "build:all": "npm run build && npm run build:uni",
     "preview": "npm run preview --workspace=@rizhi/web",
     "test": "npm run test --workspace=@rizhi/web",
+    "test:performance": "npm run test:performance --workspace=@rizhi/web",
     "test:e2e": "node ./scripts/run-e2e.mjs",
     "typecheck": "npm run typecheck --workspace=@rizhi/web",
     "typecheck:web": "npm run typecheck --workspace=@rizhi/web",

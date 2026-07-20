@@ -77,3 +77,6 @@
 | 附件 multipart 上传 | 当前沿用前端本地 URL/Data URL |
 | 独立设置接口 | 当前随 snapshot/export/import 读写 |
 | 数据表结构化 | 当前 SQLite 中仍以应用状态 JSON 保存 |
+# 历史资料说明（2026-07-16）
+
+本文不代表当前 API 状态。当前 API 设计请参阅 `docs/architecture/API_DESIGN.md`，云函数实现位于 `apps/uni-app/uniCloud-alipay/cloudfunctions/rizhi-api/`。

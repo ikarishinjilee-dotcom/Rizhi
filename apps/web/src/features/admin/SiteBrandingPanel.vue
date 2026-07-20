@@ -34,9 +34,10 @@
 					</div>
 					<div class="branding-preview branding-preview--main-logo"><img :src="branding.mainLogoUrl"
 							alt="当前主 Logo" /></div>
-					<input ref="mainLogoInput" class="branding-file" type="file" accept="image/png,image/jpeg,image/webp"
-						@change="upload('mainLogo', $event)" />
-					<RButton variant="secondary" :loading="uploading === 'mainLogo'" @click="mainLogoInput?.click()">更换主 Logo
+					<input ref="mainLogoInput" class="branding-file" type="file"
+						accept="image/png,image/jpeg,image/webp" @change="upload('mainLogo', $event)" />
+					<RButton variant="secondary" :loading="uploading === 'mainLogo'" @click="mainLogoInput?.click()">更换主
+						Logo
 					</RButton>
 				</article>
 				<article class="branding-card">
@@ -83,6 +84,13 @@
 					</article>
 					<article class="branding-card">
 						<div class="branding-card__header">
+							<a href="">
+
+
+
+
+								；
+							</a>
 							<h4>首页主视觉</h4><span class="branding-badge branding-badge--purple">插画</span>
 						</div>
 						<div class="branding-preview branding-preview--hero"><img :src="branding.homeHeroUrl"

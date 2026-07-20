@@ -9,225 +9,42 @@
       <RButton @click="openAccountModal">+ 添加账户</RButton>
     </PageHeader>
 
-    <div class="summary-grid">
-      <section v-for="card in summaryCards" :key="card.label" class="summary-card" :class="card.tone">
-        <div class="summary-card__head">
-          <span>{{ card.label }}</span>
-          <i>{{ card.icon }}</i>
-        </div>
-        <strong>{{ card.value }}</strong>
-        <p>{{ card.trendLabel }} <em>{{ card.compare }}</em> <small>{{ card.rate }}</small></p>
-        <svg v-if="card.points" viewBox="0 0 240 56" preserveAspectRatio="none" aria-hidden="true">
-          <polyline
-            :points="card.points"
-            fill="none"
-            :stroke="card.stroke"
-            stroke-width="3"
-            stroke-linecap="round"
-            stroke-linejoin="round"
-          />
-        </svg>
-        <div v-else class="trend-empty">暂无趋势</div>
-      </section>
-    </div>
+    <FundsSummaryGrid :cards="summaryCards" />
 
-    <div class="panel-grid">
-      <RCard>
-        <section class="list-panel">
-          <div class="panel-head">
-            <h3>资产账户</h3>
-            <span>{{ assetAccounts.length }}个账户</span>
-          </div>
-          <button v-for="account in assetAccounts.slice(0, 6)" :key="account.id" class="account-line" data-testid="fund-account-line" type="button" @click="openAccount(account.id)">
-            <span class="account-icon" :style="{ background: account.color || '#1677ff' }">{{ account.icon || account.name.slice(0, 1) }}</span>
-            <strong>{{ account.name }}</strong>
-            <em>{{ formatAmount(account.balance) }}</em>
-            <svg v-if="accountSparklinePoints(account.id)" viewBox="0 0 72 24" aria-hidden="true">
-              <polyline :points="accountSparklinePoints(account.id)" />
-            </svg>
-            <small v-else class="mini-trend-empty">暂无趋势</small>
-          </button>
-          <REmptyState v-if="!assetAccounts.length" compact title="暂无资产账户" description="添加现金、钱包或储蓄卡后即可记录余额。">
-            <RButton size="small" @click="openAccountModal">添加账户</RButton>
-          </REmptyState>
-          <button v-else class="panel-link" type="button" @click="openAccountListDrawer('asset')">查看全部资产账户 ›</button>
-        </section>
-      </RCard>
+    <FundsAccountPanels
+      :asset-accounts="assetAccounts"
+      :liability-accounts="liabilityAccounts"
+      :repayment-reminders="repaymentReminders"
+      :account-sparkline-points="accountSparklinePoints"
+      @open-account="openAccount"
+      @open-account-modal="openAccountModal"
+      @open-account-list="openAccountListDrawer"
+    />
 
-      <RCard>
-        <section class="list-panel">
-          <div class="panel-head">
-            <h3>负债账户</h3>
-            <span>{{ liabilityAccounts.length }}个账户</span>
-          </div>
-          <button v-for="account in liabilityAccounts.slice(0, 4)" :key="account.id" class="debt-line" data-testid="fund-account-line" type="button" @click="openAccount(account.id)">
-            <span class="account-icon" :style="{ background: account.color || '#ef4444' }">{{ account.icon || account.name.slice(0, 1) }}</span>
-            <div>
-              <strong>{{ account.name }}</strong>
-              <small>剩余额度 {{ formatAmount(Math.max((account.creditLimit ?? 0) - account.balance, 0)) }}</small>
-            </div>
-            <div>
-              <em>当前欠款 {{ formatAmount(account.balance) }}</em>
-              <small>总额度 {{ formatAmount(account.creditLimit ?? 0) }}</small>
-            </div>
-          </button>
-          <REmptyState v-if="!liabilityAccounts.length" compact title="暂无负债账户" description="添加信用卡、消费信用或贷款账户。">
-            <RButton size="small" @click="openAccountModal">添加账户</RButton>
-          </REmptyState>
-          <button v-else class="panel-link" type="button" @click="openAccountListDrawer('liability')">查看全部负债账户 ›</button>
-        </section>
-      </RCard>
+    <FundsFlowPanel :rows="recentFlowRows" @view-all="goLedger" />
 
-      <RCard>
-        <section class="list-panel">
-          <div class="panel-head">
-            <h3>近期还款提醒</h3>
-            <span>{{ repaymentReminders.length }}条待还</span>
-          </div>
-          <button v-for="item in repaymentReminders" :key="item.id" class="reminder-line" type="button" @click="openAccount(item.id)">
-            <span class="account-icon danger-bg">{{ item.icon }}</span>
-            <div>
-              <strong>{{ item.name }}</strong>
-              <small>还款日 {{ item.date }}</small>
-            </div>
-            <div>
-              <em>{{ formatAmount(item.balance) }}</em>
-              <small :class="item.days <= 1 ? 'danger' : 'success'">{{ item.daysText }}</small>
-            </div>
-          </button>
-          <REmptyState v-if="!repaymentReminders.length" compact title="暂无近期还款" description="设置负债账户的还款日后会在这里提醒。" />
-          <button v-else class="panel-link" type="button" @click="openAccountListDrawer('repayment')">查看全部还款计划 ›</button>
-        </section>
-      </RCard>
-    </div>
+    <FundsModalShell v-model="showAccountModal" width="min(900px, calc(100vw - 48px))" max-height="calc(100dvh - 48px)">
+      <FundsAccountEditor
+        :editing-account-id="editingAccountId"
+        :account-type-sections="accountTypeSections"
+        :selected-account-type="selectedAccountType"
+        :selected-account-is-credit="selectedAccountIsCredit"
+        :selected-account-needs-bank="selectedAccountNeedsBank"
+        :selected-bank="selectedBank"
+        :account-draft="accountDraft"
+        :account-errors="accountErrors"
+        :day-options="dayOptions"
+        :saving-account="savingAccount"
+        :is-account-type-disabled="isAccountTypeDisabled"
+        :account-type-disabled-title="accountTypeDisabledTitle"
+        @close="requestCloseAccountModal"
+        @submit="submitAccount"
+        @select-type="selectAccountType"
+        @open-bank-picker="bankPickerVisible = true"
+      />
+    </FundsModalShell>
 
-    <RCard>
-      <section class="flow-panel">
-        <div class="panel-head">
-          <h3>资金流水 <small>最近5条</small></h3>
-          <button type="button" @click="goLedger">查看全部流水 ›</button>
-        </div>
-        <table v-if="recentFlowRows.length">
-          <thead>
-            <tr>
-              <th>交易描述</th>
-              <th>账户</th>
-              <th>金额</th>
-              <th>类型</th>
-              <th>时间</th>
-            </tr>
-          </thead>
-          <tbody>
-            <tr v-for="flow in recentFlowRows" :key="flow.id">
-              <td>{{ flow.title }}</td>
-              <td>{{ flow.accountName }}</td>
-              <td :class="flow.direction === 'in' ? 'success' : 'danger'">{{ flow.direction === "in" ? "+" : "-" }}{{ formatAmount(flow.amount) }}</td>
-              <td><span class="type-pill" :class="flow.direction">{{ flow.typeLabel }}</span></td>
-              <td>{{ flow.time }}</td>
-            </tr>
-          </tbody>
-        </table>
-        <REmptyState v-else compact title="暂无资金流水" description="新增交易、转账或还款后会在这里显示。" />
-      </section>
-    </RCard>
-
-    <n-modal
-      v-model:show="showAccountModal"
-      preset="card"
-      :bordered="false"
-      :closable="false"
-      :mask-closable="false"
-      class="rizhi-fund-modal-card"
-      content-style="padding: 0;"
-      :style="{ width: 'min(900px, calc(100vw - 48px))', maxHeight: 'calc(100dvh - 48px)', borderRadius: '20px', overflow: 'hidden' }"
-    >
-      <section class="account-modal">
-        <header class="modal-head">
-          <div>
-            <span>{{ editingAccountId ? "编辑账户" : "添加账户" }}</span>
-            <h2>{{ editingAccountId ? "维护账户档案" : "把资金账户统一建档" }}</h2>
-            <p>{{ editingAccountId ? "可修改账户类型、名称、余额、额度、账单日和还款日；已有流水的账户不能在资产和负债之间切换。" : "选择账户类型后填写余额、欠款、账单日和还款日。" }}</p>
-          </div>
-          <button type="button" @click="requestCloseAccountModal">×</button>
-        </header>
-
-        <div class="account-modal__body">
-          <aside class="type-panel">
-            <div v-for="group in accountTypeSections" :key="group.title" class="type-group">
-              <h4>{{ group.title }}</h4>
-              <div class="type-grid">
-                <button
-                  v-for="item in group.items"
-                  :key="item.key"
-                  :class="{ active: selectedAccountType.key === item.key }"
-                  type="button"
-                  :disabled="isAccountTypeDisabled(item)"
-                  :title="accountTypeDisabledTitle(item)"
-                  @click="selectAccountType(item)"
-                >
-                  <span :style="{ background: item.color }">{{ item.icon }}</span>
-                  <small>{{ item.label }}</small>
-                </button>
-              </div>
-            </div>
-          </aside>
-
-          <div class="account-form">
-            <h3>账户信息</h3>
-            <div class="form-grid">
-              <label :class="{ invalid: accountErrors.name }">
-                <span>名称 *</span>
-                <RInput v-model="accountDraft.name" placeholder="例如 花呗" />
-                <em>{{ accountErrors.name }}</em>
-              </label>
-              <label>
-                <span>备注</span>
-                <RInput v-model="accountDraft.note" placeholder="例如 日常消费分期" />
-              </label>
-              <label v-if="selectedAccountNeedsBank">
-                <span>所属银行</span>
-                <button type="button" class="bank-picker-trigger" @click="bankPickerVisible = true">
-                  <span v-if="selectedBank" class="bank-picker-trigger__value"><b :style="{ background: selectedBank.color || '#1677ff' }">{{ selectedBank.icon || selectedBank.name.slice(0, 1) }}</b>{{ selectedBank.name }}</span>
-                  <span v-else class="bank-picker-trigger__placeholder">选择银行</span>
-                  <span>⌄</span>
-                </button>
-              </label>
-              <div class="account-total-assets-toggle">
-                <span>资产汇总</span>
-                <label class="switch-row"><input v-model="accountDraft.includeInTotalAssets" type="checkbox" /> 计入总资产</label>
-                <small>关闭后仍保留账户和流水，但不计入总资产与净资产。</small>
-              </div>
-              <label :class="{ invalid: accountErrors.balance }">
-                <span>{{ selectedAccountType.direction === "liability" ? "当前欠款" : "当前余额" }}</span>
-                <RInput v-model="accountDraft.balance" placeholder="1,256.00" />
-                <em>{{ accountErrors.balance }}</em>
-              </label>
-              <label v-if="selectedAccountIsCredit">
-                <span>总额度</span>
-                <RInput v-model="accountDraft.creditLimit" placeholder="5,000.00" />
-              </label>
-              <label v-if="selectedAccountIsCredit">
-                <span>出账日</span>
-                <RSelect v-model="accountDraft.billDay" :options="dayOptions" placeholder="每月10日" />
-              </label>
-              <label v-if="selectedAccountIsCredit">
-                <span>还款日</span>
-                <RSelect v-model="accountDraft.repaymentDay" :options="dayOptions" placeholder="每月10日" />
-              </label>
-            </div>
-            <RInlineFeedback v-if="accountErrors.form" tone="danger">{{ accountErrors.form }}</RInlineFeedback>
-            <footer>
-              <RButton variant="secondary" @click="requestCloseAccountModal">取消</RButton>
-              <RButton :loading="savingAccount" @click="submitAccount">{{ editingAccountId ? "保存修改" : "保存账户" }}</RButton>
-            </footer>
-          </div>
-        </div>
-      </section>
-    </n-modal>
-
-    <n-modal v-model:show="bankPickerVisible" preset="card" :bordered="false" :closable="false"
-      class="rizhi-fund-modal-card" content-style="padding: 0;"
-      :style="{ width: 'min(720px, calc(100vw - 48px))', borderRadius: '20px', overflow: 'hidden' }">
+    <FundsModalShell v-model="bankPickerVisible" width="min(720px, calc(100vw - 48px))">
       <section class="bank-picker-modal">
         <header class="bank-picker-modal__head">
           <div><span>银行选择</span><h3>选择所属银行</h3><p>选择后会回填到当前资金账户。</p></div>
@@ -242,18 +59,9 @@
           <REmptyState v-if="!bankItems.length" compact title="暂无可用银行" description="请先在管理员的银行管理中添加银行。" />
         </div>
       </section>
-    </n-modal>
+    </FundsModalShell>
 
-    <n-modal
-      v-model:show="showTransferModal"
-      preset="card"
-      :bordered="false"
-      :closable="false"
-      :mask-closable="false"
-      class="rizhi-fund-modal-card"
-      content-style="padding: 0;"
-      :style="{ width: 'min(720px, calc(100vw - 48px))', borderRadius: '20px', overflow: 'hidden' }"
-    >
+    <FundsModalShell v-model="showTransferModal" width="min(720px, calc(100vw - 48px))">
       <section class="transfer-modal">
         <header class="modal-head green">
           <div>
@@ -275,18 +83,9 @@
           <RButton :loading="savingTransfer" @click="submitTransfer">确认转账</RButton>
         </footer>
       </section>
-    </n-modal>
+    </FundsModalShell>
 
-    <n-modal
-      v-model:show="showRepaymentModal"
-      preset="card"
-      :bordered="false"
-      :closable="false"
-      :mask-closable="false"
-      class="rizhi-fund-modal-card"
-      content-style="padding: 0;"
-      :style="{ width: 'min(680px, calc(100vw - 48px))', borderRadius: '20px', overflow: 'hidden' }"
-    >
+    <FundsModalShell v-model="showRepaymentModal" width="min(680px, calc(100vw - 48px))">
       <section class="repayment-modal">
         <header class="modal-head orange">
           <div>
@@ -309,7 +108,7 @@
           <RButton :loading="savingRepayment" @click="submitRepayment">确认还款</RButton>
         </footer>
       </section>
-    </n-modal>
+    </FundsModalShell>
 
     <RDrawer v-model:show="showDetailDrawer" title="账户详情" :width="720">
       <div v-if="selectedAccount" class="account-detail" data-testid="fund-account-detail">
@@ -562,10 +361,15 @@
 <script setup lang="ts">
 import { computed, onMounted, reactive, ref, watch } from "vue";
 import { useRoute, useRouter } from "vue-router";
-import { NModal } from "naive-ui";
 import DeleteConfirmModal from "@/components/business/DeleteConfirmModal.vue";
 import { accountFlowDelta } from "@/domain/accountCalculations";
 import PageHeader from "@/components/business/PageHeader.vue";
+import FundsSummaryGrid from "@/components/business/FundsSummaryGrid.vue";
+import FundsFlowPanel from "@/components/business/FundsFlowPanel.vue";
+import FundsAccountLine from "@/components/business/FundsAccountLine.vue";
+import FundsAccountPanels from "@/components/business/FundsAccountPanels.vue";
+import FundsModalShell from "@/components/business/FundsModalShell.vue";
+import FundsAccountEditor from "@/components/business/FundsAccountEditor.vue";
 import RButton from "@/components/ui/RButton.vue";
 import RCard from "@/components/ui/RCard.vue";
 import RDatePicker from "@/components/ui/RDatePicker.vue";
@@ -579,6 +383,7 @@ import type { AccountFlowRecord, AccountType, MoneyAccountRecord } from "@/domai
 import { accountService } from "@/services/accountService";
 import { transactionService } from "@/services/transactionService";
 import { useAppDataStore } from "@/stores/appDataStore";
+import { formatAmount, formatDateTime } from "@/utils/formatters";
 
 type AccountTypeItem = {
   key: string;
@@ -690,7 +495,7 @@ const accountDraft = reactive({
   repaymentDay: null as string | number | null,
 });
 const accountErrors = reactive({ name: "", balance: "", form: "" });
-const transferDraft = reactive({
+let transferDraft = reactive({
   fromAccountId: null as string | number | null,
   toAccountId: null as string | number | null,
   amount: "",
@@ -1001,20 +806,10 @@ function formatTrendMeta(values: number[]) {
   };
 }
 
-function formatAmount(value: number) {
-  return `¥${Math.abs(value).toLocaleString("zh-CN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
-}
-
 function parseAmount(value: string) {
   const amount = Number(value.replace(/[¥￥,\s]/g, ""));
   if (!Number.isFinite(amount) || amount < 0) throw new Error("请输入正确金额");
   return amount;
-}
-
-function formatDateTime(value: string) {
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return value;
-  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")} ${String(date.getHours()).padStart(2, "0")}:${String(date.getMinutes()).padStart(2, "0")}`;
 }
 
 function calcDaysUntil(day: number) {

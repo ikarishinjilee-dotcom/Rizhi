@@ -1,70 +1,68 @@
 # 日值 V2 架构
 
-## 目标
+> 当前版本架构说明。代码事实来源优先于早期设计稿。
 
-- PC Web 保留独立 Vue 体验。
-- Android、iOS 和小程序统一使用 uni-app Vue3。
-- 所有客户端共用 uniCloud、uni-id、业务 API 和数据模型。
-- 客户端不能直接决定用户 ID，服务端必须从有效 token 获取 uid。
-
-## 目录
+## 1. 总体结构
 
 ```text
 rizhi/
 ├─ apps/
-│  ├─ web/                     PC Web Vue3/Vite 应用
-│  └─ uni-app/                 DCloud 官方 Vue3/Vite/TypeScript 项目
-│     └─ uniCloud-alipay/      唯一云端源码目录
-├─ packages/                   后续共享领域模型和 API 客户端
-├─ server/                     旧 Fastify 后端，只读迁移参考
-└─ docs/
+│  ├─ web/                         PC Web：Vue 3 + Vite + TypeScript
+│  └─ uni-app/                     跨端客户端：uni-app + Vue 3
+│     └─ uniCloud-alipay/          云函数、数据库 Schema 和云端资源
+├─ scripts/                        构建、测试和 Web Hosting 部署脚本
+└─ docs/                           当前说明、产品、设计和历史资料
 ```
 
-## 边界
+`server/` 已从当前代码基线中退役；旧 Fastify + SQLite 文件只保留在 `docs/legacy/fastify/` 中供迁移追溯。
 
-- PC Web 不导入 uni-app 页面组件。
-- PC Web 只调用 URL 化的 `rizhi-api`；登录由 `rizhi-api` 在云端桥接 `uni-id-co`。
-- uni-app 通过 `uniCloud.importObject` 调用相同云对象。
-- `uni-id-pages` 只负责 uni-app 端现成登录页面。
-- 资产、账户、交易等业务规则必须保留在云端，不能散落在各客户端。
-- 只允许从 `apps/uni-app/uniCloud-alipay/` 上传和部署云函数、数据库 Schema。
-- `server/` 不再接收新业务功能；需要参考旧逻辑时，只迁移规则，不复制旧存储方案。
+## 2. 当前数据链路
 
-## 当前阶段
+PC Web 通过仓储契约隔离数据源：
 
-1. PC Web 已具备 uni-id 登录入口和 uniCloud HTTP 适配层。
-2. uni-app 已接入 uni-id-pages，H5 可以构建。
-3. `rizhi-api` 已改为从 token 获取 uid，不再信任客户端传入用户 ID。
-4. 根项目已启用 npm workspaces，PC Web 与 uni-app 共用根 `package-lock.json`。
-5. 下一阶段是部署 uni-id Schema、`uni-id-co` 和 `rizhi-api`，完成真实注册登录联调。
-
-## 工作区命令
-
-```bash
-npm run dev                 # PC Web
-npm run dev:uni             # uni-app H5
-npm run typecheck:all       # 两端类型检查
-npm run build:all           # 两端生产构建
+```text
+页面 -> Pinia store -> service -> repository contract
+                         ├─ indexedDbRepositories -> Dexie/IndexedDB
+                         └─ httpRepositories       -> rizhi-api URL 化云函数
 ```
 
-依赖统一从仓库根目录安装：
+`VITE_DATA_SOURCE=unicloud` 时使用云端仓储；其他情况下使用 IndexedDB 本地仓储。页面和业务 service 不应直接依赖具体存储实现。
 
-```bash
-npm install
+## 3. 云端边界
+
+- `rizhi-api` 是 PC Web 的统一业务 API 入口。
+- `uni-id` 负责注册、登录、token 校验和用户身份。
+- 云函数从有效 token 获取 uid，客户端不能通过普通请求体指定数据归属用户。
+- `rizhi-api` 负责业务数据、图片上传、站点品牌、管理员和备份接口。
+- uni-app 通过 uniCloud 能力接入同一云端资源；两端不直接共享页面组件。
+
+## 4. 当前模块
+
+PC Web 当前包含：
+
+- 登录、注册和身份刷新。
+- 仪表盘、资产列表、资产详情和附加项。
+- 记账、资金账户、转账、还款和账户流水。
+- 设置、分类迁移、数据备份和恢复。
+- 管理员用户管理、资产/账户/银行字典和站点品牌配置。
+
+## 5. 目录职责
+
+- `apps/web/src/domain/`：领域模型和纯计算。
+- `apps/web/src/services/`：业务操作和云端辅助服务。
+- `apps/web/src/repositories/`：数据访问契约及 IndexedDB/HTTP 实现。
+- `apps/web/src/db/`：本地 Dexie 数据库、种子和事务写入。
+- `apps/web/src/stores/`：页面共享状态。
+- `apps/uni-app/uniCloud-alipay/cloudfunctions/rizhi-api/`：正式 API 云函数。
+- `apps/uni-app/uniCloud-alipay/database/`：业务集合 Schema。
+
+## 6. 构建与部署边界
+
+```powershell
+npm.cmd run build:production  # apps/web/dist，PC Web
+npm.cmd run build:uni         # apps/uni-app/dist/build/h5，uni-app H5
+npm.cmd run deploy:web:test
+npm.cmd run deploy:web:production
 ```
 
-仓库通过根 `.npmrc` 使用 `install-strategy=nested`。这是 HBuilderX 的兼容要求：仍共用根锁文件，但 uni-app 依赖会安装到 `apps/uni-app/node_modules/`。根 `postinstall` 还会为 HBuilderX 硬编码查找的 `@dcloudio/uni-components` 建立目录联接。
-
-## 后续目录演进
-
-- PC Web 已迁入 `apps/web/`，根目录只负责工作区调度。
-- 两个客户端出现真实重复代码后，再建立 `packages/domain/` 和 `packages/api-client/`。
-- 在迁移完成前，不为追求目录整齐提前抽取共享包。
-
-## 迁移纪律
-
-1. 当前 PC Web 始终保持可构建、可回退。
-2. 新模块先在云端确定契约，再分别接入客户端。
-3. 每次只迁移一个业务域，并核对账户余额和关联流水。
-4. 完成 uni-id 前不公开 URL 化业务接口。
-5. 每次结构迁移都必须先提交可构建基线，再移动目录。
+两个客户端的构建产物不可混用；PC Web 静态托管必须上传 `apps/web/dist` 内的文件。

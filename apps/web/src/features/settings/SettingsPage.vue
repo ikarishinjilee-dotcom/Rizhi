@@ -1,335 +1,135 @@
 <template>
   <RDataGate :loading="store.loading" :ready="store.initialized" :error="store.error" @retry="initializeData">
     <section class="settings-page">
-    <header class="settings-header">
-      <div class="settings-identity">
-        <div class="avatar">
-          <img v-if="profileDraft.avatarDataUrl" :src="profileDraft.avatarDataUrl" alt="" />
-          <span v-else>{{ profileInitial }}</span>
-        </div>
-        <div>
-          <p>设置中心</p>
-          <h1>{{ currentSectionTitle }}</h1>
-          <span>{{ currentSectionDescription }}</span>
-        </div>
-      </div>
-      <nav class="settings-nav" aria-label="设置中心导航">
-        <RouterLink v-for="item in settingsNavItems" :key="item.path" :to="item.path">
-          <component :is="item.icon" :size="17" />
-          <span>{{ item.label }}</span>
-        </RouterLink>
-      </nav>
-    </header>
+    <SettingsPageHeader
+      :avatar-data-url="profileDraft.avatarDataUrl"
+      :profile-initial="profileInitial"
+      :current-section-title="currentSectionTitle"
+      :current-section-description="currentSectionDescription"
+      :nav-items="settingsNavItems"
+    />
 
-    <div v-if="activeSection === 'overview'" class="settings-overview">
-      <RouterLink v-for="item in overviewItems.filter((item) => item.path !== '/settings/categories')" :key="item.path" :to="item.path" class="overview-card">
-        <span class="overview-card__icon"><component :is="item.icon" :size="20" /></span>
-        <div>
-          <h2>{{ item.label }}</h2>
-          <p>{{ item.description }}</p>
-        </div>
-        <span class="overview-card__meta">{{ item.meta }}</span>
-        <ChevronRight :size="18" />
-      </RouterLink>
-    </div>
+    <SettingsOverviewGrid
+      v-if="activeSection === 'overview'"
+      :items="overviewItems.filter((item) => item.path !== '/settings/categories')"
+    />
 
     <RCard v-if="activeSection === 'profile'">
-      <div class="profile-settings">
-        <section class="profile-photo-panel">
-          <div class="profile-photo">
-            <img v-if="profileDraft.avatarDataUrl" :src="profileDraft.avatarDataUrl" alt="当前头像" />
-            <span v-else>{{ profileInitial }}</span>
-          </div>
-          <div>
-            <h2>个人头像</h2>
-            <p>图片只保存在当前浏览器，不会上传到服务器。</p>
-          </div>
-          <RButton variant="secondary" @click="avatarFileInput?.click()">选择图片</RButton>
-          <button v-if="profileDraft.avatarDataUrl" class="text-danger-button" type="button" @click="profileDraft.avatarDataUrl = undefined">移除头像</button>
-          <input ref="avatarFileInput" class="hidden-file" type="file" accept="image/png,image/jpeg,image/webp" @change="selectAvatar" />
-        </section>
-        <section class="profile-form">
-          <div class="section-heading">
-            <h2>基本资料</h2>
-            <p>这些信息用于应用内的账户标识和界面展示。</p>
-          </div>
-          <div class="profile-form__grid">
-            <label>
-              <span>显示名称</span>
-              <RInput v-model="profileDraft.displayName" placeholder="请输入显示名称" />
-            </label>
-            <label>
-              <span>默认货币</span>
-              <RSelect v-model="profileDraft.currency" :options="currencyOptions" />
-            </label>
-            <label>
-              <span>语言</span>
-              <RSelect v-model="profileDraft.locale" :options="localeOptions" />
-            </label>
-          </div>
-          <RInlineFeedback v-if="profileMessage" :tone="profileMessageTone">{{ profileMessage }}</RInlineFeedback>
-          <div class="profile-actions">
-            <RButton :loading="savingProfile" @click="saveProfile">保存设置</RButton>
-            <RButton variant="secondary" @click="loadProfile">恢复已保存内容</RButton>
-          </div>
-        </section>
-      </div>
+      <SettingsProfileSection
+        :profile-draft="profileDraft"
+        :profile-initial="profileInitial"
+        :currency-options="currencyOptions"
+        :locale-options="localeOptions"
+        :profile-message="profileMessage"
+        :profile-message-tone="profileMessageTone"
+        :saving-profile="savingProfile"
+        :logging-out="loggingOut"
+        @select-avatar="selectAvatar"
+        @save-profile="saveProfile"
+        @load-profile="loadProfile"
+        @logout="requestLogout"
+      />
     </RCard>
 
     <RCard v-if="activeSection === 'data'">
-      <div class="settings-section">
-        <div class="section-heading">
-          <h2>本地数据</h2>
-          <p>当前数据存储在浏览器 IndexedDB 中。建议定期导出备份，避免浏览器数据被清理后丢失。</p>
-        </div>
-        <div class="data-grid">
-          <div><span>资产</span><strong>{{ store.assets.length }}</strong></div>
-          <div><span>附加项</span><strong>{{ store.assetAddons.length }}</strong></div>
-          <div><span>账户</span><strong>{{ store.accounts.length }}</strong></div>
-          <div><span>交易</span><strong>{{ store.transactions.length }}</strong></div>
-        </div>
-        <div class="backup-zone">
-          <div>
-            <h3>备份与恢复</h3>
-            <p>导出 JSON 备份文件，后续可覆盖恢复到本地 IndexedDB。导入会先校验文件格式。</p>
-          </div>
-          <div class="action-row">
-            <RButton variant="secondary" :loading="exporting" @click="exportBackup">导出备份</RButton>
-            <RButton :loading="importing" @click="backupFileInput?.click()">导入恢复</RButton>
-            <input ref="backupFileInput" class="hidden-file" type="file" accept="application/json,.json" @change="importBackup" />
-          </div>
-        </div>
-        <RInlineFeedback v-if="backupMessage" :tone="backupMessageTone">{{ backupMessage }}</RInlineFeedback>
-        <div class="danger-zone">
-          <div>
-            <h3>开发期重置</h3>
-            <p>会清空当前浏览器里的本地数据，并重新写入最新的初始数据。这个按钮后续正式上线前需要移除或加权限保护。</p>
-          </div>
-          <RButton variant="danger" :loading="resetting" @click="resetData">重置本地数据</RButton>
-        </div>
-      </div>
+      <SettingsDataSection
+        :assets="store.assets.length"
+        :asset-addons="store.assetAddons.length"
+        :accounts="store.accounts.length"
+        :transactions="store.transactions.length"
+        :exporting="exporting"
+        :importing="importing"
+        :resetting="resetting"
+        :backup-message="backupMessage"
+        :backup-message-tone="backupMessageTone"
+        @export-backup="exportBackup"
+        @import-backup="importBackup"
+        @reset-data="resetData"
+      />
     </RCard>
 
     <RCard v-if="activeSection === 'categories'">
       <div class="settings-section">
-        <div class="section-heading">
-          <h2>分类管理</h2>
-          <p>维护资产、记账和账户分类。已有业务记录的分类需要先完成迁移，才能删除。</p>
-        </div>
-        <div v-if="migrationSourceCategory" class="migration-panel" :class="{ done: migrationCompletedCount !== null }">
-          <div>
-            <span>{{ migrationCompletedCount === null ? "分类迁移" : "迁移完成" }}</span>
-            <h3>{{ migrationCompletedCount === null ? `「${migrationSourceCategory.name}」已有记账记录` : `已迁移「${migrationSourceCategory.name}」` }}</h3>
-            <p v-if="migrationCompletedCount === null">先把这些记账迁移到其他同类型分类，再回来删除原分类。</p>
-            <p v-else>已迁移 {{ migrationCompletedCount }} 条记账记录。现在可以直接删除原分类，系统会再次校验是否仍有关联账单。</p>
-            <div v-if="migrationTargetCategoryId" class="migration-route">
-              <small>迁移目标</small>
-              <strong>{{ migrationTargetLabel }}</strong>
-            </div>
-          </div>
-          <div class="migration-form">
-            <template v-if="migrationCompletedCount === null">
-              <label>
-                <span>目标一级分类</span>
-                <RSelect v-model="migrationTargetCategoryId" :options="migrationTargetCategoryOptions" placeholder="选择目标分类" />
-              </label>
-              <label>
-                <span>目标子分类</span>
-                <RSelect v-model="migrationTargetSubCategoryId" :options="migrationTargetSubCategoryOptions" placeholder="可选" />
-              </label>
-              <div class="action-row">
-                <RButton :loading="migratingCategory" @click="migrateCategoryTransactions">迁移记账</RButton>
-                <RButton variant="secondary" @click="clearMigrationPanel">取消</RButton>
-              </div>
-            </template>
-            <div v-else class="migration-done-actions">
-              <RButton variant="danger" @click="openMigratedCategoryDeleteModal">删除原分类</RButton>
-              <RButton variant="secondary" @click="migrationCompletedCount = null">重新选择目标</RButton>
-              <RButton variant="secondary" @click="clearMigrationPanel">关闭</RButton>
-            </div>
-          </div>
-        </div>
-        <div class="category-zone">
-          <div class="category-zone__head">
-            <div>
-              <h3>分类管理</h3>
-              <p>维护资产、记账和账户分类。已有记账记录的分类不能删除，需要先把相关记账改到其他分类。</p>
-            </div>
-            <div class="category-tabs">
-              <button
-                v-for="option in categoryDomainOptions"
-                :key="option.value"
-                :data-testid="`category-domain-${option.value}`"
-                :class="{ active: categoryDomain === option.value }"
-                type="button"
-                @click="categoryDomain = option.value"
-              >
-                {{ option.label }}
-              </button>
-            </div>
-          </div>
-
-          <div v-if="categoryDomain === 'transaction'" class="ledger-category-manager">
-            <div class="ledger-category-toolbar">
-              <div class="category-direction-tabs">
-                <button :class="{ active: categoryDirection === 'expense' }" type="button" @click="switchCategoryDirection('expense')">支出分类</button>
-                <button :class="{ active: categoryDirection === 'income' }" type="button" @click="switchCategoryDirection('income')">收入分类</button>
-              </div>
-              <RButton @click="startCreateParentCategory">+ 新增一级分类</RButton>
-            </div>
-
-            <div class="ledger-category-layout">
-              <div class="category-tree">
-                <div v-if="parentCategories.length" class="category-tree__body">
-                  <section v-for="parent in parentCategories" :key="parent.id" class="category-parent-card" data-testid="category-parent-card" :data-category-id="parent.id" :class="{ active: selectedParentCategoryId === parent.id }">
-                    <button class="category-parent-main" type="button" @click="selectParentCategory(parent.id)">
-                      <span class="category-color" :style="{ background: parent.color || '#94a3b8' }"></span>
-                      <div>
-                        <strong>{{ parent.name }}</strong>
-                        <small>{{ childCategoriesOf(parent.id).length }} 个子分类 · sort {{ parent.sort }}</small>
-                      </div>
-                    </button>
-                    <div class="category-actions">
-                      <button type="button" @click="editCategory(parent)">编辑</button>
-                      <button class="danger" data-testid="category-parent-delete" type="button" @click="deleteCategory(parent.id)">删除</button>
-                    </div>
-                    <div class="category-child-list">
-                      <div v-for="child in childCategoriesOf(parent.id)" :key="child.id" class="category-child-item">
-                        <button type="button" @click="editCategory(child)">
-                          <span>{{ child.name }}</span>
-                          <small>{{ child.id }}</small>
-                        </button>
-                        <div class="category-actions">
-                          <button type="button" @click="editCategory(child)">编辑</button>
-                          <button class="danger" data-testid="category-delete" type="button" @click="deleteCategory(child.id)">删除</button>
-                        </div>
-                      </div>
-                      <button class="add-child-button" type="button" @click="startCreateChildCategory(parent.id)">+ 给「{{ parent.name }}」添加子分类</button>
-                    </div>
-                  </section>
-                </div>
-                <p v-else class="empty-category">暂无{{ categoryDirection === "expense" ? "支出" : "收入" }}一级分类，可以从右侧新增。</p>
-              </div>
-
-              <aside class="category-inspector">
-                <div class="category-inspector__head">
-                  <span>{{ categoryLevel === "child" ? "子分类" : "一级分类" }}</span>
-                  <h4>{{ categoryFormTitle }}</h4>
-                  <p>{{ categoryFormDescription }}</p>
-                </div>
-                <label v-if="categoryLevel === 'child'">
-                  <span>所属一级分类</span>
-                  <RSelect v-model="categoryDraft.parentId" :options="parentCategoryOptions" placeholder="选择一级分类" />
-                </label>
-                <label>
-                  <span>分类名称</span>
-                  <RInput v-model="categoryDraft.name" :placeholder="categoryLevel === 'child' ? '例如 午餐 / 地铁 / A 公司工资' : '例如 餐饮 / 出行 / 工资'" />
-                </label>
-                <label>
-                  <span>排序</span>
-                  <RInput v-model="categoryDraft.sort" placeholder="数字越小越靠前" />
-                </label>
-                <label>
-                  <span>颜色</span>
-                  <div class="color-input">
-                    <input v-model="categoryDraft.color" type="color" />
-                    <RInput v-model="categoryDraft.color" placeholder="#1677FF" />
-                  </div>
-                </label>
-                <label v-if="showCategoryBudgetField">
-                  <span>月预算</span>
-                  <RInput v-model="categoryDraft.monthlyBudget" placeholder="例如 1500，不填则不设置预算" />
-                </label>
-                <RInlineFeedback v-if="categoryMessage" :tone="categoryMessageTone">{{ categoryMessage }}</RInlineFeedback>
-                <div class="action-row">
-                  <RButton :loading="savingCategory" @click="saveCategory">{{ editingCategoryId ? "保存修改" : "保存新增" }}</RButton>
-                  <RButton variant="secondary" @click="requestResetCategoryDraft">清空</RButton>
-                </div>
-              </aside>
-            </div>
-          </div>
-
-          <div v-else class="category-editor">
-            <div class="category-form">
-              <h4>{{ editingCategoryId ? "编辑分类" : "新增分类" }}</h4>
-              <label>
-                <span>分类名称</span>
-                <RInput v-model="categoryDraft.name" placeholder="例如 数码配件" />
-              </label>
-              <label v-if="categoryDomain === 'account'">
-                <span>业务类型</span>
-                <RSelect v-model="categoryDraft.type" :options="currentCategoryTypeOptions" placeholder="选择类型" />
-              </label>
-              <label>
-                <span>排序</span>
-                <RInput v-model="categoryDraft.sort" placeholder="例如 600" />
-              </label>
-              <label>
-                <span>颜色</span>
-                <div class="color-input">
-                  <input v-model="categoryDraft.color" type="color" />
-                  <RInput v-model="categoryDraft.color" placeholder="#1677FF" />
-                </div>
-              </label>
-              <RInlineFeedback v-if="categoryMessage" :tone="categoryMessageTone">{{ categoryMessage }}</RInlineFeedback>
-              <div class="action-row">
-                <RButton :loading="savingCategory" @click="saveCategory">{{ editingCategoryId ? "保存分类" : "新增分类" }}</RButton>
-                <RButton v-if="editingCategoryId" variant="secondary" @click="requestResetCategoryDraft">取消编辑</RButton>
-              </div>
-            </div>
-
-            <div class="category-list">
-              <div v-if="categoryDomain === 'asset'" class="asset-category-toolbar">
-                <RInput v-model="categoryQuery" placeholder="搜索资产分类" />
-                <div class="category-status-switch" aria-label="资产分类状态">
-                  <button
-                    v-for="option in assetCategoryStatusOptions"
-                    :key="option.value"
-                    :data-testid="`asset-category-status-${option.value}`"
-                    type="button"
-                    :class="{ active: assetCategoryStatus === option.value }"
-                    @click="assetCategoryStatus = option.value"
-                  >
-                    {{ option.label }}
-                  </button>
-                </div>
-                <div class="category-sort-switch" aria-label="资产分类排序">
-                  <button
-                    v-for="option in assetCategorySortOptions"
-                    :key="option.value"
-                    type="button"
-                    :class="{ active: assetCategorySort === option.value }"
-                    @click="assetCategorySort = option.value"
-                  >
-                    {{ option.label }}
-                  </button>
-                </div>
-              </div>
-              <div v-for="category in visibleCategories" :key="category.id" class="category-item" :data-testid="`category-item-${category.id}`">
-                <span class="category-color" :style="{ background: category.color || '#94a3b8' }"></span>
-                <div>
-                  <strong>{{ category.name }}</strong>
-                  <small v-if="category.domain === 'asset'">{{ assetCategoryUsage(category.id) }} 项资产 · 顺序 {{ category.sort }} · {{ category.enabled === false ? "已停用" : "启用中" }}</small>
-                  <small v-else>{{ category.id }} · {{ category.type || "-" }} · sort {{ category.sort }} · {{ category.enabled === false || category.deletedAt ? "已停用" : "启用中" }}</small>
-                </div>
-                <div class="category-actions">
-                  <button type="button" @click="editCategory(category)">编辑</button>
-                  <button
-                    v-if="category.domain === 'asset'"
-                    type="button"
-                    :data-testid="`asset-category-toggle-${category.id}`"
-                    @click="setCategoryEnabled(category, category.enabled === false)"
-                  >
-                    {{ category.enabled === false ? "恢复" : "停用" }}
-                  </button>
-                  <button class="danger" data-testid="category-delete" type="button" @click="deleteCategory(category.id)">删除</button>
-                </div>
-              </div>
-              <p v-if="!visibleCategories.length" class="empty-category">暂无分类，可以从左侧新增。</p>
-            </div>
-          </div>
-        </div>
-      </div>
+        <SettingsCategoryMigrationPanel
+          :source-category="migrationSourceCategory"
+          :completed-count="migrationCompletedCount"
+          :target-category-id="migrationTargetCategoryId"
+          :target-sub-category-id="migrationTargetSubCategoryId"
+          :target-category-options="migrationTargetCategoryOptions"
+          :target-sub-category-options="migrationTargetSubCategoryOptions"
+          :target-label="migrationTargetLabel"
+          :migrating="migratingCategory"
+          @update:target-category-id="migrationTargetCategoryId = $event"
+          @update:target-sub-category-id="migrationTargetSubCategoryId = $event"
+          @migrate="migrateCategoryTransactions"
+          @clear="clearMigrationPanel"
+          @delete="openMigratedCategoryDeleteModal"
+          @reset="migrationCompletedCount = null"
+        />
+        <SettingsCategoryWorkspace
+          :category-editor-visible="categoryEditorVisible"
+          :category-form-title="categoryFormTitle"
+          :category-level="categoryLevel"
+          :category-draft="categoryDraft"
+          :parent-category-options="parentCategoryOptions"
+          :category-scope-options="categoryScopeOptions"
+          :uploading-category-icon="uploadingCategoryIcon"
+          :category-message="categoryMessage"
+          :category-message-tone="categoryMessageTone"
+          :saving-category="savingCategory"
+          :editing-category-id="editingCategoryId"
+          :visible-personal-categories="visiblePersonalCategories"
+          :category-query="categoryQuery"
+          :asset-category-status="assetCategoryStatus"
+          :asset-category-status-options="assetCategoryStatusOptions"
+          :personal-category-scope-filter="personalCategoryScopeFilter"
+          :personal-category-scope-filter-options="personalCategoryScopeFilterOptions"
+          :selected-parent-category-id="selectedParentCategoryId"
+          :personal-batch-visible="personalBatchVisible"
+          :personal-batch-items="personalBatchItems"
+          :personal-batch-ids="personalBatchIds"
+          :personal-batch-operation="personalBatchOperation"
+          :personal-batch-operation-options="personalBatchOperationOptions"
+          :personal-batch-scopes="personalBatchScopes"
+          :personal-batch-delete-visible="personalBatchDeleteVisible"
+          :selected-personal-batch-items="selectedPersonalBatchItems"
+          :personal-batch-deleting="personalBatchDeleting"
+          :category-scope-options-for-batch="categoryScopeOptions"
+          :personal-batch-preview-text="personalBatchPreviewText"
+          :personal-batch-saving="personalBatchSaving"
+          :personal-children-visible="personalChildrenVisible"
+          :selected-personal-child-parent="selectedPersonalChildParent"
+          :selected-personal-child-items="selectedPersonalChildItems"
+          :scope-label="scopeLabel"
+          :scopes-of="scopesOf"
+          @update:category-editor-visible="categoryEditorVisible = $event"
+          @update:query="categoryQuery = $event"
+          @update:status="assetCategoryStatus = $event"
+          @update:personal-category-scope-filter="personalCategoryScopeFilter = $event"
+          @update:batch-visible="personalBatchVisible = $event"
+          @update:children-visible="personalChildrenVisible = $event"
+          @update:batch-ids="personalBatchIds = $event"
+          @update:batch-operation="personalBatchOperation = $event"
+          @update:batch-scopes="personalBatchScopes = $event"
+          @close-editor="closeCategoryEditor"
+          @save-category="saveCategory"
+          @delete-editing-category="requestDeleteEditingCategory"
+          @remove-category-icon="removeCategoryIcon"
+          @select-category-icon="selectCategoryIcon"
+          @create-parent="startCreateParentCategory"
+          @open-batch="openPersonalBatchManager"
+          @refresh="refreshPersonalCategories"
+          @edit-category="editCategory"
+          @view-children="openPersonalChildren"
+          @create-child="startCreateChildCategory"
+          @select-all-batch="selectAllPersonalBatchItems"
+          @apply-batch="applyPersonalBatch"
+          @confirm-batch-delete="confirmPersonalBatchDelete"
+          @edit-child="editPersonalChild"
+          @delete-child="deletePersonalChild"
+          @close-children="personalChildrenVisible = false"
+          @create-child-from-modal="startCreateChildFromModal"
+        />      </div>
     </RCard>
 
     <DeleteConfirmModal
@@ -420,10 +220,20 @@
     <DeleteConfirmModal
       v-model:show="showUnsavedCategoryModal"
       title="放弃未保存的分类内容？"
-      description="当前分类表单里有尚未保存的修改。离开后，分类名称、排序、颜色和预算设置都会丢失。"
+      description="当前分类表单里有尚未保存的修改。离开后，分类名称和预算设置都会丢失。"
       eyebrow="内容未保存"
       confirm-text="放弃清空"
       @confirm="confirmResetCategoryDraft"
+    />
+
+    <DeleteConfirmModal
+      v-model:show="showLogoutConfirm"
+      eyebrow="账户操作"
+      title="确认退出当前账户？"
+      description="退出后会清除当前设备上的登录状态和本地业务缓存。"
+      confirm-text="退出登录"
+      :loading="loggingOut"
+      @confirm="handleLogout"
     />
     </section>
   </RDataGate>
@@ -431,27 +241,35 @@
 
 <script setup lang="ts">
 import { computed, onMounted, reactive, ref, watch } from "vue";
-import { RouterLink, useRoute } from "vue-router";
-import { ChevronRight, DatabaseBackup, LayoutGrid, Tags, UserRound } from "@lucide/vue";
+import { useRoute, useRouter } from "vue-router";
+import { DatabaseBackup, LayoutGrid, Tags, UserRound } from "@lucide/vue";
 import DeleteConfirmModal from "@/components/business/DeleteConfirmModal.vue";
+import SettingsProfileSection from "@/components/business/SettingsProfileSection.vue";
+import SettingsDataSection from "@/components/business/SettingsDataSection.vue";
+import SettingsCategoryMigrationPanel from "@/components/business/SettingsCategoryMigrationPanel.vue";
+import SettingsCategoryWorkspace from "@/components/business/SettingsCategoryWorkspace.vue";
+import SettingsOverviewGrid from "@/components/business/SettingsOverviewGrid.vue";
+import SettingsPageHeader from "@/components/business/SettingsPageHeader.vue";
 import RButton from "@/components/ui/RButton.vue";
 import RCard from "@/components/ui/RCard.vue";
-import RInput from "@/components/ui/RInput.vue";
 import RSelect from "@/components/ui/RSelect.vue";
 import RDataGate from "@/components/ui/RDataGate.vue";
-import RInlineFeedback from "@/components/ui/RInlineFeedback.vue";
-import type { CategoryDomain, CategoryRecord, TransactionRecord } from "@/domain/models";
+import type { CategoryDomain, CategoryRecord, CategoryScope, TransactionRecord } from "@/domain/models";
 import { backupService } from "@/services/backupService";
 import { categoryService } from "@/services/categoryService";
 import { settingsService } from "@/services/settingsService";
-import { authSession } from "@/services/authService";
+import { authSession, logout } from "@/services/authService";
 import { useAppDataStore } from "@/stores/appDataStore";
 import { imageFileToPersistentUrl } from "@/utils/imageFiles";
+import { uploadImageDataUrl } from "@/services/cloudApiService";
+import { useSettingsCategories } from "./useSettingsCategories";
 
 const store = useAppDataStore();
 const route = useRoute();
+const router = useRouter();
 const savingProfile = ref(false);
-const avatarFileInput = ref<HTMLInputElement | null>(null);
+const loggingOut = ref(false);
+const showLogoutConfirm = ref(false);
 const profileMessage = ref("");
 const profileMessageTone = ref<"success" | "danger">("success");
 const profileDraft = reactive({
@@ -467,47 +285,8 @@ const resetDataModalVisible = ref(false);
 const importBackupModalVisible = ref(false);
 const showUnsavedCategoryModal = ref(false);
 const pendingBackupFile = ref<File | null>(null);
-const backupFileInput = ref<HTMLInputElement | null>(null);
 const backupMessage = ref("");
 const backupMessageTone = ref<"success" | "danger">("success");
-const categoryDomain = ref<CategoryDomain>("asset");
-const categoryDirection = ref<"expense" | "income">("expense");
-const categoryLevel = ref<"parent" | "child">("parent");
-const selectedParentCategoryId = ref<string | null>(null);
-const editingCategoryId = ref<string | null>(null);
-const savingCategory = ref(false);
-const migratingCategory = ref(false);
-const migrationSourceCategoryId = ref<string | null>(null);
-const migrationTargetCategoryId = ref<string | number | null>(null);
-const migrationTargetSubCategoryId = ref<string | number | null>("none");
-const migrationCompletedCount = ref<number | null>(null);
-const deleteCategoryModalVisible = ref(false);
-const deleteCategoryLoading = ref(false);
-const pendingDeleteCategory = ref<CategoryRecord | null>(null);
-const pendingDeleteImpact = ref<{
-  assets: number;
-  transactions: number;
-  childCategories: number;
-  accounts: number;
-  total: number;
-} | null>(null);
-const pendingDeleteLatestTransaction = ref<TransactionRecord | null>(null);
-const categoryMessage = ref("");
-const categoryMessageTone = ref<"success" | "danger">("success");
-const categoryQuery = ref("");
-const assetCategorySort = ref<"manual" | "name" | "usage">("manual");
-const assetCategoryStatus = ref<"active" | "disabled" | "all">("active");
-const categoryDraft = reactive({
-  name: "",
-  type: "other" as string | number | null,
-  parentId: null as string | number | null,
-  sort: "999",
-  color: "#1677FF",
-  monthlyBudget: "",
-  enabled: true,
-});
-const initialCategoryDraftSnapshot = ref("");
-
 type SettingsSection = "overview" | "profile" | "categories" | "data";
 
 const activeSection = computed<SettingsSection>(() => {
@@ -520,7 +299,7 @@ const settingsNavItems = [
   { label: "个人资料", path: "/settings/profile", icon: UserRound },
   { label: "分类管理", path: "/settings/categories", icon: Tags },
   { label: "数据管理", path: "/settings/data", icon: DatabaseBackup },
-].filter((item) => item.path !== "/settings/categories");
+];
 const sectionCopy: Record<SettingsSection, { title: string; description: string }> = {
   overview: { title: "设置中心", description: "管理个人资料、业务分类和本地数据。" },
   profile: { title: "个人资料", description: "设置应用内显示身份和基础偏好。" },
@@ -558,7 +337,11 @@ const localeOptions = [{ label: "简体中文", value: "zh-CN" }];
 const categoryDomainOptions: Array<{ label: string; value: CategoryDomain }> = [
   { label: "资产分类", value: "asset" },
   { label: "交易分类", value: "transaction" },
-  { label: "账户分类", value: "account" },
+];
+const categoryScopeOptions: Array<{ label: string; value: CategoryScope }> = [
+  { label: "资产", value: "asset" },
+  { label: "支出", value: "expense" },
+  { label: "收入", value: "income" },
 ];
 
 const categoryTypeOptions = {
@@ -595,93 +378,37 @@ const assetCategoryStatusOptions = [
   { label: "已停用", value: "disabled" as const },
   { label: "全部", value: "all" as const },
 ];
+const personalCategoryScopeFilterOptions = [
+  { label: "分类类型：全部", value: "all" },
+  { label: "资产分类", value: "asset" },
+  { label: "支出分类", value: "expense" },
+  { label: "收入分类", value: "income" },
+];
 
-const visibleCategories = computed(() => {
-  const keyword = categoryQuery.value.trim().toLowerCase();
-  const categories = store.categories
-    .filter((category) => category.domain === categoryDomain.value && !category.deletedAt)
-    .filter((category) => {
-      if (categoryDomain.value !== "asset" || assetCategoryStatus.value === "all") return true;
-      return assetCategoryStatus.value === "disabled" ? category.enabled === false : category.enabled !== false;
-    })
-    .filter((category) => !keyword || category.name.toLowerCase().includes(keyword));
-
-  if (categoryDomain.value !== "asset") return categories.sort(compareByManualOrder);
-  if (assetCategorySort.value === "name") {
-    return categories.sort((left, right) => left.name.localeCompare(right.name, "zh-CN"));
-  }
-  if (assetCategorySort.value === "usage") {
-    return categories.sort((left, right) => assetCategoryUsage(right.id) - assetCategoryUsage(left.id) || compareByManualOrder(left, right));
-  }
-  return categories.sort(compareByManualOrder);
-});
-const activeTransactionCategories = computed(() => store.categories.filter((category) => category.domain === "transaction" && category.type === categoryDirection.value && !category.deletedAt));
-const parentCategories = computed(() => activeTransactionCategories.value
-  .filter((category) => !category.parentId)
-  .sort((a, b) => a.sort - b.sort));
-const parentCategoryOptions = computed(() => parentCategories.value.map((category) => ({ label: category.name, value: category.id })));
-const currentCategoryTypeOptions = computed(() => categoryTypeOptionsWithBank[categoryDomain.value]);
-
-function compareByManualOrder(left: CategoryRecord, right: CategoryRecord) {
-  return left.sort - right.sort || left.name.localeCompare(right.name, "zh-CN");
-}
-
-function assetCategoryUsage(categoryId: string) {
-  return store.assets.filter((asset) => asset.categoryId === categoryId).length;
-}
-
-const selectedParentCategory = computed(() => parentCategories.value.find((category) => category.id === selectedParentCategoryId.value));
-const migrationSourceCategory = computed(() => store.categories.find((category) => category.id === migrationSourceCategoryId.value));
-const migrationTargetCategoryOptions = computed(() => {
-  const source = migrationSourceCategory.value;
-  if (!source) return [];
-  return store.categories
-    .filter((category) => category.domain === "transaction" && !category.parentId && !category.deletedAt && category.enabled !== false && category.type === source.type && category.id !== source.id)
-    .map((category) => ({ label: category.name, value: category.id }));
-});
-const migrationTargetSubCategoryOptions = computed(() => [
-  { label: "不选择子分类", value: "none" },
-  ...store.categories
-    .filter((category) => category.domain === "transaction" && !category.deletedAt && category.enabled !== false && category.parentId === migrationTargetCategoryId.value)
-    .map((category) => ({ label: category.name, value: category.id })),
-]);
-const migrationTargetLabel = computed(() => {
-  const parent = store.categories.find((category) => category.id === migrationTargetCategoryId.value);
-  const sub = migrationTargetSubCategoryId.value && migrationTargetSubCategoryId.value !== "none"
-    ? store.categories.find((category) => category.id === migrationTargetSubCategoryId.value)
-    : undefined;
-  if (!parent) return "未选择";
-  return sub ? `${parent.name} / ${sub.name}` : parent.name;
-});
-const pendingDeleteBlockedReason = computed(() => {
-  const impact = pendingDeleteImpact.value;
-  if (!impact) return "";
-  if (impact.transactions > 0) return `该分类底下已有 ${impact.transactions} 条记账记录，不能直接删除。请先把这些记账迁移或改到其他分类。`;
-  if (impact.assets > 0) return `该分类已有 ${impact.assets} 个资产使用，不能直接删除。请先把对应资产改到其他分类。`;
-  if (impact.accounts > 0) return `该分类已有 ${impact.accounts} 个账户使用，不能直接删除。请先把对应账户改到其他分类。`;
-  return "";
-});
-const deleteCategoryModalTitle = computed(() => {
-  const name = pendingDeleteCategory.value?.name;
-  if (!name) return "删除分类？";
-  return pendingDeleteBlockedReason.value ? `不能删除「${name}」` : `删除「${name}」？`;
-});
-const deleteCategoryModalDescription = computed(() => {
-  if (pendingDeleteBlockedReason.value) return "这个分类仍在被业务数据使用。为了避免历史账单失去归属，需要先处理关联数据。";
-  return "删除后不可恢复。系统会在确认时再次校验，如果仍有关联业务数据会阻止删除。";
-});
-const showCategoryBudgetField = computed(() => categoryDomain.value === "transaction" && categoryDirection.value === "expense" && categoryLevel.value === "parent");
-const isCategoryDraftDirty = computed(() => serializeCategoryDraft() !== initialCategoryDraftSnapshot.value);
-const categoryFormTitle = computed(() => {
-  if (editingCategoryId.value) return categoryLevel.value === "child" ? "编辑子分类" : "编辑一级分类";
-  return categoryLevel.value === "child" ? "新增子分类" : "新增一级分类";
-});
-const categoryFormDescription = computed(() => {
-  if (categoryLevel.value === "child") {
-    return `归属到${selectedParentCategory.value ? `「${selectedParentCategory.value.name}」` : "某个一级分类"}，用于更细地统计账单。`;
-  }
-  return categoryDirection.value === "expense" ? "一级分类用于支出大类统计，例如餐饮、出行、购物。" : "一级分类用于收入大类统计，例如工资、外快、资产收入。";
-});
+const {
+  categoryDomain, categoryDirection, categoryLevel, categoryEditorVisible, selectedParentCategoryId,
+  expandedParentCategoryId, personalChildrenVisible, selectedPersonalChildParent, editingCategoryId,
+  savingCategory, uploadingCategoryIcon, migratingCategory, migrationSourceCategoryId,
+  migrationTargetCategoryId, migrationTargetSubCategoryId, migrationCompletedCount,
+  deleteCategoryModalVisible, deleteCategoryLoading, pendingDeleteCategory, pendingDeleteImpact,
+  pendingDeleteLatestTransaction, categoryMessage, categoryMessageTone, categoryQuery, assetCategorySort,
+  assetCategoryStatus, personalCategoryScopeFilter, personalBatchVisible, personalBatchIds,
+  personalBatchOperation, personalBatchScopes, personalBatchSaving, personalBatchDeleteVisible,
+  personalBatchDeleting, categoryDraft, initialCategoryDraftSnapshot,
+  visiblePersonalCategories, personalBatchItems, selectedPersonalBatchItems, selectedPersonalChildItems,
+  activeTransactionCategories, parentCategories, parentCategoryOptions,
+  personalBatchPreviewText, selectedParentCategory, migrationSourceCategory, migrationTargetCategoryOptions,
+  migrationTargetSubCategoryOptions, migrationTargetLabel, pendingDeleteBlockedReason,
+  deleteCategoryModalTitle, deleteCategoryModalDescription, showCategoryBudgetField, isCategoryDraftDirty,
+  categoryFormTitle, categoryFormDescription, childCategoriesOf, scopesOf, scopeLabel,
+  serializeCategoryDraft, setCategoryMessage, buildDeleteCategoryImpact,
+    } = useSettingsCategories(store, categoryService);
+const personalBatchOperationOptions = [
+  { label: "批量启用", value: "enable" },
+  { label: "批量停用", value: "disable" },
+  { label: "批量修改适用范围", value: "scopes" },
+  { label: "批量删除", value: "delete" },
+];
 
 onMounted(initializeData);
 
@@ -736,6 +463,23 @@ async function saveProfile() {
     profileMessage.value = error instanceof Error ? error.message : "保存失败，请稍后重试。";
   } finally {
     savingProfile.value = false;
+  }
+}
+
+function requestLogout() {
+  if (!loggingOut.value) showLogoutConfirm.value = true;
+}
+
+async function handleLogout() {
+  if (loggingOut.value) return;
+  loggingOut.value = true;
+  try {
+    await logout();
+    store.clearSessionData();
+    showLogoutConfirm.value = false;
+    await router.replace("/login");
+  } finally {
+    loggingOut.value = false;
   }
 }
 
@@ -838,11 +582,6 @@ async function confirmImportBackup() {
   }
 }
 
-function setCategoryMessage(message: string, tone: "success" | "danger" = "success") {
-  categoryMessage.value = message;
-  categoryMessageTone.value = tone;
-}
-
 function openMigrationPanel(categoryId: string) {
   const category = store.categories.find((item) => item.id === categoryId);
   if (!category) return;
@@ -862,14 +601,13 @@ function clearMigrationPanel() {
 function resetCategoryDraft() {
   editingCategoryId.value = null;
   categoryDraft.name = "";
-  categoryDraft.type = categoryDomain.value === "transaction"
-    ? categoryDirection.value
-    : categoryDomain.value === "asset"
-      ? "other"
-      : categoryTypeOptions.account[0]?.value ?? "other";
-  categoryDraft.parentId = categoryDomain.value === "transaction" && categoryLevel.value === "child" ? selectedParentCategoryId.value : null;
+  categoryDomain.value = "asset";
+  categoryDraft.type = "other";
+  categoryDraft.parentId = categoryLevel.value === "child" ? selectedParentCategoryId.value : null;
   categoryDraft.sort = "999";
-  categoryDraft.color = "#1677FF";
+  categoryDraft.iconUrl = "";
+  categoryDraft.iconFileId = "";
+  categoryDraft.scopes = ["asset", "expense"];
   categoryDraft.monthlyBudget = "";
   categoryDraft.enabled = true;
   setCategoryMessage("");
@@ -878,30 +616,58 @@ function resetCategoryDraft() {
 
 function editCategory(category: CategoryRecord) {
   editingCategoryId.value = category.id;
-  if (category.domain === "transaction") {
-    categoryDirection.value = category.type === "income" ? "income" : "expense";
-    categoryLevel.value = category.parentId ? "child" : "parent";
-    selectedParentCategoryId.value = category.parentId ?? category.id;
-  }
+  categoryDomain.value = category.domain;
+  categoryDirection.value = category.type === "income" ? "income" : "expense";
+  categoryLevel.value = category.parentId ? "child" : "parent";
+  selectedParentCategoryId.value = category.parentId ?? category.id;
   categoryDraft.name = category.name;
   categoryDraft.type = category.type ?? categoryTypeOptionsWithBank[category.domain][0]?.value ?? "other";
   categoryDraft.parentId = category.parentId ?? null;
   categoryDraft.sort = String(category.sort);
-  categoryDraft.color = category.color || "#1677FF";
+  categoryDraft.iconUrl = category.iconUrl || "";
+  categoryDraft.iconFileId = category.iconFileId || "";
+  categoryDraft.scopes = [...scopesOf(category)];
   categoryDraft.monthlyBudget = category.monthlyBudget ? String(category.monthlyBudget) : "";
   categoryDraft.enabled = category.enabled !== false;
   setCategoryMessage("");
   initialCategoryDraftSnapshot.value = serializeCategoryDraft();
+  categoryEditorVisible.value = true;
 }
 
-function serializeCategoryDraft() {
-  return JSON.stringify({
-    categoryDomain: categoryDomain.value,
-    categoryDirection: categoryDirection.value,
-    categoryLevel: categoryLevel.value,
-    editingCategoryId: editingCategoryId.value,
-    ...categoryDraft,
-  });
+function closeCategoryEditor() {
+  categoryEditorVisible.value = false;
+  setCategoryMessage("");
+}
+
+async function selectCategoryIcon(event: Event) {
+  const input = event.target as HTMLInputElement;
+  const file = input.files?.[0];
+  input.value = "";
+  if (!file) return;
+  uploadingCategoryIcon.value = true;
+  try {
+    const dataUrl = await imageFileToPersistentUrl(file);
+    const uploaded = await uploadImageDataUrl(dataUrl, "category_icon");
+    categoryDraft.iconUrl = uploaded.url;
+    categoryDraft.iconFileId = uploaded.fileId;
+    setCategoryMessage("");
+  } catch (error) {
+    setCategoryMessage(error instanceof Error ? error.message : "图标上传失败，请重新选择。", "danger");
+  } finally {
+    uploadingCategoryIcon.value = false;
+  }
+}
+
+function removeCategoryIcon() {
+  categoryDraft.iconUrl = "";
+  categoryDraft.iconFileId = "";
+}
+
+function requestDeleteEditingCategory() {
+  if (!editingCategoryId.value) return;
+  const category = store.categories.find((item) => item.id === editingCategoryId.value);
+  categoryEditorVisible.value = false;
+  if (category) deleteCategory(category.id);
 }
 
 function requestResetCategoryDraft() {
@@ -921,6 +687,7 @@ function switchCategoryDirection(direction: "expense" | "income") {
   categoryDirection.value = direction;
   categoryLevel.value = "parent";
   selectedParentCategoryId.value = parentCategories.value[0]?.id ?? null;
+  expandedParentCategoryId.value = null;
   resetCategoryDraft();
 }
 
@@ -931,9 +698,38 @@ function selectParentCategory(id: string) {
   }
 }
 
+function toggleParentChildren(id: string) {
+  selectedParentCategoryId.value = id;
+  expandedParentCategoryId.value = expandedParentCategoryId.value === id ? null : id;
+}
+
+function openPersonalChildren(parent: CategoryRecord) {
+  selectedParentCategoryId.value = parent.id;
+  selectedPersonalChildParent.value = parent;
+  personalChildrenVisible.value = true;
+}
+
+function editPersonalChild(child: CategoryRecord) {
+  personalChildrenVisible.value = false;
+  editCategory(child);
+}
+
+function deletePersonalChild(id: string) {
+  personalChildrenVisible.value = false;
+  deleteCategory(id);
+}
+
+function startCreateChildFromModal() {
+  const parentId = selectedPersonalChildParent.value?.id;
+  personalChildrenVisible.value = false;
+  if (parentId) startCreateChildCategory(parentId);
+}
+
 function startCreateParentCategory() {
   categoryLevel.value = "parent";
   resetCategoryDraft();
+  categoryDraft.sort = String(Math.max(0, ...personalBatchItems.value.filter((item) => !item.parentId).map((item) => item.sort)) + 10);
+  categoryEditorVisible.value = true;
 }
 
 function startCreateChildCategory(parentId = selectedParentCategoryId.value) {
@@ -941,28 +737,19 @@ function startCreateChildCategory(parentId = selectedParentCategoryId.value) {
     setCategoryMessage("请先创建或选择一个一级分类。", "danger");
     return;
   }
+  const parent = visiblePersonalCategories.value.find((item) => item.id === parentId);
   categoryLevel.value = "child";
   selectedParentCategoryId.value = parentId;
   resetCategoryDraft();
   categoryDraft.parentId = parentId;
+  categoryDraft.sort = String(Math.max(parent?.sort ?? 0, ...childCategoriesOf(parentId).map((item) => item.sort)) + 10);
+  if (parent) {
+    categoryDomain.value = parent.domain;
+    categoryDirection.value = parent.type === "income" ? "income" : "expense";
+    categoryDraft.scopes = [...scopesOf(parent)];
+  }
   initialCategoryDraftSnapshot.value = serializeCategoryDraft();
-}
-
-function childCategoriesOf(parentId: string) {
-  return activeTransactionCategories.value
-    .filter((category) => category.parentId === parentId)
-    .sort((a, b) => a.sort - b.sort);
-}
-
-function relatedTransactionsForCategory(category: CategoryRecord) {
-  if (category.domain !== "transaction") return [];
-  const childIds = store.categories
-    .filter((item) => item.parentId === category.id && !item.deletedAt)
-    .map((item) => item.id);
-  const categoryIds = new Set([category.id, ...childIds]);
-  return store.transactions
-    .filter((transaction) => categoryIds.has(transaction.categoryId) || (transaction.subCategoryId && categoryIds.has(transaction.subCategoryId)))
-    .sort((a, b) => new Date(b.occurredAt).getTime() - new Date(a.occurredAt).getTime());
+  categoryEditorVisible.value = true;
 }
 
 function transactionSummary(transaction: TransactionRecord) {
@@ -972,18 +759,6 @@ function transactionSummary(transaction: TransactionRecord) {
   return `${date} ${title} ${sign}¥${transaction.amount.toFixed(2)}`;
 }
 
-async function buildDeleteCategoryImpact(category: CategoryRecord) {
-  const usage = await categoryService.usage(category.id);
-  const relatedTransactions = relatedTransactionsForCategory(category);
-  return {
-    usage: {
-      ...usage,
-      transactions: relatedTransactions.length || usage.transactions,
-      total: usage.assets + (relatedTransactions.length || usage.transactions) + usage.childCategories + usage.accounts,
-    },
-    latestTransaction: relatedTransactions[0] ?? null,
-  };
-}
 
 async function saveCategory() {
   savingCategory.value = true;
@@ -995,15 +770,16 @@ async function saveCategory() {
     if (monthlyBudget !== undefined && (!Number.isFinite(monthlyBudget) || monthlyBudget < 0)) {
       throw new Error("月预算必须是大于等于 0 的数字");
     }
-    if (categoryDomain.value === "transaction" && categoryLevel.value === "child" && !categoryDraft.parentId) {
+    if (categoryLevel.value === "child" && !categoryDraft.parentId) {
       throw new Error("新增子分类时必须选择所属一级分类");
     }
+    if (!categoryDraft.scopes.length) throw new Error("请至少选择一个适用范围");
   const type = categoryDomain.value === "transaction"
     ? categoryDirection.value
     : categoryDomain.value === "asset"
       ? "other"
       : categoryDraft.type as CategoryRecord["type"];
-    const parentId = categoryDomain.value === "transaction" && categoryLevel.value === "child" ? String(categoryDraft.parentId) : undefined;
+    const parentId = categoryLevel.value === "child" ? String(categoryDraft.parentId) : undefined;
     const budget = showCategoryBudgetField.value ? monthlyBudget : undefined;
     if (editingCategoryId.value) {
       await categoryService.update({
@@ -1012,8 +788,10 @@ async function saveCategory() {
         type,
         parentId,
         sort,
-        color: categoryDraft.color,
+        scopes: categoryDraft.scopes,
         monthlyBudget: budget,
+        iconUrl: categoryDraft.iconUrl || undefined,
+        iconFileId: categoryDraft.iconFileId || undefined,
         enabled: categoryDraft.enabled,
       });
       setCategoryMessage("分类已保存。");
@@ -1024,9 +802,11 @@ async function saveCategory() {
         type,
         parentId,
         sort,
-        color: categoryDraft.color,
+        scopes: categoryDraft.scopes,
         monthlyBudget: budget,
-        enabled: true,
+        iconUrl: categoryDraft.iconUrl || undefined,
+        iconFileId: categoryDraft.iconFileId || undefined,
+        enabled: categoryDraft.enabled,
       });
       setCategoryMessage("分类已新增。");
     }
@@ -1036,6 +816,7 @@ async function saveCategory() {
     } else {
       initialCategoryDraftSnapshot.value = serializeCategoryDraft();
     }
+    categoryEditorVisible.value = false;
   } catch (err) {
     setCategoryMessage(err instanceof Error ? err.message : "保存分类失败", "danger");
   } finally {
@@ -1055,6 +836,108 @@ async function setCategoryEnabled(category: CategoryRecord, enabled: boolean) {
     setCategoryMessage(enabled ? "分类已恢复。" : "分类已停用。");
   } catch (err) {
     setCategoryMessage(err instanceof Error ? err.message : "更新分类状态失败", "danger");
+  }
+}
+
+function openPersonalBatchManager() {
+  personalBatchIds.value = [];
+  personalBatchOperation.value = "enable";
+  personalBatchScopes.value = ["asset", "expense"];
+  personalBatchVisible.value = true;
+}
+
+function selectAllPersonalBatchItems() {
+  personalBatchIds.value = personalBatchItems.value.map((category) => category.id);
+}
+
+async function refreshPersonalCategories() {
+  setCategoryMessage("");
+  try {
+    await store.refresh();
+    setCategoryMessage("分类已刷新。");
+  } catch (err) {
+    setCategoryMessage(err instanceof Error ? err.message : "刷新分类失败", "danger");
+  }
+}
+
+async function applyPersonalBatch() {
+  const selected = selectedPersonalBatchItems.value;
+  if (!selected.length) {
+    setCategoryMessage("请至少选择一个分类。", "danger");
+    return;
+  }
+  if (personalBatchOperation.value === "delete") {
+    personalBatchDeleteVisible.value = true;
+    return;
+  }
+  if (personalBatchOperation.value === "scopes" && !personalBatchScopes.value.length) {
+    setCategoryMessage("请至少选择一个适用范围。", "danger");
+    return;
+  }
+  if (personalBatchOperation.value === "enable") {
+    const blockedChildren = selected.filter((category) => category.parentId
+      && store.categories.find((parent) => parent.id === category.parentId)?.enabled === false
+      && !personalBatchIds.value.includes(String(category.parentId)));
+    if (blockedChildren.length) {
+      setCategoryMessage(`有 ${blockedChildren.length} 个子分类的一级分类已停用，请同时选择并启用一级分类。`, "danger");
+      return;
+    }
+  }
+  personalBatchSaving.value = true;
+  setCategoryMessage("");
+  try {
+    if (personalBatchOperation.value === "enable" || personalBatchOperation.value === "disable") {
+      const enabled = personalBatchOperation.value === "enable";
+      const cascadedChildren = enabled ? [] : selected.flatMap((category) => category.parentId ? [] : childCategoriesOf(category.id));
+      const updates = Array.from(new Map([...selected, ...cascadedChildren].map((category) => [category.id, category])).values());
+      await Promise.all(updates.map((category) => categoryService.update({ id: category.id, enabled })));
+    } else {
+      const scopes = [...personalBatchScopes.value];
+      const domain: CategoryDomain = scopes.includes("asset") ? "asset" : "transaction";
+      await Promise.all(selected.map((category) => categoryService.update({
+        id: category.id,
+        domain,
+        scopes,
+        type: scopes.includes("income") && !scopes.includes("expense") ? "income" : category.type,
+      })));
+    }
+    await store.refresh();
+    personalBatchVisible.value = false;
+    personalBatchIds.value = [];
+    setCategoryMessage("批量操作已完成。");
+  } catch (err) {
+    setCategoryMessage(err instanceof Error ? err.message : "批量更新分类失败", "danger");
+  } finally {
+    personalBatchSaving.value = false;
+  }
+}
+
+async function confirmPersonalBatchDelete() {
+  const selected = [...selectedPersonalBatchItems.value].sort((left, right) => Number(Boolean(right.parentId)) - Number(Boolean(left.parentId)));
+  if (!selected.length) return;
+  personalBatchDeleting.value = true;
+  let deleted = 0;
+  let retained = 0;
+  try {
+    for (const category of selected) {
+      try {
+        await categoryService.delete(category.id);
+        deleted += 1;
+      } catch {
+        retained += 1;
+      }
+    }
+    await store.refresh();
+    personalBatchDeleteVisible.value = false;
+    personalBatchIds.value = [];
+    if (retained) {
+      setCategoryMessage(`已删除 ${deleted} 个分类，${retained} 个分类因存在业务记录而保留。`, "danger");
+    } else {
+      personalBatchVisible.value = false;
+      setCategoryMessage(`已删除 ${deleted} 个分类。`);
+    }
+  } finally {
+    personalBatchDeleting.value = false;
   }
 }
 
@@ -1147,153 +1030,11 @@ function openMigratedCategoryDeleteModal() {
   margin: 0 auto;
 }
 
-.settings-header {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
-  gap: var(--space-6);
-  align-items: end;
-  padding-bottom: var(--space-5);
-  border-bottom: 1px solid var(--color-border);
-}
-
-.settings-identity {
-  display: flex;
-  align-items: center;
-  gap: var(--space-4);
-}
-
-.settings-identity p,
-.settings-identity h1,
-.settings-identity span {
-  margin: 0;
-}
-
-.settings-identity p {
-  margin-bottom: 3px;
-  color: var(--color-primary);
-  font-size: 12px;
-  font-weight: 800;
-}
-
-.settings-identity h1 {
-  font-size: 24px;
-  line-height: 1.35;
-}
-
-.settings-identity > div > span {
-  display: block;
-  margin-top: 4px;
-  color: var(--color-text-secondary);
-  font-size: 13px;
-}
-
-.avatar {
-  overflow: hidden;
-  display: grid;
-  width: 56px;
-  height: 56px;
-  flex: 0 0 auto;
-  place-items: center;
-  color: #fff;
-  background: var(--color-primary);
-  border-radius: 16px;
-  font-size: 24px;
-  font-weight: 800;
-}
-
 .avatar img,
 .profile-photo img {
   width: 100%;
   height: 100%;
   object-fit: cover;
-}
-
-.settings-nav {
-  display: flex;
-  gap: 4px;
-  padding: 4px;
-  background: #edf1f7;
-  border-radius: var(--radius-lg);
-}
-
-.settings-nav a {
-  display: flex;
-  align-items: center;
-  gap: 7px;
-  height: 36px;
-  padding: 0 14px;
-  color: var(--color-text-secondary);
-  border-radius: var(--radius-md);
-  font-size: 13px;
-  font-weight: 700;
-}
-
-.settings-nav a:hover {
-  color: var(--color-text-primary);
-}
-
-.settings-nav a.router-link-exact-active {
-  color: var(--color-primary);
-  background: #fff;
-  box-shadow: 0 1px 4px rgba(17, 24, 39, 0.1);
-}
-
-.settings-overview {
-  display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: var(--space-4);
-}
-
-.overview-card {
-  display: grid;
-  grid-template-columns: 44px minmax(0, 1fr) auto 18px;
-  gap: var(--space-3);
-  align-items: center;
-  min-height: 116px;
-  padding: var(--space-5);
-  color: var(--color-text-primary);
-  background: #fff;
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-lg);
-  box-shadow: var(--shadow-card);
-  transition: border-color 160ms ease, box-shadow 160ms ease, transform 160ms ease;
-}
-
-.overview-card:hover {
-  border-color: #a9c9ff;
-  box-shadow: 0 12px 28px rgba(22, 119, 255, 0.1);
-  transform: translateY(-2px);
-}
-
-.overview-card__icon {
-  display: grid;
-  width: 44px;
-  height: 44px;
-  place-items: center;
-  color: var(--color-primary);
-  background: var(--color-primary-light);
-  border-radius: var(--radius-lg);
-}
-
-.overview-card h2,
-.overview-card p {
-  margin: 0;
-}
-
-.overview-card h2 {
-  font-size: 15px;
-}
-
-.overview-card p {
-  margin-top: 5px;
-  color: var(--color-text-secondary);
-  font-size: 12px;
-}
-
-.overview-card__meta {
-  color: var(--color-text-tertiary);
-  font-size: 12px;
-  white-space: nowrap;
 }
 
 .profile-settings {
@@ -1390,6 +1131,62 @@ function openMigratedCategoryDeleteModal() {
   margin-top: var(--space-6);
 }
 
+.personal-batch-modal { width: min(860px, calc(100vw - 48px)); overflow: hidden; border-radius: 18px; }
+.personal-batch { display: grid; background: #fff; }
+.personal-batch__head { display: flex; min-height: 112px; align-items: center; justify-content: space-between; padding: 22px 26px; color: #fff; background: linear-gradient(120deg, #1754c6, #3788ff); }
+.personal-batch__head span { display: block; margin-bottom: 8px; font-size: 12px; font-weight: 900; letter-spacing: .12em; }
+.personal-batch__head h3 { margin: 0; font-size: 24px; }
+.personal-batch__head button { display: grid; width: 34px; height: 34px; place-items: center; color: #fff; background: rgba(255,255,255,.16); border: 0; border-radius: 50%; cursor: pointer; font-size: 22px; }
+.personal-batch__body { display: grid; grid-template-columns: minmax(0, 1.25fr) minmax(280px, .75fr); gap: 18px; max-height: calc(100dvh - 260px); overflow: auto; padding: 22px 24px; }
+.personal-batch__picker, .personal-batch__operation { display: grid; align-content: start; gap: 14px; padding: 16px; background: #f8fafc; border: 1px solid var(--color-border); border-radius: 16px; }
+.personal-batch__picker-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; }
+.personal-batch__picker-head strong, .personal-batch__operation > strong { display: block; color: var(--color-text-primary); font-size: 16px; }
+.personal-batch__picker-head small { display: block; margin-top: 4px; color: var(--color-text-muted); font-size: 12px; }
+.personal-batch__picker-actions { display: flex; gap: 8px; }
+.personal-batch__picker-actions button { padding: 6px 10px; color: var(--color-primary); background: #fff; border: 1px solid var(--color-border); border-radius: 8px; cursor: pointer; font-weight: 800; }
+.personal-batch__list { display: grid; gap: 10px; max-height: 460px; overflow: auto; padding-right: 4px; }
+.personal-batch__item { display: grid; grid-template-columns: auto auto minmax(0, 1fr); align-items: center; gap: 12px; padding: 12px; background: #fff; border: 1px solid var(--color-border); border-radius: 13px; cursor: pointer; }
+.personal-batch__item.child { margin-left: 24px; }
+.personal-batch__item.checked { border-color: #1677ff; box-shadow: 0 0 0 3px rgba(22,119,255,.1); }
+.personal-batch__item .item-icon { display: grid; width: 34px; height: 34px; overflow: hidden; place-items: center; color: #fff; border-radius: 9px; }
+.personal-batch__item .item-icon img { width: 100%; height: 100%; object-fit: cover; }
+.personal-batch__item strong, .personal-batch__item small { display: block; }
+.personal-batch__item small { margin-top: 4px; color: var(--color-text-muted); font-size: 12px; }
+.personal-batch__operation > label { display: grid; gap: 8px; font-size: 12px; font-weight: 800; }
+.personal-batch__preview, .personal-batch__danger { padding: 14px; background: #fff; border: 1px solid var(--color-border); border-radius: 12px; }
+.personal-batch__danger { color: #b42318; background: #fff1f0; border-color: #ffd5d2; }
+.personal-batch__danger strong { color: #b42318; font-size: 13px; }
+.personal-batch__danger p, .personal-batch__preview p { margin: 8px 0 0; line-height: 1.6; }
+.personal-batch__preview span { color: var(--color-text-muted); font-size: 12px; font-weight: 800; }
+.personal-batch__footer { display: flex; justify-content: flex-end; gap: 10px; padding: 16px 24px; background: #f8fafc; border-top: 1px solid var(--color-border); }
+
+@media (max-width: 760px) {
+  .personal-batch__body { grid-template-columns: 1fr; }
+  .personal-batch__item.child { margin-left: 12px; }
+}
+
+.profile-logout {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-4);
+  margin-top: var(--space-6);
+  padding-top: var(--space-5);
+  border-top: 1px solid var(--color-border);
+}
+
+.profile-logout h3 {
+  margin: 0;
+  color: var(--color-danger);
+  font-size: var(--font-body);
+}
+
+.profile-logout p {
+  margin: var(--space-1) 0 0;
+  color: var(--color-text-muted);
+  font-size: var(--font-caption);
+}
+
 .profile-message {
   margin: var(--space-4) 0 0;
   color: var(--color-success);
@@ -1401,14 +1198,12 @@ function openMigratedCategoryDeleteModal() {
 }
 
 .settings-section h2,
-.category-zone h3,
 .category-form h4,
 .danger-zone h3 {
   margin: 0;
 }
 
 .settings-section p,
-.category-zone p,
 .category-form p,
 .danger-zone p {
   margin: var(--space-1) 0 0;
@@ -1499,91 +1294,6 @@ function openMigratedCategoryDeleteModal() {
   border-color: #ffccc7;
 }
 
-.migration-panel {
-  display: grid;
-  grid-template-columns: 1fr minmax(420px, .9fr);
-  gap: var(--space-4);
-  align-items: start;
-  padding: var(--space-5);
-  background: linear-gradient(135deg, #fff7ed, #fff);
-  border: 1px solid #fed7aa;
-  border-radius: var(--radius-lg);
-  box-shadow: 0 18px 42px rgba(234, 88, 12, .08);
-}
-
-.migration-panel.done {
-  background: linear-gradient(135deg, #f0fdf4, #fff);
-  border-color: #bbf7d0;
-  box-shadow: 0 18px 42px rgba(22, 163, 74, .08);
-}
-
-.migration-panel > div:first-child span {
-  display: inline-flex;
-  height: 24px;
-  align-items: center;
-  padding: 0 var(--space-2);
-  color: #c2410c;
-  background: #ffedd5;
-  border-radius: 999px;
-  font-size: 12px;
-  font-weight: 800;
-}
-
-.migration-panel.done > div:first-child span {
-  color: #15803d;
-  background: #dcfce7;
-}
-
-.migration-panel h3 {
-  margin: var(--space-2) 0 0;
-}
-
-.migration-route {
-  display: inline-grid;
-  gap: 2px;
-  margin-top: var(--space-4);
-  padding: var(--space-3) var(--space-4);
-  background: rgba(255, 255, 255, .72);
-  border: 1px solid rgba(148, 163, 184, .22);
-  border-radius: var(--radius-lg);
-}
-
-.migration-route small {
-  color: var(--color-text-muted);
-  font-size: 12px;
-  font-weight: 700;
-}
-
-.migration-route strong {
-  color: var(--color-text-primary);
-}
-
-.migration-form {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: var(--space-3);
-}
-
-.migration-form label {
-  display: grid;
-  gap: var(--space-2);
-  color: var(--color-text-secondary);
-  font-size: var(--font-caption);
-  font-weight: 800;
-}
-
-.migration-form .action-row {
-  grid-column: 1 / -1;
-  justify-content: flex-end;
-}
-
-.migration-done-actions {
-  grid-column: 1 / -1;
-  display: flex;
-  justify-content: flex-end;
-  gap: var(--space-3);
-}
-
 .delete-impact {
   display: grid;
   gap: var(--space-4);
@@ -1633,16 +1343,6 @@ function openMigratedCategoryDeleteModal() {
   justify-content: flex-end;
 }
 
-.category-zone {
-  display: grid;
-  gap: var(--space-4);
-  padding: var(--space-4);
-  background: var(--color-bg-card);
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-lg);
-}
-
-.category-zone__head,
 .category-editor {
   display: grid;
   grid-template-columns: 1fr auto;
@@ -1726,9 +1426,21 @@ function openMigratedCategoryDeleteModal() {
 
 .ledger-category-layout {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) 340px;
+  grid-template-columns: 1fr;
   gap: var(--space-4);
   align-items: start;
+}
+
+.category-editor {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.category-editor .category-list {
+  order: 1;
+}
+
+.category-editor .category-form {
+  order: 2;
 }
 
 .category-inspector {
@@ -1770,13 +1482,53 @@ function openMigratedCategoryDeleteModal() {
 }
 
 .category-form {
-  width: 320px;
+  width: 100%;
+  display: grid;
+  gap: 0;
+  overflow: hidden;
+  background: #fff;
+  border: 0;
+  border-radius: 0;
+}
+
+.category-form__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 22px 24px;
+  color: #fff;
+  background: linear-gradient(135deg, #1459d5, #3387ff);
+}
+
+.category-form__head span {
+  display: block;
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: .08em;
+}
+
+.category-form__head h3 {
+  margin: 8px 0 0;
+  font-size: 22px;
+}
+
+.category-form__head > button {
+  display: grid;
+  width: 32px;
+  height: 32px;
+  place-items: center;
+  color: #fff;
+  background: rgba(255, 255, 255, .16);
+  border: 0;
+  border-radius: 50%;
+  cursor: pointer;
+  font-size: 22px;
+}
+
+.category-form__body {
   display: grid;
   gap: var(--space-3);
-  padding: var(--space-4);
-  background: var(--color-bg-hover);
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-lg);
+  padding: 20px 24px;
 }
 
 .category-form label {
@@ -1787,19 +1539,82 @@ function openMigratedCategoryDeleteModal() {
   font-weight: 700;
 }
 
-.color-input {
+.category-form__hint {
+  margin: 0;
+  color: var(--color-text-tertiary);
+  font-size: var(--font-caption);
+  line-height: 1.6;
+}
+
+.category-form__actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+  padding: 16px 24px;
+  background: var(--color-bg-hover);
+  border-top: 1px solid var(--color-border);
+}
+
+.scope-field {
   display: grid;
-  grid-template-columns: 44px 1fr;
+  gap: var(--space-2);
+  color: var(--color-text-secondary);
+  font-size: var(--font-caption);
+  font-weight: 700;
+}
+
+.scope-options {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: var(--space-2);
 }
 
-.color-input input {
-  width: 44px;
-  height: 34px;
-  padding: 0;
-  background: transparent;
+.category-icon-upload {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.category-icon-preview {
+  display: grid;
+  width: 48px;
+  height: 48px;
+  place-items: center;
+  overflow: hidden;
+  color: var(--color-primary);
+  background: #eef4ff;
+  border: 1px solid #bbd5ff;
+  border-radius: 12px;
+  font-weight: 800;
+}
+
+.category-icon-preview img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.category-enabled-row {
+  display: flex !important;
+  grid-template-columns: none;
+  align-items: center;
+  gap: 8px;
+  cursor: pointer;
+}
+
+.scope-options label {
+  display: flex;
+  min-height: 36px;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 0 var(--space-2);
+  background: #fff;
   border: 1px solid var(--color-border);
   border-radius: var(--radius-md);
+  cursor: pointer;
+  white-space: nowrap;
 }
 
 .category-list {
@@ -1854,14 +1669,18 @@ function openMigratedCategoryDeleteModal() {
 
 .category-tree__body {
   display: grid;
-  gap: var(--space-3);
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: var(--space-4);
 }
 
 .category-parent-card {
   display: grid;
-  grid-template-columns: 1fr auto;
+  position: relative;
+  grid-template-columns: 52px minmax(0, 1fr);
   gap: var(--space-3);
-  padding: var(--space-3);
+  align-items: center;
+  overflow: hidden;
+  padding: var(--space-4) var(--space-4) 0;
   background: #fff;
   border: 1px solid var(--color-border);
   border-radius: var(--radius-lg);
@@ -1875,15 +1694,72 @@ function openMigratedCategoryDeleteModal() {
 
 .category-parent-main {
   min-width: 0;
-  display: grid;
-  grid-template-columns: 12px 1fr;
-  gap: var(--space-3);
+  display: block;
+  padding-right: 112px;
   align-items: center;
   color: var(--color-text-primary);
   background: transparent;
   border: 0;
   cursor: pointer;
   text-align: left;
+}
+
+.category-parent-main .category-color,
+.category-item .category-color {
+  display: none;
+}
+
+.category-parent-card::before,
+.category-item::before {
+  display: grid;
+  width: 52px;
+  height: 52px;
+  align-items: center;
+  justify-content: center;
+  color: #fff;
+  background: #1677ff;
+  border-radius: 14px;
+  content: "分";
+  font-size: 14px;
+  font-weight: 800;
+}
+
+.category-parent-card strong,
+.category-item strong {
+  display: block;
+  font-size: 16px;
+}
+
+.category-parent-card small,
+.category-item small {
+  display: block;
+  margin-top: 6px;
+  color: var(--color-text-secondary);
+}
+
+.category-card-footer {
+  grid-column: 1 / -1;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  margin: var(--space-3) calc(var(--space-4) * -1) 0;
+  border-top: 1px solid var(--color-border);
+}
+
+.category-card-footer button,
+.category-card-footer span {
+  min-height: 42px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--color-primary);
+  background: transparent;
+  border: 0;
+  cursor: pointer;
+  font-weight: 800;
+}
+
+.category-card-footer > :first-child {
+  border-right: 1px solid var(--color-border);
 }
 
 .category-child-list {
@@ -1937,13 +1813,20 @@ function openMigratedCategoryDeleteModal() {
 
 .category-item {
   display: grid;
-  grid-template-columns: 12px 1fr auto;
+  position: relative;
+  grid-template-columns: 52px minmax(0, 1fr);
   gap: var(--space-3);
   align-items: center;
-  padding: var(--space-3);
+  overflow: hidden;
+  padding: var(--space-4) var(--space-4) 0;
   background: #fff;
   border: 1px solid var(--color-border);
   border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-card);
+}
+
+.category-item > div:not(.category-actions):not(.category-card-footer) {
+  padding-right: 112px;
 }
 
 .category-color {
@@ -1957,9 +1840,118 @@ function openMigratedCategoryDeleteModal() {
   display: block;
 }
 
+.category-item__main {
+  min-width: 0;
+  padding-right: 112px;
+  color: var(--color-text-primary);
+  background: transparent;
+  border: 0;
+  cursor: pointer;
+  text-align: left;
+}
+
 .category-item small {
   margin-top: 2px;
   color: var(--color-text-tertiary);
+}
+
+.category-card-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: var(--space-4);
+}
+
+.personal-category-child {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+  padding: 9px 10px;
+  background: #fff;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+}
+
+.personal-children-list {
+  display: grid;
+  gap: 10px;
+  max-height: min(520px, calc(100dvh - 240px));
+  overflow: auto;
+  padding: 20px 24px;
+}
+
+.personal-category-child > button {
+  min-width: 0;
+  color: var(--color-text-primary);
+  text-align: left;
+  background: transparent;
+  border: 0;
+  cursor: pointer;
+}
+
+.personal-category-child strong,
+.personal-category-child small {
+  display: block;
+}
+
+.personal-category-child small {
+  margin-top: 2px;
+  color: var(--color-text-tertiary);
+  font-size: 12px;
+}
+
+.personal-category-child > span {
+  display: flex;
+  gap: 6px;
+}
+
+.personal-category-child > span button {
+  padding: 4px 8px;
+  color: var(--color-primary);
+  background: var(--color-primary-light);
+  border: 1px solid #bbd5ff;
+  border-radius: 7px;
+  cursor: pointer;
+  font-size: 12px;
+}
+
+.personal-category-child > span .danger {
+  color: var(--color-danger);
+  background: #fff1f0;
+  border-color: #ffccc7;
+}
+
+.personal-category-badges {
+  grid-column: 2;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: calc(var(--space-2) * -1);
+}
+
+.personal-category-badges em {
+  padding: 3px 8px;
+  color: var(--color-primary);
+  background: var(--color-primary-light);
+  border-radius: 999px;
+  font-size: 12px;
+  font-style: normal;
+  font-weight: 700;
+}
+
+.personal-category-badges .scope-expense {
+  color: #e64545;
+  background: #fff1f0;
+}
+
+.personal-category-badges .scope-income {
+  color: #129b62;
+  background: #ecfdf3;
+}
+
+.personal-category-badges .disabled {
+  color: #667085;
+  background: #f2f4f7;
 }
 
 .category-actions {
@@ -1967,9 +1959,17 @@ function openMigratedCategoryDeleteModal() {
   gap: var(--space-2);
 }
 
+.category-parent-card > .category-actions,
+.category-item > .category-actions {
+  position: absolute;
+  top: var(--space-3);
+  right: var(--space-3);
+}
+
 .category-actions button {
-  height: 30px;
-  padding: 0 var(--space-3);
+  height: 28px;
+  min-width: 28px;
+  padding: 0 var(--space-2);
   color: var(--color-primary);
   background: var(--color-primary-light);
   border: 1px solid #bbd5ff;
@@ -2032,16 +2032,10 @@ function openMigratedCategoryDeleteModal() {
     grid-template-columns: 220px minmax(0, 1fr);
   }
 
-  .category-zone__head,
   .category-editor,
   .ledger-category-layout,
-  .migration-panel,
   .backup-zone,
   .danger-zone {
-    grid-template-columns: 1fr;
-  }
-
-  .migration-form {
     grid-template-columns: 1fr;
   }
 
@@ -2062,6 +2056,11 @@ function openMigratedCategoryDeleteModal() {
     width: auto;
   }
 
+  .category-tree__body,
+  .category-card-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
   .asset-category-toolbar {
     grid-template-columns: 1fr;
   }
@@ -2072,6 +2071,11 @@ function openMigratedCategoryDeleteModal() {
 }
 
 @media (max-width: 760px) {
+  .category-tree__body,
+  .category-card-grid {
+    grid-template-columns: 1fr;
+  }
+
   .settings-identity {
     align-items: flex-start;
   }

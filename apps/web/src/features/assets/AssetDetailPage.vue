@@ -87,126 +87,36 @@
       </button>
     </div>
 
-    <RCard v-if="activeTab === overviewTab">
-      <div class="overview-panel">
-        <div class="overview-panel__hero">
-          <div>
-            <span>资产概览</span>
-            <h3>{{ asset.name }} 的使用与成本状态</h3>
-            <p>把持有、保修、估值和日均成本放在一起看，方便判断这件物品还值不值得继续留着。</p>
-          </div>
-          <div class="overview-score">
-            <span>日均成本</span>
-            <strong>{{ formatAmount(dailyCost) }}</strong>
-          </div>
-        </div>
+    <AssetOverviewPanel
+      v-if="activeTab === overviewTab"
+      :asset="asset"
+      :overview-metrics="overviewMetrics"
+      :addon-cost="addonCost"
+      :total-cost="totalCost"
+      :daily-cost="dailyCost"
+      :profit-loss="profitLoss"
+      :format-amount="formatAmount"
+      :status-label="statusLabel"
+    />
 
-        <div class="overview-metrics">
-          <div v-for="metric in overviewMetrics" :key="metric.label" class="overview-metric" :class="metric.tone">
-            <span>{{ metric.label }}</span>
-            <strong>{{ metric.value }}</strong>
-            <small>{{ metric.hint }}</small>
-          </div>
-        </div>
+    <AssetAddonListPanel
+      v-if="activeTab === addonTab"
+      :asset-addons="assetAddons"
+      :can-manage-addons="canManageAddons"
+      :status-label="statusLabel(asset.status)"
+      :addon-cover="addonCover"
+      :addon-direction="addonDirection"
+      :addon-direction-label="addonDirectionLabel"
+      :addon-type-label="addonTypeLabel"
+      :format-amount="formatAmount"
+      :account-name="accountName"
+      @create="openAddonCreate"
+      @detail="openAddonDetail"
+      @edit="openAddonEdit"
+      @delete="openDeleteAddon"
+    />
 
-        <div class="overview-grid">
-          <div class="overview-block">
-            <span>成本结构</span>
-            <div class="overview-row"><em>原始购入价</em><strong>{{ formatAmount(asset.originalCost) }}</strong></div>
-            <div class="overview-row"><em>附加项合计</em><strong>{{ formatAmount(addonCost) }}</strong></div>
-            <div class="overview-row total"><em>资产总成本</em><strong>{{ formatAmount(totalCost) }}</strong></div>
-          </div>
-          <div class="overview-block">
-            <span>生命周期</span>
-            <div class="overview-row"><em>购买日期</em><strong>{{ asset.purchaseDate }}</strong></div>
-            <div class="overview-row"><em>过保日期</em><strong>{{ asset.warrantyEndDate || "-" }}</strong></div>
-            <div class="overview-row total"><em>当前状态</em><strong>{{ statusLabel(asset.status) }}</strong></div>
-          </div>
-          <div class="overview-block accent">
-            <span>{{ profitLoss >= 0 ? "当前收益" : "当前损失" }}</span>
-            <strong>{{ formatAmount(Math.abs(profitLoss)) }}</strong>
-            <p>按当前估值与资产总成本估算，不影响历史记账流水。</p>
-          </div>
-        </div>
-      </div>
-    </RCard>
-
-    <RCard v-else-if="activeTab === addonTab">
-      <div class="section-card">
-        <div class="section-card__head">
-          <h3>附加项（{{ assetAddons.length }}）</h3>
-          <RButton data-testid="asset-add-addon" :disabled="!canManageAddons" @click="openAddonCreate">+ 添加附加项</RButton>
-        </div>
-
-        <div v-if="!canManageAddons" class="readonly-hint">
-          当前资产状态为「{{ statusLabel(asset.status) }}」，附加项进入只读模式。如需修改，请先恢复为使用中。
-        </div>
-
-        <table v-if="assetAddons.length" class="simple-table">
-          <thead>
-            <tr>
-              <th>附加项</th>
-              <th>收支</th>
-              <th>类型</th>
-              <th>金额</th>
-              <th>日期</th>
-              <th>账户</th>
-              <th>是否计入成本</th>
-              <th>操作</th>
-            </tr>
-          </thead>
-          <tbody>
-            <tr v-for="addon in assetAddons" :key="addon.id">
-              <td>
-                <div class="addon-cell">
-                  <div class="addon-thumb">
-                    <img v-if="addonCover(addon)" :src="addonCover(addon)" :alt="addon.name" />
-                    <span v-else>{{ addon.name.slice(0, 1) }}</span>
-                  </div>
-                  <strong>{{ addon.name }}</strong>
-                </div>
-              </td>
-              <td><RTag :tone="addonDirection(addon) === 'income' ? 'success' : 'danger'">{{ addonDirectionLabel(addon) }}</RTag></td>
-              <td>{{ addonTypeLabel(addon.type, addonDirection(addon)) }}</td>
-              <td :class="addonDirection(addon) === 'income' ? 'success' : 'danger'">{{ addonDirection(addon) === "income" ? "+" : "-" }}{{ formatAmount(addon.amount) }}</td>
-              <td>{{ addon.purchaseDate }}</td>
-              <td>{{ accountName(addon.paymentAccountId) }}</td>
-              <td>{{ addonDirection(addon) === "income" ? "收入不计成本" : addon.includedInCost ? "计入成本" : "不计入成本" }}</td>
-              <td class="table-actions">
-                <button type="button" @click="openAddonDetail(addon)">查看</button>
-                <button v-if="canManageAddons" type="button" @click="openAddonEdit(addon)">编辑</button>
-                <button v-if="canManageAddons" type="button" class="danger" @click="openDeleteAddon(addon)">删除</button>
-              </td>
-            </tr>
-          </tbody>
-        </table>
-
-        <REmptyState v-else title="暂无附加项" description="新买 CPU、维修支出、卖掉旧配件的收入都可以沉淀到这里。" />
-      </div>
-    </RCard>
-
-    <RCard v-else-if="activeTab === historyTab">
-      <div class="section-card">
-        <div class="section-card__head">
-          <h3>历史记录（{{ assetHistoryItems.length }}）</h3>
-        </div>
-
-        <div v-if="assetHistoryItems.length" class="history-timeline">
-          <div v-for="item in assetHistoryItems" :key="item.id" class="history-item">
-            <div class="history-dot" :class="item.tone"></div>
-            <div class="history-card">
-              <div>
-                <span>{{ item.time }}</span>
-                <strong>{{ item.title }}</strong>
-              </div>
-              <p>{{ item.description }}</p>
-            </div>
-          </div>
-        </div>
-
-        <REmptyState v-else title="暂无历史记录" description="后续对资产和附加项的操作会沉淀到这里。" />
-      </div>
-    </RCard>
+    <AssetHistoryPanel v-if="activeTab === historyTab" :items="assetHistoryItems" />
 
     <Teleport to="body">
       <div v-if="showAddonModal" class="modal-overlay">
@@ -475,6 +385,9 @@ import RSelect from "@/components/ui/RSelect.vue";
 import RTag from "@/components/ui/RTag.vue";
 import RDataGate from "@/components/ui/RDataGate.vue";
 import RInlineFeedback from "@/components/ui/RInlineFeedback.vue";
+import AssetAddonListPanel from "@/components/business/AssetAddonListPanel.vue";
+import AssetHistoryPanel from "@/components/business/AssetHistoryPanel.vue";
+import AssetOverviewPanel from "@/components/business/AssetOverviewPanel.vue";
 import { addonImageUrls, assetImageUrls, assetTotalCost, includedAddonCost } from "@/domain/assetCalculations";
 import type { AssetAddonRecord, AssetRecord, PurchaseChannel } from "@/domain/models";
 import { assetAddonService } from "@/services/assetAddonService";
@@ -540,7 +453,7 @@ const addonErrors = reactive({
   form: "",
 });
 
-const transferDraft = reactive({
+let transferDraft = reactive({
   amount: "",
   date: Date.now() as number | null,
   accountId: null as string | number | null,

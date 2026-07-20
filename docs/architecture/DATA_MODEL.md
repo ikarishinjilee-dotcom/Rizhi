@@ -479,3 +479,15 @@ profitLoss = currentValueOrTransferIncome - totalCost
 5. 不改变资产总成本。如需调整当前估值，后续可通过资产估值编辑单独处理。
 
 `[前端兼容]` `assetPartEvents` 表可以作为本地旧数据兼容保留一段时间，`[后端规划]` 后端第一版不建议暴露对应 API。
+# 当前版本补充说明（2026-07-16）
+
+本文后续章节保留早期字段设计和迁移参考。当前运行时的事实来源是 `apps/web/src/domain/models.ts`、`apps/web/src/repositories/contracts.ts`、`apps/uni-app/uniCloud-alipay/database/*.schema.json` 和 `rizhi-api` 云函数。
+
+当前数据源有两种实现：
+
+- 本地模式：`rizhi-local-db`，由 Dexie/IndexedDB 提供，写入细节位于 `apps/web/src/db/actions.ts`。
+- 云端模式：uniCloud 数据库集合，由 token 对应 uid 隔离，Web 通过 `httpRepositories` 访问。
+
+当前模型已经使用 `attachments` 统一承载资产、附加项和凭证图片；`imageUrl`/`imageUrls` 只作为兼容输入或表单字段。分类还包含 `scopes`、启用状态、父子关系、账户组和银行关联等配置字段。站点品牌数据位于 `rizhi-site-branding` 集合。
+
+> 本文中标为“后端规划”的内容，如果与当前 Schema、仓储契约或云函数实现冲突，以代码为准。

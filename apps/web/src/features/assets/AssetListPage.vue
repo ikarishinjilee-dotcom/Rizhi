@@ -14,185 +14,40 @@
 				</div>
 			</header>
 
-			<section class="asset-summary-grid">
-				<article class="summary-card summary-card--primary">
-					<div class="summary-card__top">
-						<span>总资产（含附加）</span>
-					</div>
-					<strong class="summary-card__amount">
-						{{ showTotalAsset ? formatCurrency(totalAssetCost) : "••••••" }}
-						<button class="summary-card__visibility" type="button" aria-label="切换资产金额显示" @click.stop="showTotalAsset = !showTotalAsset">
-							<Eye v-if="showTotalAsset" :size="17" />
-							<EyeOff v-else :size="17" />
-						</button>
-					</strong>
-					<p>较上月 <b>+ {{ formatCurrency(monthlyAssetIncrease) }}</b><em>↑ {{ assetGrowthRate }}%</em></p>
-					<svg class="summary-card__sparkline" viewBox="0 0 220 64" aria-hidden="true">
-						<defs>
-							<linearGradient id="asset-summary-fill" x1="0" x2="0" y1="0" y2="1">
-								<stop offset="0" stop-color="#fff" stop-opacity="0.26" />
-								<stop offset="1" stop-color="#fff" stop-opacity="0" />
-							</linearGradient>
-						</defs>
-						<polygon :points="`${summarySparklinePoints} 220,64 0,64`" fill="url(#asset-summary-fill)" />
-						<polyline :points="summarySparklinePoints" />
-					</svg>
-				</article>
-				<article class="summary-card summary-card--stat summary-card--green">
-					<div class="summary-card__icon">
-						<Layers :size="24" />
-					</div>
-					<span>在用物品</span>
-					<strong>{{ usingCount }}</strong>
-					<div class="summary-card__popover">
-						<strong class="summary-card__popover-title">当前在用物品</strong>
-						<ul v-if="usingAssets.length"><li v-for="asset in usingAssets" :key="asset.id"><span>{{ asset.name }}</span><em>{{ asset.category }}</em></li></ul>
-						<p v-else>暂无在用物品</p>
-					</div>
-					<p>日均成本 <b>{{ formatCurrency(averageDailyCost) }}/天</b></p>
-				</article>
-				<article class="summary-card summary-card--stat summary-card--orange">
-					<div class="summary-card__icon">
-						<Archive :size="24" />
-					</div>
-					<span>闲置物品</span>
-					<strong>{{ idleCount }}</strong>
-					<div class="summary-card__popover">
-						<strong class="summary-card__popover-title">当前闲置物品</strong>
-						<ul v-if="idleAssets.length"><li v-for="asset in idleAssets" :key="asset.id"><span>{{ asset.name }}</span><em>{{ asset.category }}</em></li></ul>
-						<p v-else>暂无闲置物品</p>
-					</div>
-					<p>可考虑整理处理</p>
-				</article>
-				<article class="summary-card summary-card--stat summary-card--purple">
-					<div class="summary-card__icon">
-						<ShieldCheck :size="24" />
-					</div>
-					<span>即将过保</span>
-					<strong>{{ warrantySoonCount }}</strong>
-					<div class="summary-card__popover">
-						<strong class="summary-card__popover-title">即将过保物品</strong>
-						<ul v-if="warrantyAssets.length"><li v-for="asset in warrantyAssets" :key="asset.id"><span>{{ asset.name }}</span><em>{{ asset.warrantyDays == null ? '待确认' : `${asset.warrantyDays} 天内` }}</em></li></ul>
-						<p v-else>暂无即将过保物品</p>
-					</div>
-					<p>30 天内提醒</p>
-				</article>
-			</section>
+			<AssetSummaryGrid
+				v-model:show-total-asset="showTotalAsset"
+				:total-asset-cost="totalAssetCost"
+				:monthly-asset-increase="monthlyAssetIncrease"
+				:asset-growth-rate="assetGrowthRate"
+				:summary-sparkline-points="summarySparklinePoints"
+				:using-count="usingCount"
+				:idle-count="idleCount"
+				:warranty-soon-count="warrantySoonCount"
+				:average-daily-cost="averageDailyCost"
+				:using-assets="usingAssets"
+				:idle-assets="idleAssets"
+				:warranty-assets="warrantyAssets"
+				:format-currency="formatCurrency"
+			/>
 
-			<section class="asset-analytics">
-				<article class="analysis-card">
-					<div class="analysis-card__head">
-						<h2>资产构成</h2>
-						<div class="analysis-select">
-							<button type="button" @click="compositionMenuOpen = !compositionMenuOpen">
-								{{ compositionMode === "category" ? "按分类" : "按状态" }}
-								<ChevronDown :size="14" />
-							</button>
-							<div v-if="compositionMenuOpen" class="analysis-select__menu">
-								<button type="button" :class="{ active: compositionMode === 'category' }" @click="compositionMode = 'category'; compositionMenuOpen = false">按分类</button>
-								<button type="button" :class="{ active: compositionMode === 'status' }" @click="compositionMode = 'status'; compositionMenuOpen = false">按状态</button>
-							</div>
-						</div>
-					</div>
-					<div class="composition-chart">
-						<div class="donut" :style="{ background: compositionDonutGradient }" @mousemove="handleCompositionDonutMove" @mouseleave="hoveredCompositionKey = null"><i /><div v-if="hoveredComposition" class="composition-tooltip"><span><i :style="{ background: hoveredComposition.color }" />{{ hoveredComposition.name }}</span><b>{{ formatCurrency(hoveredComposition.total) }}</b><em>{{ hoveredComposition.percent }}%</em></div></div>
-						<div class="composition-list">
-							<div v-for="item in compositionStats" :key="item.id">
-								<span><i :style="{ background: item.color }" />{{ item.name }}</span>
-								<b>{{ formatCurrency(item.total) }}</b>
-								<em>{{ item.percent }}%</em>
-							</div>
-						</div>
-					</div>
-				</article>
-
-				<article class="analysis-card analysis-card--wide">
-					<div class="analysis-card__head">
-						<h2>资产趋势</h2>
-						<div class="analysis-select">
-							<button type="button" @click="trendMenuOpen = !trendMenuOpen">
-								{{ trendRangeLabel }}
-								<ChevronDown :size="14" />
-							</button>
-							<div v-if="trendMenuOpen" class="analysis-select__menu">
-								<button v-for="range in trendRanges" :key="range.value" type="button" :class="{ active: trendRange === range.value }" @click="trendRange = range.value; trendMenuOpen = false">{{ range.label }}</button>
-							</div>
-						</div>
-					</div>
-					<div class="trend-chart">
-						<div class="trend-y-axis" aria-hidden="true"><span v-for="item in trendYAxisLabels" :key="item.value" :style="{ top: `${item.top}%` }">{{ item.label }}</span></div>
-						<svg viewBox="0 0 520 190" aria-hidden="true">
-							<g class="trend-grid">
-								<line v-for="line in 4" :key="line" x1="0" x2="520" :y1="line * 38" :y2="line * 38" />
-							</g>
-							<polyline :points="trendPolylinePoints" />
-							<g v-for="(point, index) in trendPoints" :key="point.label"
-								@mouseenter="hoveredTrendIndex = index" @mouseleave="hoveredTrendIndex = null">
-								<circle class="trend-hit-area" :cx="point.x" :cy="point.y" r="18"
-									@focus="hoveredTrendIndex = index" @blur="hoveredTrendIndex = null" tabindex="0" />
-								<circle :cx="point.x" :cy="point.y" r="5" aria-hidden="true" />
-							</g>
-						</svg>
-						<div class="trend-labels" :style="{ gridTemplateColumns: `repeat(${trendPoints.length}, 1fr)` }">
-							<span v-for="point in trendPoints" :key="point.label">{{ formatTrendAxisLabel(point.label) }}</span>
-						</div>
-					<div v-if="hoveredTrendIndex !== null" class="trend-tooltip" :style="trendTooltipStyle">
-							<span>{{ activeTrendPoint?.label }}</span>
-							<strong>总资产：{{ formatCurrency(activeTrendPoint?.value ?? 0) }}</strong>
-						</div>
-					</div>
-				</article>
-
-				<article class="analysis-card">
-					<div class="analysis-card__head">
-						<h2>使用时长分布</h2>
-						<div class="analysis-select">
-							<button type="button" @click="usageMenuOpen = !usageMenuOpen">
-								{{ usageMode === "all" ? "全部" : usageMode === "using" ? "使用中" : "闲置" }}
-								<ChevronDown :size="14" />
-							</button>
-							<div v-if="usageMenuOpen" class="analysis-select__menu">
-								<button type="button" :class="{ active: usageMode === 'all' }" @click="usageMode = 'all'; usageMenuOpen = false">全部</button>
-								<button type="button" :class="{ active: usageMode === 'using' }" @click="usageMode = 'using'; usageMenuOpen = false">使用中</button>
-								<button type="button" :class="{ active: usageMode === 'idle' }" @click="usageMode = 'idle'; usageMenuOpen = false">闲置</button>
-							</div>
-						</div>
-					</div>
-					<div class="composition-chart">
-						<div class="donut donut--usage" :style="{ background: usageDonutGradient }"><i /></div>
-						<div class="composition-list">
-							<div v-for="item in usageStats" :key="item.name">
-								<span><i :style="{ background: item.color }" />{{ item.name }}</span>
-								<b>{{ item.count }}</b>
-								<em>({{ item.percent }}%)</em>
-							</div>
-						</div>
-					</div>
-				</article>
-			</section>
-
-			<div class="asset-toolbar">
-				<div class="tabs">
-					<button v-for="tab in tabs" :key="tab.value" type="button"
-						:class="{ active: activeTab === tab.value }"
-						@click="activeTab = tab.value; categoryFilter = tab.value">
-						{{ tab.label }}
-					</button>
-				</div>
-				<div class="asset-toolbar__right">
-					<RSelect v-model="sortBy" :options="sortOptions" placeholder="默认排序" />
-					<div class="view-switch">
-						<button :class="{ active: viewMode === 'card' }" type="button" aria-label="卡片视图"
-							@click="viewMode = 'card'">
-							<Grid2X2 :size="17" />
-						</button>
-						<button :class="{ active: viewMode === 'table' }" type="button" aria-label="列表视图"
-							@click="viewMode = 'table'">
-							<List :size="18" />
-						</button>
-					</div>
-				</div>
-			</div>
+			<AssetAnalyticsGrid
+				:composition-mode="compositionMode" :composition-menu-open="compositionMenuOpen" :composition-stats="compositionStats" :composition-donut-gradient="compositionDonutGradient" :hovered-composition="hoveredComposition"
+				:trend-range="trendRange" :trend-menu-open="trendMenuOpen" :trend-range-label="trendRangeLabel" :trend-ranges="trendRanges" :trend-y-axis-labels="trendYAxisLabels" :trend-polyline-points="trendPolylinePoints" :trend-points="trendPoints" :hovered-trend-index="hoveredTrendIndex" :trend-tooltip-style="trendTooltipStyle" :active-trend-point="activeTrendPoint"
+				:usage-mode="usageMode" :usage-menu-open="usageMenuOpen" :usage-stats="usageStats" :usage-donut-gradient="usageDonutGradient" :format-currency="formatCurrency" :format-trend-axis-label="formatTrendAxisLabel"
+				@update:composition-mode="compositionMode = $event" @update:composition-menu-open="compositionMenuOpen = $event" @composition-donut-move="handleCompositionDonutMove" @composition-hover="hoveredCompositionKey = $event"
+				@update:trend-range="trendRange = $event" @update:trend-menu-open="trendMenuOpen = $event" @trend-hover="hoveredTrendIndex = $event"
+				@update:usage-mode="usageMode = $event" @update:usage-menu-open="usageMenuOpen = $event"
+			/>
+			<AssetFilterToolbar
+				:tabs="tabs"
+				:active-tab="activeTab"
+				:sort-by="sortBy"
+				:sort-options="sortOptions"
+				:view-mode="viewMode"
+				@select-tab="activeTab = $event; categoryFilter = $event"
+				@update:sort-by="sortBy = $event"
+				@update:view-mode="viewMode = $event"
+			/>
 
 			<div v-if="filteredAssets.length && viewMode === 'card'" class="asset-grid">
 				<AssetCard v-for="asset in filteredAssets" :key="asset.id" :asset="asset" @open="openAsset"
@@ -256,27 +111,30 @@
 <script setup lang="ts">
 	import { computed, onMounted, ref } from "vue";
 	import { useRouter } from "vue-router";
-	import { Archive, ChevronDown, Eye, EyeOff, Grid2X2, Layers, List, Plus, ShieldCheck } from "@lucide/vue";
+	import { ChevronDown, Plus } from "@lucide/vue";
 	import AssetCard, { type AssetCardItem } from "@/components/business/AssetCard.vue";
+	import AssetFilterToolbar from "@/components/business/AssetFilterToolbar.vue";
+	import AssetSummaryGrid from "@/components/business/AssetSummaryGrid.vue";
+	import AssetAnalyticsGrid from "@/components/business/AssetAnalyticsGrid.vue";
 	import AssetUpsertModal, { type AssetUpsertDraft } from "@/components/business/AssetUpsertModal.vue";
 	import DeleteConfirmModal from "@/components/business/DeleteConfirmModal.vue";
 	import RButton from "@/components/ui/RButton.vue";
 	import RCard from "@/components/ui/RCard.vue";
 	import REmptyState from "@/components/ui/REmptyState.vue";
 	import RInput from "@/components/ui/RInput.vue";
-	import RSelect from "@/components/ui/RSelect.vue";
 	import RTag from "@/components/ui/RTag.vue";
 	import RDataGate from "@/components/ui/RDataGate.vue";
 	import { assetCategoryKind, assetImageUrls, assetTotalCost } from "@/domain/assetCalculations";
 	import type { AssetRecord } from "@/domain/models";
 	import { assetService } from "@/services/assetService";
 	import { useAppDataStore } from "@/stores/appDataStore";
+	import { formatCurrency } from "@/utils/formatters";
 
 	const router = useRouter();
 	const store = useAppDataStore();
 
 	const query = ref("");
-	const activeTab = ref("all");
+	const activeTab = ref<string | number>("all");
 	const statusFilter = ref<string | number | null>("all");
 	const categoryFilter = ref<string | number | null>("all");
 	const sortBy = ref<string | number | null>("purchaseDate");
@@ -608,10 +466,6 @@
 			imageUrl: images[0],
 			imageUrls: images,
 		};
-	}
-
-	function formatCurrency(value : number) {
-		return `¥${value.toLocaleString("zh-CN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 	}
 
 	function formatTrendAxisLabel(label : string) {

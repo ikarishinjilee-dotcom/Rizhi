@@ -4,8 +4,8 @@ export function includedAddonCost(assetId: string, addons: AssetAddonRecord[]) {
   return addons
     .filter((addon) => addon.assetId === assetId)
     .reduce((sum, addon) => {
-      if ((addon.direction ?? "expense") === "income") return sum - addon.amount;
-      return addon.includedInCost ? sum + addon.amount : sum;
+      if (!addon.includedInCost) return sum;
+      return (addon.direction ?? "expense") === "income" ? sum - addon.amount : sum + addon.amount;
     }, 0);
 }
 

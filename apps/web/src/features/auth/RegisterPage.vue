@@ -12,6 +12,7 @@
         <label>
           <span>用户名</span>
           <RInput v-model="form.username" placeholder="3-32 位用户名" />
+          <small v-if="usernameError" class="field-error">{{ usernameError }}</small>
         </label>
         <label>
           <span>昵称 <small>选填</small></span>
@@ -74,8 +75,16 @@ const captchaLoading = ref(false);
 const submitting = ref(false);
 const errorMessage = ref("");
 const branding = ref(getCachedSiteBranding());
+const usernameError = computed(() => {
+  const username = form.username.trim();
+  if (!username) return "";
+  return /^[A-Za-z0-9_]{3,32}$/.test(username)
+    ? ""
+    : "用户名仅支持 3-32 位英文字母、数字或下划线，不支持中文、空格和其他符号。";
+});
 const canSubmit = computed(() => (
-  form.username.trim().length >= 3
+  !usernameError.value
+  && form.username.trim().length >= 3
   && form.password.length >= 8
   && form.password === form.confirmPassword
   && form.captcha.trim().length === 4
@@ -95,7 +104,17 @@ async function refreshCaptcha() {
 }
 
 async function submit() {
-  if (!canSubmit.value || submitting.value) return;
+  if (submitting.value) return;
+  if (usernameError.value || form.username.trim().length < 3) {
+    errorMessage.value = usernameError.value || "请输入至少 3 位用户名。";
+    return;
+  }
+  if (!canSubmit.value) {
+    errorMessage.value = form.password !== form.confirmPassword
+      ? "两次输入的密码不一致。"
+      : "请完整填写注册信息并完成验证码。";
+    return;
+  }
   submitting.value = true;
   errorMessage.value = "";
   try {
@@ -193,6 +212,11 @@ onMounted(async () => {
 .auth-form small {
   color: var(--color-text-tertiary);
   font-weight: 400;
+}
+
+.auth-form .field-error {
+  color: var(--color-danger);
+  font-weight: 500;
 }
 
 .field-grid {

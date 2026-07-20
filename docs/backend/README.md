@@ -1,43 +1,38 @@
 # 当前后端说明
 
-日值 V2 的正式后端采用支付宝云 uniCloud，用户体系采用 uni-id。
-
-## 唯一云端源码
+日值当前正式后端采用支付宝云 uniCloud，用户体系采用 uni-id。正式源码位于：
 
 ```text
 apps/uni-app/uniCloud-alipay/
-├─ cloudfunctions/
-│  └─ rizhi-api/
-└─ database/
+├─ cloudfunctions/rizhi-api/       PC Web URL 化 API
+└─ database/                       业务数据 Schema
 ```
 
-uni-id 的云对象、公共模块和数据库 Schema 位于：
+## 当前职责
 
-```text
-apps/uni-app/src/uni_modules/
+- `rizhi-api` 提供健康检查、认证代理、业务数据、附件、备份、站点品牌和管理员接口。
+- `uni-id-common`/`uni-id-pages` 提供用户认证能力和跨端登录支持。
+- 数据按 token 对应的 uid 隔离，客户端不能自行传入用户 ID 覆盖归属。
+- Web 端通过 `VITE_API_BASE_URL` 访问 URL 化云函数；默认业务前缀为 `/rizhi-api/api/v1`。
+
+## 开发与部署
+
+云函数和 Schema 使用 HBuilderX/uniCloud 控制台部署；PC Web 只部署静态资源：
+
+```powershell
+npm.cmd run build:production
+npm.cmd run deploy:web:production
 ```
 
-部署时使用 HBuilderX 打开 `apps/uni-app/`，关联支付宝云空间后上传相关 Schema、公共模块和云函数。
+测试环境使用：
 
-## 当前约束
+```powershell
+npm.cmd run build:test
+npm.cmd run deploy:web:test
+```
 
-- 业务接口必须从有效 token 获取 uid。
-- 客户端不能传入或覆盖数据所属用户。
-- PC Web 通过 URL 化接口访问云端。
-- uni-app 优先通过 uniCloud 云对象访问云端。
-- `server/` 目录中的 Fastify 后端不再作为正式部署目标。
+完整步骤见 [部署说明](../DEPLOYMENT.md) 和 [uniCloud 迁移说明](./UNICLOUD_MIGRATION.md)。
 
-## uni-id 定制
+## 退役后端
 
-`uni-id-pages` 包含两项项目级定制，升级插件时必须复核：
-
-- `common/universal.js`：允许 PC Web 使用 `text/plain` 请求，避免支付宝云默认网关的 OPTIONS 预检限制。
-- `uni-id-co/index.obj.js`：支付宝云内部 `callFunction` 上下文的 AppID 不可靠，内部调用统一使用本项目唯一的 DCloud AppID。
-
-PC Web 不直接 URL 化 `uni-id-co`。登录统一经过 `rizhi-api/api/v1/auth/login`，再由云函数内部调用 `uni-id-co`。
-
-## 相关文档
-
-- [V2 架构](../architecture/V2_ARCHITECTURE.md)
-- [uniCloud 迁移说明](./UNICLOUD_MIGRATION.md)
-- [旧 Fastify 后端资料](../legacy/fastify/README.md)
+根目录 `server/` 对应的 Fastify + SQLite 方案已经退役，不是正式部署目标。相关文档统一放在 `docs/legacy/fastify/`，仅用于历史数据和业务规则迁移核对。

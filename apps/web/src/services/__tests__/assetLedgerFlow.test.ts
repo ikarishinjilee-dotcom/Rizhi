@@ -142,7 +142,7 @@ describe("asset and ledger linked writes", () => {
     const transaction = addon.transactionId ? await rizhiDb.transactions.get(addon.transactionId) : undefined;
 
     expect(afterAccount?.balance).toBe((beforeAccount?.balance ?? 0) + 50);
-    expect(savedAddon?.includedInCost).toBe(false);
+    expect(savedAddon?.includedInCost).toBe(true);
     expect(assetTotalCost(asset!, afterAddons)).toBe(beforeCost - 50);
     expect(transaction).toMatchObject({
       type: "income",
@@ -152,6 +152,34 @@ describe("asset and ledger linked writes", () => {
       assetId: "ast_000002",
       addonId: addon.id,
     });
+  });
+
+  it("creates an income add-on without changing asset cost when excluded", async () => {
+    const asset = await rizhiDb.assets.get("ast_000002");
+    const beforeAccount = await rizhiDb.accounts.get("alipay");
+    const beforeAddons = await rizhiDb.assetAddons.where("assetId").equals("ast_000002").toArray();
+    expect(asset).toBeTruthy();
+    expect(beforeAccount).toBeTruthy();
+
+    const beforeCost = assetTotalCost(asset!, beforeAddons);
+    const addon = await assetAddonService.create({
+      assetId: "ast_000002",
+      name: "不计成本的回款",
+      direction: "income",
+      type: "other",
+      amount: 35,
+      currency: "CNY",
+      purchaseDate: "2026-06-19",
+      paymentAccountId: "alipay",
+      includedInCost: false,
+    });
+
+    const afterAddons = await rizhiDb.assetAddons.where("assetId").equals("ast_000002").toArray();
+    const transaction = addon.transactionId ? await rizhiDb.transactions.get(addon.transactionId) : undefined;
+
+    expect((await rizhiDb.accounts.get("alipay"))?.balance).toBe((beforeAccount?.balance ?? 0) + 35);
+    expect(assetTotalCost(asset!, afterAddons)).toBe(beforeCost);
+    expect(transaction).toMatchObject({ type: "income", amount: 35, addonId: addon.id });
   });
 
   it("updates an add-on from expense to income and rewrites the linked transaction/account effect", async () => {
@@ -195,7 +223,7 @@ describe("asset and ledger linked writes", () => {
       : [];
 
     expect(afterAccount?.balance).toBe((beforeAccount?.balance ?? 0) + 25);
-    expect(savedAddon).toMatchObject({ direction: "income", includedInCost: false, amount: 25 });
+    expect(savedAddon).toMatchObject({ direction: "income", includedInCost: true, amount: 25 });
     expect(assetTotalCost(asset!, afterAddons)).toBe(beforeCost - 25);
     expect(transaction).toMatchObject({
       type: "income",

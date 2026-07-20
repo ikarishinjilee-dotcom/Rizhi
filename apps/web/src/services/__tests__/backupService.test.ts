@@ -54,4 +54,35 @@ describe("backupService", () => {
     expect(await rizhiDb.accounts.count()).toBe(payload.data.accounts.length);
     expect(await rizhiDb.transactions.count()).toBe(payload.data.transactions.length);
   });
+
+  it("keeps custom parent and child categories attached to imported transactions", async () => {
+    const parentId = "custom-category-parent";
+    const childId = "custom-category-child";
+    const transactionId = "custom-category-transaction";
+
+    await rizhiDb.categories.bulkPut([
+      { id: parentId, domain: "transaction", type: "expense", name: "A 用户分类", sort: 900, color: "#123456", enabled: true, isSystem: false },
+      { id: childId, domain: "transaction", type: "expense", name: "A 用户子分类", parentId, sort: 910, enabled: true, isSystem: false },
+    ]);
+    await rizhiDb.transactions.put({
+      id: transactionId,
+      type: "expense",
+      categoryId: parentId,
+      subCategoryId: childId,
+      categorySnapshot: { categoryName: "A 用户分类", subCategoryName: "A 用户子分类" },
+      amount: 128,
+      occurredAt: "2026-07-20T08:00:00.000Z",
+      createdAt: "2026-07-20T08:00:00.000Z",
+      updatedAt: "2026-07-20T08:00:00.000Z",
+    });
+
+    const payload = await backupService.createPayload();
+    await rizhiDb.categories.clear();
+    await rizhiDb.transactions.clear();
+    await backupService.restorePayload(payload);
+
+    expect(await rizhiDb.categories.get(parentId)).toMatchObject({ name: "A 用户分类", isSystem: false });
+    expect(await rizhiDb.categories.get(childId)).toMatchObject({ name: "A 用户子分类", parentId, isSystem: false });
+    expect(await rizhiDb.transactions.get(transactionId)).toMatchObject({ categoryId: parentId, subCategoryId: childId });
+  });
 });

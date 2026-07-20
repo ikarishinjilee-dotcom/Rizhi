@@ -55,3 +55,6 @@ Restore validates the selected file and creates a pre-restore safety backup.
 5. Start with `npm start` and verify `GET /api/v1/health`.
 6. Verify `RIZHI_API_TOKEN` is configured.
 7. Verify the reverse proxy uses HTTPS and does not expose the SQLite directory.
+# 历史资料说明（2026-07-16）
+
+本文中的 `npm start`、SQLite 备份和 Fastify 部署命令均已失效。当前 Web/uniCloud 部署请使用 `docs/DEPLOYMENT.md`。

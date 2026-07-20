@@ -5,160 +5,91 @@
 				<h2>{{ panelTitle }}</h2>
 				<p>{{ panelDescription }}</p>
 			</div>
-			<RButton @click="startCreate">新增{{ domain === "account" ? "账户类型" : "一级分类" }}</RButton>
+			<div class="panel-actions">
+				<template v-if="domain === 'asset'">
+					<RButton variant="secondary" @click="exportDefaults">导出默认分类备份</RButton>
+				</template>
+			</div>
 		</header>
 
 		<RInlineFeedback v-if="message" :tone="messageTone">{{ message }}</RInlineFeedback>
-		<div v-if="domain === 'asset'" class="dictionary-toolbar">
-			<RInput v-model="query" placeholder="搜索分类名称" />
-			<RSelect v-model="statusFilter" :options="statusOptions" />
-			<RSelect v-model="scopeFilter" :options="scopeOptions" />
-			<div class="toolbar-actions">
-				<RButton variant="secondary" @click="startBatch">批量管理</RButton>
-				<RButton variant="secondary" @click="store.refresh()">刷新</RButton>
-			</div>
-		</div>
-
-		<Draggable :model-value="visibleParentItems" item-key="id" class="dictionary-grid" ghost-class="drag-ghost"
-			chosen-class="drag-chosen" drag-class="drag-active" handle=".drag-handle" :animation="180"
-			:fallback-tolerance="4" :swap-threshold="0.65" @end="sortParentCategories">
-			<template #item="{ element: item }">
-				<article :key="item.id" class="category-card" :class="{ active: draft.id === item.id }">
-					<button type="button" class="drag-handle category-card__handle" aria-label="拖动排序"
-						@click.stop>⋮⋮</button>
-					<button type="button" class="category-card__more" aria-label="编辑分类" @click="edit(item)">...</button>
-					<button type="button" class="category-card__main" @click="edit(item)">
-						<span class="item-icon" :style="{ backgroundColor: item.color || '#eef4ff' }">
-							<img v-if="item.iconUrl" :src="item.iconUrl" alt="" />
-							<b v-else>{{ item.icon || item.name.slice(0, 1) }}</b>
-						</span>
-						<span>
-							<strong>{{ item.name }}</strong>
-							<small>排序 {{ item.sort }}</small>
-							<small v-if="domain === 'bank' && item.note" class="category-card__note">{{ item.note }}</small>
-						</span>
-					</button>
-					<div class="category-card__badges">
-						<em v-for="scope in scopeBadges(item)" :key="scope"
-							:class="`scope-${scope}`">{{ scopeLabel(scope) }}</em>
-						<em v-if="item.enabled === false" class="disabled">已停用</em>
-					</div>
-					<div v-if="domain === 'asset'" class="category-card__actions">
-						<button type="button" @click="openChildren(item)">查看子分类</button>
-						<button type="button" @click="startCreateChild(item)">添加子分类</button>
-					</div>
-				</article>
+		<CategoryManagerGrid
+			:items="visibleParentItems"
+			:query="query"
+			:status="statusFilter"
+			:status-options="domain === 'asset' ? statusOptions : []"
+			:create-label="`新增${domain === 'account' ? '账户类型' : '一级分类'}`"
+			:empty-text="'暂无符合条件的分类。'"
+			@update:query="query = $event"
+			@update:status="statusFilter = $event as 'all' | 'enabled' | 'disabled'"
+			@create="startCreate"
+		>
+			<template #filters>
+				<RSelect v-if="domain === 'asset'" v-model="scopeFilter" :options="scopeOptions" />
 			</template>
-			<template #footer>
-				<div v-if="!visibleParentItems.length" class="empty-state">暂无符合条件的分类。</div>
+			<template #actions>
+				<template v-if="domain === 'asset'">
+					<RButton variant="secondary" @click="startBatch">批量管理</RButton>
+					<RButton variant="secondary" @click="refreshAdminItems">刷新</RButton>
+				</template>
 			</template>
-		</Draggable>
+			<template #card="{ category: item }">
+				<CategoryCard
+					:key="item.id"
+					:category="item"
+					:active="draft.id === item.id"
+					:show-sort="false"
+					:show-scopes="domain === 'asset'"
+					:show-child-actions="domain === 'asset'"
+					@edit="edit"
+					@view-children="openChildren"
+					@add-child="startCreateChild"
+				/>
+			</template>
+		</CategoryManagerGrid>
 
-		<n-modal v-model:show="childrenVisible" preset="card" :bordered="false" :closable="false"
-			class="dictionary-modal-card" content-style="padding: 0;"
-			:style="{ width: 'min(720px, calc(100vw - 48px))', borderRadius: '18px', overflow: 'hidden' }">
-			<section class="children-modal">
-				<header class="dictionary-form__head">
-					<div>
-						<span>SUBCATEGORIES</span>
-						<h3>「{{ selectedChildParent?.name }}」的子分类</h3>
-					</div>
-					<button type="button" aria-label="关闭" @click="childrenVisible = false">×</button>
-				</header>
-				<Draggable :model-value="selectedChildItems" item-key="id" class="children-list"
-					ghost-class="drag-ghost" chosen-class="drag-chosen" drag-class="drag-active" handle=".drag-handle"
-					:animation="180" :fallback-tolerance="4" :swap-threshold="0.65" @end="sortChildCategories">
-					<template #item="{ element: child }">
-						<button :key="child.id" type="button" class="children-item" @click="edit(child)">
-							<span class="drag-handle children-item__handle" aria-label="拖动排序" @click.stop>⋮⋮</span>
+		<CategoryChildrenModal v-model:show="childrenVisible" :title="`「${selectedChildParent?.name ?? ''}」的子分类`">
+				<div class="children-list">
+					<template v-for="child in selectedChildItems" :key="child.id">
+						<button type="button" class="children-item" @click="edit(child)">
 							<span class="item-icon small"
-								:style="{ backgroundColor: child.color || selectedChildParent?.color || '#eef4ff' }">
+								:style="{ backgroundColor: '#eef4ff' }">
 								<img v-if="child.iconUrl" :src="child.iconUrl" alt="" />
 								<b v-else>{{ child.icon || child.name.slice(0, 1) }}</b>
 							</span>
-							<span><strong>{{ child.name }}</strong><small>排序 {{ child.sort }} ·
-									{{ groupLabel(child) }}</small></span>
+							<span><strong>{{ child.name }}</strong><small>{{ groupLabel(child) }}</small></span>
 							<em>{{ categoryStatusLabel(child) }}</em>
 						</button>
 					</template>
-					<template #footer>
-						<div v-if="!selectedChildItems.length" class="empty-state">暂无子分类。</div>
-					</template>
-				</Draggable>
-				<footer class="form-actions">
+					<div v-if="!selectedChildItems.length" class="empty-state">暂无子分类。</div>
+				</div>
+				<template #footer>
 					<RButton variant="secondary" @click="childrenVisible = false">关闭</RButton>
 					<RButton v-if="selectedChildParent" @click="startCreateChild(selectedChildParent)">添加子分类</RButton>
-				</footer>
-			</section>
-		</n-modal>
+				</template>
+		</CategoryChildrenModal>
 
-		<n-modal v-model:show="editorVisible" preset="card" :bordered="false" :closable="false" :mask-closable="false"
-			class="dictionary-modal-card" content-style="padding: 0;"
-			:style="{ width: 'min(640px, calc(100vw - 48px))', borderRadius: '18px', overflow: 'hidden' }">
-			<form class="dictionary-form" @submit.prevent="save">
-				<header class="dictionary-form__head">
-					<div>
-						<span>{{ draft.parentId ? "SUBCATEGORY" : domain === "account" ? "ACCOUNT TYPE" : "CATEGORY" }}</span>
-						<h3>{{ draft.id ? "编辑" : draft.parentId ? "新增子分类" : "新增" }}{{ draft.parentId ? "" : panelTitle }}
-						</h3>
-					</div>
-					<button type="button" aria-label="关闭" @click="editorVisible = false">×</button>
-				</header>
-				<div class="dictionary-form__body">
-					<label v-if="domain === 'asset' && draft.parentId"><span>所属一级分类 *</span>
-						<RSelect v-model="draft.parentId" :options="parentOptions" />
-					</label>
-					<label><span>名称 *</span>
-						<RInput v-model="draft.name" placeholder="请输入名称" />
-					</label>
-					<label><span>排序 *</span>
-						<RInput v-model="draft.sort" inputmode="numeric" placeholder="数字越小越靠前" />
-					</label>
-					<label v-if="domain === 'bank'"><span>备注</span>
-						<RInput v-model="draft.note" placeholder="例如：美国分行、国际账户" />
-					</label>
-					<label v-if="domain === 'account'"><span>账户方向 *</span>
-						<RSelect v-model="draft.accountDirection" :options="directionOptions" />
-					</label>
-					<label v-if="domain === 'account'"><span>账户分组 *</span>
-						<RSelect v-model="draft.accountGroup" :options="accountGroupOptions" />
-					</label>
-					<label v-if="domain === 'account'" class="enabled-row"><input v-model="draft.requiresBank" type="checkbox" /> 需要选择银行</label>
-					<template v-if="domain === 'asset'">
-						<div class="scope-field">
-							<span>适用范围 *</span>
-							<div class="scope-options">
-								<label><input v-model="draft.scopes" type="checkbox" value="asset" /> 资产</label>
-								<label><input v-model="draft.scopes" type="checkbox" value="expense" /> 支出</label>
-								<label><input v-model="draft.scopes" type="checkbox" value="income" /> 收入</label>
-							</div>
-							<small>资产和支出可以共用分类；三餐、出行等只勾选支出；工资、转卖等只勾选收入。</small>
-						</div>
-					</template>
-					<label>
-						<span>分类图标</span>
-						<div class="icon-upload">
-							<span class="icon-preview"><img v-if="draft.iconUrl" :src="draft.iconUrl" alt="" />
-								<ImageIcon v-else :size="22" />
-							</span>
-							<RButton type="button" variant="secondary" :loading="uploading" @click="fileInput?.click()">
-								上传图片</RButton>
-							<button v-if="draft.iconUrl" type="button" class="remove-icon"
-								@click="removeIcon">移除</button>
-							<input ref="fileInput" hidden type="file" accept="image/png,image/jpeg,image/webp"
-								@change="selectIcon" />
-						</div>
-					</label>
-					<label class="enabled-row"><input v-model="draft.enabled" type="checkbox" /> 启用该项</label>
-				</div>
-				<div class="form-actions">
-					<RButton native-type="button" variant="secondary" @click="editorVisible = false">取消</RButton>
-					<RButton native-type="submit" :loading="saving">保存</RButton>
-					<RButton v-if="draft.id" native-type="button" variant="danger" @click="deleteVisible = true">删除
-					</RButton>
-				</div>
-			</form>
-		</n-modal>
+		<SystemDictionaryEditorModal
+			v-model:show="editorVisible"
+			:domain="domain"
+			:panel-title="panelTitle"
+			:draft="draft"
+			:parent-options="parentOptions"
+			:direction-options="directionOptions"
+			:account-group-options="accountGroupOptions"
+			:uploading="uploading"
+			:message="message"
+			:message-tone="messageTone"
+			:delete-blocked="deleteBlocked"
+			:deactivating="deactivating"
+			:saving="saving"
+			@save="save"
+			@close="editorVisible = false"
+			@deactivate="deactivate"
+			@delete-request="deleteVisible = true"
+			@remove-icon="removeIcon"
+			@select-icon="selectIcon"
+		/>
 
 		<DeleteConfirmModal v-model:show="deleteVisible" title="删除系统分类？" description="已被资产或账户使用时将无法删除，建议优先停用。"
 			:loading="deleting" @confirm="confirmDelete" />
@@ -193,7 +124,7 @@
 							<label v-for="item in batchItems" :key="item.id" class="batch-item"
 								:class="{ checked: selectedBatchIds.includes(item.id), child: Boolean(item.parentId) }">
 								<input v-model="selectedBatchIds" type="checkbox" :value="item.id" />
-								<span class="item-icon small" :style="{ backgroundColor: item.color || '#eef4ff' }">
+								<span class="item-icon small" :style="{ backgroundColor: '#eef4ff' }">
 									<img v-if="item.iconUrl" :src="item.iconUrl" alt="" />
 									<b v-else>{{ item.icon || item.name.slice(0, 1) }}</b>
 								</span>
@@ -240,10 +171,8 @@
 </template>
 
 <script setup lang="ts">
-	import { computed, reactive, ref } from "vue";
+	import { computed, onMounted, reactive, ref } from "vue";
 	import { NModal } from "naive-ui";
-	import { ImageIcon } from "@lucide/vue";
-	import Draggable from "vuedraggable";
 	import { categoryScopes, isBusinessCategory } from "@/domain/categoryScopes";
 	import type { CategoryDomain, CategoryRecord, CategoryScope } from "@/domain/models";
 	import type { CreateCategoryInput } from "@/services/categoryService";
@@ -252,15 +181,18 @@
 	import { uploadImageDataUrl } from "@/services/cloudApiService";
 	import { useAppDataStore } from "@/stores/appDataStore";
 	import RButton from "@/components/ui/RButton.vue";
-	import RInput from "@/components/ui/RInput.vue";
 	import RSelect from "@/components/ui/RSelect.vue";
 	import RInlineFeedback from "@/components/ui/RInlineFeedback.vue";
-	import DeleteConfirmModal from "@/components/business/DeleteConfirmModal.vue";
+	import CategoryCard from "@/components/business/CategoryCard.vue";
+	import CategoryChildrenModal from "@/components/business/CategoryChildrenModal.vue";
+	import CategoryManagerGrid from "@/components/business/CategoryManagerGrid.vue";
+import DeleteConfirmModal from "@/components/business/DeleteConfirmModal.vue";
+import SystemDictionaryEditorModal from "@/components/business/SystemDictionaryEditorModal.vue";
 
 	const props = defineProps<{ domain : "asset" | "account" | "bank" }>();
 	const store = useAppDataStore();
-	const fileInput = ref<HTMLInputElement | null>(null);
-	const saving = ref(false), uploading = ref(false), deleting = ref(false), deleteVisible = ref(false);
+	const systemItems = ref<CategoryRecord[]>([]);
+	const saving = ref(false), uploading = ref(false), deleting = ref(false), deleteVisible = ref(false), deactivating = ref(false), deleteBlocked = ref(false);
 	const editorVisible = ref(false);
 	const childrenVisible = ref(false);
 	const batchVisible = ref(false);
@@ -276,7 +208,7 @@
 	const scopeFilter = ref<"all" | CategoryScope>("all");
 	const message = ref(""), messageTone = ref<"success" | "danger">("success");
 	const draft = reactive({ id: "", name: "", note: "", sort: "100", type: "other", parentId: "", accountDirection: "asset", accountGroup: "asset", requiresBank: false, iconUrl: "", iconFileId: "", scopes: ["asset", "expense"] as CategoryScope[], enabled: true });
-	const items = computed(() => store.categories
+	const items = computed(() => systemItems.value
 		.filter((item) => props.domain === "asset" ? isBusinessCategory(item) : item.domain === props.domain)
 		.sort((a, b) => a.sort - b.sort));
 	const parentItems = computed(() => items.value.filter((item) => !item.parentId));
@@ -295,8 +227,31 @@
 	const selectedChildItems = computed(() => selectedChildParent.value ? childItemsOf(selectedChildParent.value.id) : []);
 	const batchItems = computed(() => visibleParentItems.value.flatMap((item) => [item, ...childItemsOf(item.id)]));
 	const selectedBatchItems = computed(() => batchItems.value.filter((item) => selectedBatchIds.value.includes(item.id)));
-	const panelTitle = computed(() => props.domain === "asset" ? "资产与记账分类" : props.domain === "account" ? "资金账户类型" : "银行管理");
-	const panelDescription = computed(() => props.domain === "asset" ? "统一维护资产、支出和收入可使用的系统分类。" : props.domain === "account" ? "统一维护添加资金账户时可选择的类型。" : "统一维护银行卡所属银行及其图标。");
+	const panelTitle = computed(() => props.domain === "asset" ? "默认资产与记账分类" : props.domain === "account" ? "默认资金账户类型" : "默认银行列表");
+	const panelDescription = computed(() => props.domain === "asset" ? "维护新用户首次使用时获得的默认资产与记账分类。" : props.domain === "account" ? "维护新用户首次使用时获得的默认资金账户类型。" : "维护新用户首次使用时获得的默认银行列表。");
+	async function loadSystemItems() {
+		try {
+			let items = await categoryService.list({ scope: "system" });
+			if (!items.length && props.domain === "asset") {
+				const backup = await categoryService.getBuiltinDefaults();
+				if (backup.categories.length) {
+					await categoryService.importDefaults(backup);
+					items = await categoryService.list({ scope: "system" });
+				}
+			}
+			systemItems.value = items;
+		} catch (error) {
+			systemItems.value = [];
+			showError(error);
+		}
+	}
+	async function refreshAdminItems() { await Promise.all([store.refresh(), loadSystemItems()]); }
+	async function exportDefaults() {
+		const backup = await categoryService.exportDefaults();
+		const blob = new Blob([JSON.stringify(backup, null, 2)], { type: "application/json" });
+		const url = URL.createObjectURL(blob);
+		const link = document.createElement("a"); link.href = url; link.download = "rizhi-default-categories.json"; link.click(); URL.revokeObjectURL(url);
+	}
 	const statusOptions = [{ label: "状态：全部", value: "all" }, { label: "状态：启用", value: "enabled" }, { label: "状态：停用", value: "disabled" }];
 	const scopeOptions = [{ label: "分类类型：全部", value: "all" }, { label: "资产", value: "asset" }, { label: "支出", value: "expense" }, { label: "收入", value: "income" }];
 	const directionOptions = [{ label: "资产账户", value: "asset" }, { label: "负债账户", value: "liability" }];
@@ -351,46 +306,6 @@
 	function selectAllBatchItems() {
 		selectedBatchIds.value = batchItems.value.map((item) => item.id);
 	}
-	function reorderVisibleItems(fullList : CategoryRecord[], visibleList : CategoryRecord[], oldIndex : number, newIndex : number) {
-		const reorderedVisible = [...visibleList];
-		const [source] = reorderedVisible.splice(oldIndex, 1);
-		if (!source) return [];
-		reorderedVisible.splice(newIndex, 0, source);
-		const visibleIds = new Set(visibleList.map((item) => item.id));
-		const visibleQueue = [...reorderedVisible];
-		return fullList.map((item) => visibleIds.has(item.id) ? visibleQueue.shift() || item : item);
-	}
-	async function persistSortOrder(orderedItems : CategoryRecord[], start = 10, step = 10) {
-		const updates = orderedItems
-			.map((item, index) => ({ item, sort: start + index * step }))
-			.filter(({ item, sort }) => item.sort !== sort);
-		if (!updates.length) return;
-		saving.value = true;
-		try {
-			await Promise.all(updates.map(({ item, sort }) => categoryService.update({ id: item.id, sort })));
-			await store.refresh();
-			message.value = "分类排序已更新。";
-			messageTone.value = "success";
-		} catch (error) {
-			showError(error);
-		} finally {
-			saving.value = false;
-		}
-	}
-	async function sortParentCategories(event : { oldIndex ?: number; newIndex ?: number }) {
-		if (event.oldIndex === undefined || event.newIndex === undefined || event.oldIndex === event.newIndex) return;
-		const orderedItems = reorderVisibleItems(parentItems.value, visibleParentItems.value, event.oldIndex, event.newIndex);
-		if (!orderedItems.length) return;
-		await persistSortOrder(orderedItems);
-	}
-	async function sortChildCategories(event : { oldIndex ?: number; newIndex ?: number }) {
-		if (event.oldIndex === undefined || event.newIndex === undefined || event.oldIndex === event.newIndex) return;
-		if (!selectedChildParent.value) return;
-		const orderedItems = reorderVisibleItems(selectedChildItems.value, selectedChildItems.value, event.oldIndex, event.newIndex);
-		if (!orderedItems.length) return;
-		const parentSort = selectedChildParent.value.sort;
-		await persistSortOrder(orderedItems, parentSort + 1, 1);
-	}
 	async function applyBatch() {
 		const selectedItems = selectedBatchItems.value;
 		if (!selectedItems.length) return showError(new Error("请至少选择一个分类"));
@@ -420,7 +335,7 @@
 					type: scopes.includes("income") && !scopes.includes("expense") ? "income" : item.type,
 				})));
 			}
-			await store.refresh();
+			await refreshAdminItems();
 			message.value = "批量操作已完成。";
 			messageTone.value = "success";
 			batchVisible.value = false;
@@ -439,7 +354,7 @@
 			const results = await Promise.allSettled(selectedItems.map((item) => categoryService.delete(item.id)));
 			const deletedCount = results.filter((result) => result.status === "fulfilled").length;
 			const failedCount = results.length - deletedCount;
-			await store.refresh();
+			await refreshAdminItems();
 			batchDeleteVisible.value = false;
 			if (failedCount > 0) {
 				message.value = `已删除 ${deletedCount} 个分类，${failedCount} 个分类因存在业务引用未删除。`;
@@ -456,25 +371,30 @@
 			batchDeleting.value = false;
 		}
 	}
-	function reset() { Object.assign(draft, { id: "", name: "", note: "", sort: "100", type: "other", parentId: "", accountDirection: "asset", accountGroup: "asset", requiresBank: false, iconUrl: "", iconFileId: "", scopes: props.domain === "asset" ? ["asset", "expense"] : [], enabled: true }); }
+	function reset() { deleteBlocked.value = false; Object.assign(draft, { id: "", name: "", note: "", sort: "100", type: "other", parentId: "", accountDirection: "asset", accountGroup: "asset", requiresBank: false, iconUrl: "", iconFileId: "", scopes: props.domain === "asset" ? ["asset", "expense"] : [], enabled: true }); }
+	function clearEditorMessage() { message.value = ""; messageTone.value = "danger"; deleteBlocked.value = false; }
 	function startCreate() {
+		clearEditorMessage();
 		reset();
+		draft.sort = String(Math.max(0, ...parentItems.value.map((item) => item.sort)) + 10);
 		selectedChildParent.value = null;
 		childrenVisible.value = false;
 		editorVisible.value = true;
 	}
 	function startCreateChild(parent : CategoryRecord) {
+		clearEditorMessage();
 		reset();
 		Object.assign(draft, {
 			parentId: parent.id,
 			type: String(parent.type || "other"),
 			scopes: categoryScopes(parent),
-			sort: String(parent.sort + childItemsOf(parent.id).length + 1),
+			sort: String(Math.max(parent.sort, ...childItemsOf(parent.id).map((item) => item.sort)) + 10),
 		});
 		selectedChildParent.value = parent;
 		editorVisible.value = true;
 	}
 	function edit(item : CategoryRecord) {
+		clearEditorMessage();
 		Object.assign(draft, { id: item.id, name: item.name, note: item.note || "", sort: String(item.sort), type: String(item.type || "other"), parentId: item.parentId || "", accountDirection: item.accountDirection || (item.accountGroup === "credit" ? "liability" : "asset"), accountGroup: item.accountGroup || "asset", requiresBank: item.requiresBank ?? (item.type === "debit_card" || item.type === "credit_card"), iconUrl: item.iconUrl || "", iconFileId: item.iconFileId || "", scopes: categoryScopes(item), enabled: item.enabled !== false });
 		selectedChildParent.value = item.parentId ? items.value.find((parent) => parent.id === item.parentId) || null : null;
 		editorVisible.value = true;
@@ -496,17 +416,30 @@
 		saving.value = true;
 		const businessType = draft.scopes.includes("income") && !draft.scopes.includes("expense") ? "income" : draft.type;
 		const domain : CategoryDomain = props.domain === "asset" ? (draft.scopes.includes("asset") ? "asset" : "transaction") : props.domain;
-		const payload : CreateCategoryInput = { domain, name: draft.name.trim(), note: props.domain === "bank" ? draft.note.trim() || undefined : undefined, sort, parentId: draft.parentId || undefined, type: (props.domain === "asset" ? businessType : draft.type) as CategoryRecord["type"], scopes: props.domain === "asset" ? [...draft.scopes] : undefined, enabled: draft.enabled, iconUrl: draft.iconUrl || undefined, iconFileId: draft.iconFileId || undefined, accountDirection: props.domain === "account" ? draft.accountDirection as CategoryRecord["accountDirection"] : undefined, accountGroup: props.domain === "account" ? draft.accountGroup as CategoryRecord["accountGroup"] : undefined, requiresBank: props.domain === "account" ? draft.requiresBank : undefined };
+		const payload : CreateCategoryInput = { domain, name: draft.name.trim(), note: props.domain === "bank" ? draft.note.trim() || undefined : undefined, sort, parentId: draft.parentId || undefined, type: (props.domain === "asset" ? businessType : draft.type) as CategoryRecord["type"], scopes: props.domain === "asset" ? [...draft.scopes] : undefined, enabled: draft.enabled, isSystem: true, iconUrl: draft.iconUrl || undefined, iconFileId: draft.iconFileId || undefined, accountDirection: props.domain === "account" ? draft.accountDirection as CategoryRecord["accountDirection"] : undefined, accountGroup: props.domain === "account" ? draft.accountGroup as CategoryRecord["accountGroup"] : undefined, requiresBank: props.domain === "account" ? draft.requiresBank : undefined, scope: "system" };
 		try {
 			draft.id ? await categoryService.update({ id: draft.id, ...payload }) : await categoryService.create(payload);
 			if (draft.id && props.domain === "asset" && !draft.parentId && !draft.enabled) {
 				await Promise.all(childItemsOf(draft.id).map((child) => categoryService.update({ id: child.id, enabled: false })));
 			}
-			await store.refresh(); message.value = "系统分类已保存。"; messageTone.value = "success"; editorVisible.value = false; reset();
+			await refreshAdminItems(); message.value = "系统分类已保存。"; messageTone.value = "success"; editorVisible.value = false; reset();
 		}
 		catch (error) { showError(error); } finally { saving.value = false; }
 	}
-	async function confirmDelete() { if (!draft.id) return; deleting.value = true; try { await categoryService.delete(draft.id); await store.refresh(); deleteVisible.value = false; editorVisible.value = false; reset(); } catch (error) { showError(error); } finally { deleting.value = false; } }
+	async function deactivate() {
+		if (!draft.id) return;
+		deactivating.value = true;
+		try {
+			await categoryService.update({ id: draft.id, enabled: false });
+			await refreshAdminItems();
+			draft.enabled = false;
+			deleteBlocked.value = false;
+			message.value = "该分类已停用，历史数据会保留，后续新增时不会再显示。";
+			messageTone.value = "success";
+		} catch (error) { showError(error); } finally { deactivating.value = false; }
+	}
+	async function confirmDelete() { if (!draft.id) return; deleting.value = true; deleteBlocked.value = false; try { await categoryService.delete(draft.id); await refreshAdminItems(); deleteVisible.value = false; editorVisible.value = false; reset(); } catch (error) { deleteVisible.value = false; deleteBlocked.value = true; showError(error); } finally { deleting.value = false; } }
+	onMounted(() => { void loadSystemItems(); });
 	reset();
 </script>
 
@@ -629,47 +562,15 @@
 		font-size: 12px;
 	}
 
+	.dictionary-form__feedback { margin: 16px 20px 0; }
+	.panel-actions { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+
 	.category-card__main .category-card__note {
 		margin-top: 3px;
 		max-width: 180px;
 		overflow: hidden;
 		text-overflow: ellipsis;
 		white-space: nowrap;
-	}
-
-	.drag-handle {
-		user-select: none;
-		touch-action: none;
-		cursor: grab;
-	}
-
-	.drag-chosen .drag-handle,
-	.drag-active .drag-handle {
-		cursor: grabbing;
-	}
-
-	.category-card__handle {
-		position: absolute;
-		top: 14px;
-		right: 46px;
-		display: grid;
-		width: 30px;
-		height: 30px;
-		place-items: center;
-		color: var(--color-text-muted);
-		background: #f8fafc;
-		border: 1px solid var(--color-border);
-		border-radius: 9px;
-		font-size: 16px;
-		font-weight: 900;
-		letter-spacing: -6px;
-	}
-
-	.category-card__handle:hover,
-	.children-item__handle:hover {
-		color: var(--color-primary);
-		background: var(--color-primary-light);
-		border-color: #9ec5ff;
 	}
 
 	.category-card__more {
@@ -791,20 +692,6 @@
 		border: 1px solid var(--color-border);
 		border-radius: 12px;
 		cursor: pointer;
-	}
-
-	.children-item__handle {
-		display: grid;
-		width: 28px;
-		height: 32px;
-		place-items: center;
-		color: var(--color-text-muted);
-		background: #f8fafc;
-		border: 1px solid var(--color-border);
-		border-radius: 8px;
-		font-size: 15px;
-		font-weight: 900;
-		letter-spacing: -6px;
 	}
 
 	.children-item:hover {

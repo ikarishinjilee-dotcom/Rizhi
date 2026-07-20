@@ -40,6 +40,10 @@ export function listAdminUsers() {
   return adminRequest<AdminUser[]>("/admin/users");
 }
 
+export function findAdminUserByUsername(username: string) {
+  return adminRequest<AdminUser>(`/admin/users/search?username=${encodeURIComponent(username)}`);
+}
+
 export function setUserAdminRole(userId: string, enabled: boolean) {
   return adminRequest<{ id: string; roles: string[] }>(
     `/admin/users/${encodeURIComponent(userId)}/admin-role`,

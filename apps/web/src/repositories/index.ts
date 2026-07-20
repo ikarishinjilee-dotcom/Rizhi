@@ -5,6 +5,7 @@ export type {
   AssetAddonRepository,
   AssetRepository,
   CategoryRepository,
+  CategoryDefaultsBackup,
   CategoryUsage,
   ConvertTransactionToAddonInput,
   CreateAccountInput,

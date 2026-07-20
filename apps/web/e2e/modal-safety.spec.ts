@@ -17,7 +17,7 @@ test.beforeAll(() => {
 
 test.beforeEach(async ({ page }) => {
   await page.goto("/assets");
-  await expect(page.getByText("Rizhi")).toBeVisible();
+  await expect(page.getByRole("img", { name: "Rizhi" })).toBeVisible();
 });
 
 test("asset and addon modals do not show stale unsaved prompts after save, and image confirmations stay clickable", async ({ page }) => {
@@ -47,7 +47,7 @@ test("asset and addon modals do not show stale unsaved prompts after save, and i
   await page.getByTestId("asset-upsert-close").click();
   await expect(page.getByTestId("asset-upsert-modal")).toBeHidden();
 
-  await page.getByText(assetName, { exact: true }).click();
+  await page.getByTestId("asset-card").filter({ hasText: assetName }).click();
   await expect(page).toHaveURL(/\/assets\//);
   await page.getByText("编辑", { exact: true }).click();
   await fillField(page.getByTestId("asset-name-field"), editedAssetName);
@@ -85,42 +85,48 @@ test("asset deletion always asks for confirmation before removing data", async (
   const assetName = `E2E Delete Guard ${Date.now()}`;
 
   await createAsset(page, assetName, "66");
-  await expect(page.getByText(assetName, { exact: true })).toBeVisible();
-
   const card = page.getByTestId("asset-card").filter({ hasText: assetName });
-  await card.getByTestId("asset-card-menu").hover();
+  await expect(card).toBeVisible();
+  await card.getByTestId("asset-card-more").click();
   await card.getByTestId("asset-card-delete").click();
 
   await expect(page.getByTestId("confirm-modal")).toBeVisible();
   await page.getByTestId("confirm-modal-cancel").click();
   await expect(page.getByTestId("confirm-modal")).toBeHidden();
-  await expect(page.getByText(assetName, { exact: true })).toBeVisible();
+  await expect(card).toBeVisible();
 
-  await card.getByTestId("asset-card-menu").hover();
+  await card.getByTestId("asset-card-more").click();
   await card.getByTestId("asset-card-delete").click();
   await expect(page.getByTestId("confirm-modal")).toBeVisible();
   await page.getByTestId("confirm-modal-confirm").click();
   await expect(page.getByTestId("confirm-modal")).toBeHidden();
-  await expect(page.getByText(assetName, { exact: true })).toHaveCount(0);
+  await expect(card).toHaveCount(0);
 });
 
 test("ledger transaction deletion always asks for confirmation before removing the row", async ({ page }) => {
   await page.goto("/ledger");
-  await expect(page.getByText("Rizhi")).toBeVisible();
+  await expect(page.getByRole("img", { name: "Rizhi" })).toBeVisible();
 
-  const row = page.getByTestId("ledger-row").filter({ hasText: "地铁" }).first();
-  const deleteButton = row.getByTestId("ledger-delete-transaction");
+  await page.getByRole("button", { name: "记一笔", exact: true }).click();
+  await page.locator(".amount-panel input").fill("1");
+  await page.locator(".category-field button").first().click();
+  await page.getByRole("button", { name: "保存支出", exact: true }).click();
+  await expect(page.getByTestId("ledger-row").first()).toBeVisible();
+
+  const row = page.getByTestId("ledger-row").first();
 
   await expect(row).toBeVisible();
-  await expect(deleteButton).toBeEnabled();
+  await row.click();
+  await expect(page.getByTestId("ledger-detail-delete")).toBeEnabled();
 
-  await deleteButton.click();
+  await page.getByTestId("ledger-detail-delete").click();
   await expect(page.getByTestId("confirm-modal")).toBeVisible();
   await page.getByTestId("confirm-modal-cancel").click();
   await expect(page.getByTestId("confirm-modal")).toBeHidden();
   await expect(row).toBeVisible();
 
-  await deleteButton.click();
+  await row.click();
+  await page.getByTestId("ledger-detail-delete").click();
   await expect(page.getByTestId("confirm-modal")).toBeVisible();
   await page.getByTestId("confirm-modal-confirm").click();
   await expect(page.getByTestId("confirm-modal")).toBeHidden();
@@ -129,7 +135,7 @@ test("ledger transaction deletion always asks for confirmation before removing t
 
 test("fund account deletion asks for confirmation and blocks accounts with flows", async ({ page }) => {
   await page.goto("/funds");
-  await expect(page.getByText("Rizhi")).toBeVisible();
+  await expect(page.getByRole("img", { name: "Rizhi" })).toBeVisible();
 
   const accountName = "支付宝余额";
   const accountLine = page.getByTestId("fund-account-line").filter({ hasText: accountName }).first();
@@ -154,21 +160,26 @@ test("fund account deletion asks for confirmation and blocks accounts with flows
   await expect(page.getByTestId("fund-account-detail")).toContainText(accountName);
 });
 
-test("category deletion is blocked when transactions still use the category", async ({ page }) => {
-  await page.goto("/settings/categories");
-  await expect(page.getByText("Rizhi")).toBeVisible();
+test("profile logout requires confirmation before clearing the local session", async ({ page }) => {
+  await page.goto("/settings/profile");
+  await expect(page.getByRole("heading", { name: "个人资料", exact: true })).toBeVisible();
 
-  await page.getByTestId("category-domain-transaction").click();
-  const categoryCard = page.locator('[data-testid="category-parent-card"][data-category-id="tx-transport"]');
-
-  await expect(categoryCard).toBeVisible();
-  await categoryCard.getByTestId("category-parent-delete").click();
-
+  await page.getByTestId("profile-logout-button").click();
   await expect(page.getByTestId("confirm-modal")).toBeVisible();
-  await expect(page.getByTestId("confirm-modal-confirm")).toHaveCount(0);
+  await expect(page.getByTestId("confirm-modal")).toContainText("退出登录");
   await page.getByTestId("confirm-modal-cancel").click();
   await expect(page.getByTestId("confirm-modal")).toBeHidden();
-  await expect(categoryCard).toBeVisible();
+  await expect(page).toHaveURL(/settings\/profile/);
+});
+
+test("ledger entry form shows validation feedback before saving an incomplete entry", async ({ page }) => {
+  await page.goto("/ledger");
+  await page.getByRole("button", { name: "记一笔" }).click();
+  await expect(page.getByText("记录一笔日常支出", { exact: true })).toBeVisible();
+  await page.getByRole("button", { name: "保存支出" }).click();
+  await expect(page.getByText("请填写金额。", { exact: true })).toBeVisible();
+  await page.getByRole("button", { name: "取消", exact: true }).click();
+  await expect(page.getByText("记录一笔日常支出", { exact: true })).toHaveCount(0);
 });
 
 async function createAsset(page: Page, name: string, cost: string) {

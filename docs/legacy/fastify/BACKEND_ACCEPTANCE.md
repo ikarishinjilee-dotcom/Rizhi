@@ -65,3 +65,6 @@ npm.cmd run build
 ```bash
 npm.cmd run dev:full
 ```
+# 历史资料说明（2026-07-16）
+
+本文不再是当前验收标准，仅记录已退役 Fastify + SQLite 后端的验收过程。当前验收请参阅 `docs/frontend/FRONTEND_ACCEPTANCE.md` 和 `docs/testing/TEST_STRATEGY.md`。

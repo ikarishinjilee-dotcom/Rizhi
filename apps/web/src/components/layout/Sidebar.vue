@@ -1,8 +1,8 @@
 <template>
 	<aside class="sidebar">
-		<div class="sidebar__logo">
+		<RouterLink to="/dashboard" class="sidebar__logo" aria-label="返回看板">
 			<img :src="logoUrl" alt="Rizhi" />
-		</div>
+		</RouterLink>
 
 		<nav class="sidebar__nav">
 			<RouterLink v-for="item in navItems" :key="item.path" :to="item.path" class="sidebar__item">
@@ -77,6 +77,8 @@
 		align-items: center;
 		height: 54px;
 		padding: 0 8px;
+		text-decoration: none;
+		cursor: pointer;
 	}
 
 	.sidebar__logo img {
