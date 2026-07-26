@@ -109,9 +109,9 @@ describe("categoryService", () => {
     expect(await rizhiDb.categories.get(category.id)).toBeUndefined();
   });
 
-  it("rejects deleting an asset category that is used by assets", async () => {
-    await expect(categoryService.delete("asset-digital")).rejects.toThrow("资产");
-    expect(await rizhiDb.categories.get("asset-digital")).toBeTruthy();
+  it("deletes a system asset template without changing user data", async () => {
+    await categoryService.delete("asset-digital");
+    expect(await rizhiDb.categories.get("asset-digital")).toBeUndefined();
   });
 
   it("rejects deleting a category that is already used by transactions", async () => {
@@ -136,9 +136,9 @@ describe("categoryService", () => {
     expect(saved).toBeTruthy();
   });
 
-  it("rejects deleting an account category used by account type", async () => {
-    await expect(categoryService.delete("account-wallet")).rejects.toThrow("账户");
-    expect(await rizhiDb.categories.get("account-wallet")).toBeTruthy();
+  it("deletes a system account template without changing user data", async () => {
+    await categoryService.delete("account-wallet");
+    expect(await rizhiDb.categories.get("account-wallet")).toBeUndefined();
   });
 
   it("deletes an unused system transaction category", async () => {

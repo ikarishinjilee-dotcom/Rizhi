@@ -8,7 +8,7 @@
             <h2 id="addon-detail-title">{{ selectedAddon.name }}</h2>
             <p>{{ addonDirectionLabel(selectedAddon) }} / {{ addonTypeLabel(selectedAddon.type, addonDirection(selectedAddon)) }} / {{ assetName }}</p>
           </div>
-          <button type="button" aria-label="关闭" @click="$emit('close')">×</button>
+          <button type="button" aria-label="关闭" @click="$emit('close')"><X :size="16" :stroke-width="2" /></button>
         </header>
 
         <div class="addon-detail-dialog__body">
@@ -46,6 +46,7 @@
 </template>
 
 <script setup lang="ts">
+import { X } from "@lucide/vue";
 import RButton from "@/components/ui/RButton.vue";
 import type { AssetAddonRecord } from "@/domain/models";
 

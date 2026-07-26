@@ -12,19 +12,23 @@
 		<div class="admin-workspace">
 			<nav class="admin-tabs">
 				<span>系统配置</span>
-				<button :class="{ active: activeTab === 'asset' }" @click="activeTab = 'asset'">资产与记账分类</button>
-				<button :class="{ active: activeTab === 'account' }" @click="activeTab = 'account'">资金账户类型</button>
-				<button :class="{ active: activeTab === 'bank' }" @click="activeTab = 'bank'">银行管理</button>
+				<button v-if="canManagePermission('default_categories')" :class="{ active: activeTab === 'asset' }" @click="activeTab = 'asset'">资产与记账分类</button>
+				<button v-if="canManagePermission('account_types')" :class="{ active: activeTab === 'account' }" @click="activeTab = 'account'">资金账户类型</button>
+				<button v-if="canManagePermission('banks')" :class="{ active: activeTab === 'bank' }" @click="activeTab = 'bank'">银行管理</button>
+				<button v-if="canManagePermission('default_categories')" :class="{ active: activeTab === 'icons' }" @click="activeTab = 'icons'">分类图标库</button>
 				<span>权限控制</span>
 				<button v-if="isSuperAdmin()" :class="{ active: activeTab === 'permissions' }" @click="activeTab = 'permissions'">管理员权限设置</button>
 				<button v-if="canManagePermission('system_users')" :class="{ active: activeTab === 'users' }" @click="activeTab = 'users'">用户与角色</button>
-				<button :class="{ active: activeTab === 'branding' }" @click="activeTab = 'branding'">网站与首页</button>
+				<button v-if="canManagePermission('branding')" :class="{ active: activeTab === 'branding' }" @click="activeTab = 'branding'">网站与首页</button>
+				<button v-if="canManagePermission('release_notes')" :class="{ active: activeTab === 'releases' }" @click="activeTab = 'releases'">版本管理</button>
 			</nav>
 			<div class="admin-content">
-				<SystemDictionaryPanel v-if="activeTab === 'asset'" domain="asset" />
-				<SystemDictionaryPanel v-else-if="activeTab === 'account'" domain="account" />
-				<SystemDictionaryPanel v-else-if="activeTab === 'bank'" domain="bank" />
-				<SiteBrandingPanel v-else-if="activeTab === 'branding'" />
+				<SystemDictionaryPanel v-if="activeTab === 'asset' && canManagePermission('default_categories')" domain="asset" />
+				<SystemDictionaryPanel v-else-if="activeTab === 'account' && canManagePermission('account_types')" domain="account" />
+				<SystemDictionaryPanel v-else-if="activeTab === 'bank' && canManagePermission('banks')" domain="bank" />
+				<IconLibraryPanel v-else-if="activeTab === 'icons' && canManagePermission('default_categories')" />
+				<SiteBrandingPanel v-else-if="activeTab === 'branding' && canManagePermission('branding')" />
+				<ReleaseManagementPanel v-else-if="activeTab === 'releases' && canManagePermission('release_notes')" />
 				<AdminPermissionPanel v-else-if="activeTab === 'permissions' && isSuperAdmin()"
 					:permission-roles="permissionRoles" :permission-rows="permissionRows"
 					:permission-matrix="permissionMatrix" :permission-message="permissionMessage"
@@ -57,12 +61,14 @@
 	import DeleteConfirmModal from "@/components/business/DeleteConfirmModal.vue";
 	import SystemDictionaryPanel from "./SystemDictionaryPanel.vue";
 	import SiteBrandingPanel from "./SiteBrandingPanel.vue";
+	import ReleaseManagementPanel from "./ReleaseManagementPanel.vue";
 	import AdminPermissionPanel from "./AdminPermissionPanel.vue";
 	import AdminUsersPanel from "./AdminUsersPanel.vue";
+	import IconLibraryPanel from "./IconLibraryPanel.vue";
 	import { findAdminUserByUsername, listAdminUsers, setUserAdminRole, setUserEnabled, type AdminUser } from "@/services/adminService";
 	import { isAdmin, isSuperAdmin } from "@/services/authService";
 	import { getCloudPermissionMatrix, updateCloudPermissionMatrix, normalizePermissionMatrix, type PartialPermissionMatrix, type PermissionKey, type PermissionMatrix } from "@/services/permissionService";
-	const activeTab = ref<"asset" | "account" | "bank" | "branding" | "permissions" | "users">("asset");
+	const activeTab = ref<"asset" | "account" | "bank" | "icons" | "branding" | "releases" | "permissions" | "users">("asset");
 	const users = ref<AdminUser[]>([]), loading = ref(false), savingUserId = ref(""), message = ref("");
 	const messageTone = ref<"success" | "danger">("success"), confirmVisible = ref(false), pendingUser = ref<AdminUser | null>(null);
 	const statusConfirmVisible = ref(false), pendingStatusUser = ref<AdminUser | null>(null);
@@ -80,8 +86,9 @@
 		{ key: "account_types", label: "资金账户类型", description: "维护现金、信用和充值账户类型" },
 		{ key: "banks", label: "银行管理", description: "维护银行名称、图标和备注" },
 		{ key: "branding", label: "网站与首页", description: "维护网站图标、首页文案和主视觉" },
+		{ key: "release_notes", label: "版本管理", description: "维护各平台版本号和版本更新记录" },
 	] as const;
-	const permissionMatrixVersion = "2";
+	const permissionMatrixVersion = "3";
 	const permissionDefaults: PermissionMatrix = {
 		super_admin: Object.fromEntries(permissionRows.map((item) => [item.key, true])) as Record<PermissionKey, boolean>,
 		admin: Object.fromEntries(permissionRows.map((item) => [item.key, true])) as Record<PermissionKey, boolean>,
@@ -129,6 +136,22 @@
 		if (!isAdmin()) return false;
 		return permissionMatrix.value.admin[permission] === true;
 	}
+	function canOpenTab(tab: typeof activeTab.value) {
+		if (tab === "permissions") return isSuperAdmin();
+		if (tab === "users") return canManagePermission("system_users");
+		if (tab === "asset") return canManagePermission("default_categories");
+		if (tab === "account") return canManagePermission("account_types");
+		if (tab === "bank") return canManagePermission("banks");
+		if (tab === "icons") return canManagePermission("default_categories");
+		if (tab === "branding") return canManagePermission("branding");
+		if (tab === "releases") return canManagePermission("release_notes");
+		return false;
+	}
+	function ensureActiveTabPermission() {
+		if (canOpenTab(activeTab.value)) return;
+		const fallback = (["asset", "account", "bank", "icons", "branding", "releases", "users"] as const).find(canOpenTab);
+		if (fallback) activeTab.value = fallback;
+	}
 	async function loadUsers() { loading.value = true; message.value = ""; try { users.value = await listAdminUsers() } catch (error) { message.value = error instanceof Error ? error.message : "用户加载失败"; messageTone.value = "danger" } finally { loading.value = false } }
 	async function searchUserByUsername() { const username = usernameQuery.value.trim(); if (!username || searchingUser.value) { if (!username) { messageTone.value = "danger"; message.value = "请输入用户名后再搜索。"; } return; } searchingUser.value = true; searchedUser.value = null; message.value = ""; try { searchedUser.value = await findAdminUserByUsername(username); } catch (error) { messageTone.value = "danger"; message.value = error instanceof Error ? error.message : "用户搜索失败"; } finally { searchingUser.value = false; } }
 	function requestRoleChange(user : AdminUser) { pendingUser.value = user; confirmVisible.value = true }
@@ -139,7 +162,7 @@
 	async function confirmStatusChange() { if (!pendingStatusUser.value) return; savingUserId.value = pendingStatusUser.value.id; try { await setUserEnabled(pendingStatusUser.value.id, pendingStatusUser.value.status === 1); statusConfirmVisible.value = false; message.value = pendingStatusUser.value.status === 1 ? "用户账户已恢复。" : "用户账户已停用。"; messageTone.value = "success"; await loadUsers() } catch (error) { message.value = error instanceof Error ? error.message : "账户状态更新失败"; messageTone.value = "danger" } finally { savingUserId.value = "" } }
 	onMounted(() => {
 		permissionMatrix.value = loadPermissionMatrix();
-		void loadCloudPermissionMatrix().finally(() => { if (canManagePermission("system_users")) void loadUsers(); });
+		void loadCloudPermissionMatrix().finally(() => { ensureActiveTabPermission(); if (canManagePermission("system_users")) void loadUsers(); });
 	});
 </script>
 <style scoped>

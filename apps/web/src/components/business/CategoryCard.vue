@@ -2,6 +2,10 @@
   <article class="category-card" :class="{ active }">
     <div class="category-card__tools">
       <slot name="tools">
+        <template v-if="showReorder">
+          <button type="button" class="category-card__reorder" :disabled="!canMoveUp" aria-label="上移分类" title="上移" @click.stop="$emit('move-up', category)"><ChevronUp :size="14" /></button>
+          <button type="button" class="category-card__reorder" :disabled="!canMoveDown" aria-label="下移分类" title="下移" @click.stop="$emit('move-down', category)"><ChevronDown :size="14" /></button>
+        </template>
         <template v-if="managementActions">
           <button type="button" aria-label="编辑分类" title="编辑" @click="$emit('edit', category)"><Pencil :size="14" /></button>
           <button type="button" :aria-label="category.enabled === false ? '恢复分类' : '停用分类'" :title="category.enabled === false ? '恢复' : '停用'" @click="$emit('toggle', category)"><Power :size="14" /></button>
@@ -14,8 +18,9 @@
     </div>
 
     <button type="button" class="category-card__main" @click="$emit('edit', category)">
-      <span class="item-icon" :style="{ backgroundColor: '#eef4ff' }">
+      <span class="item-icon">
         <img v-if="category.iconUrl" :src="category.iconUrl" alt="" />
+        <IconGlyph v-else-if="category.iconKey || inferIconKey(category.name)" :icon-key="category.iconKey || inferIconKey(category.name)" :size="52" />
         <b v-else>{{ category.icon || category.name.slice(0, 1) }}</b>
       </span>
       <span>
@@ -42,9 +47,11 @@
 </template>
 
 <script setup lang="ts">
-import { Pencil, Power, Trash2 } from "@lucide/vue";
+import { ChevronDown, ChevronUp, Pencil, Power, Trash2 } from "@lucide/vue";
 import { categoryScopes } from "@/domain/categoryScopes";
 import type { CategoryRecord, CategoryScope } from "@/domain/models";
+import IconGlyph from "@/components/ui/IconGlyph.vue";
+import { inferIconKey } from "@/domain/iconLibrary";
 
 withDefaults(defineProps<{
   category: CategoryRecord;
@@ -54,6 +61,9 @@ withDefaults(defineProps<{
   showChildActions?: boolean;
   managementActions?: boolean;
   sortOnly?: boolean;
+  showReorder?: boolean;
+  canMoveUp?: boolean;
+  canMoveDown?: boolean;
   expanded?: boolean;
   childActionLabel?: string;
 }>(), {
@@ -63,6 +73,9 @@ withDefaults(defineProps<{
   showChildActions: false,
   managementActions: false,
   sortOnly: false,
+  showReorder: false,
+  canMoveUp: false,
+  canMoveDown: false,
   expanded: false,
   childActionLabel: "查看子分类",
 });
@@ -73,6 +86,8 @@ defineEmits<{
   remove: [category: CategoryRecord];
   "view-children": [category: CategoryRecord];
   "add-child": [category: CategoryRecord];
+  "move-up": [category: CategoryRecord];
+  "move-down": [category: CategoryRecord];
 }>();
 
 function scopesOf(category: CategoryRecord) {
@@ -89,6 +104,7 @@ function scopeLabel(scope: CategoryScope) {
 .category-card:hover, .category-card.active { transform: translateY(-2px); border-color: #9ec5ff; box-shadow: 0 20px 48px rgba(22, 119, 255, .12); }
 .category-card__tools { position: absolute; z-index: 1; top: 14px; right: 16px; display: flex; gap: 6px; }
 .category-card__tools > button:not(.category-card__more) { width: 28px; height: 28px; display: grid; place-items: center; color: var(--color-primary); background: var(--color-primary-light); border: 1px solid #bbd5ff; border-radius: 8px; cursor: pointer; }
+.category-card__tools > .category-card__reorder:disabled { cursor: not-allowed; opacity: .38; }
 .category-card__tools > button.danger { color: var(--color-danger); background: #fff1f0; border-color: #ffccc7; }
 .category-card__main { display: grid; width: 100%; grid-template-columns: 56px minmax(0, 1fr); align-items: center; gap: 16px; padding: 22px 72px 12px 18px; color: var(--color-text-primary); text-align: left; background: transparent; border: 0; cursor: pointer; }
 .category-card__main strong { display: block; overflow: hidden; color: var(--color-text-primary); font-size: 16px; text-overflow: ellipsis; white-space: nowrap; }
@@ -96,7 +112,7 @@ function scopeLabel(scope: CategoryScope) {
 .category-card__main .category-card__note { margin-top: 3px; max-width: 180px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .category-card__more { position: absolute; top: 2px; right: 0; color: var(--color-text-secondary); background: transparent; border: 0; cursor: pointer; font-size: 18px; font-weight: 800; }
 .item-icon { display: grid; width: 52px; height: 52px; place-items: center; overflow: hidden; color: #fff; border-radius: 12px; box-shadow: inset 0 0 0 1px rgba(255, 255, 255, .18); }
-.item-icon img { width: 100%; height: 100%; object-fit: cover; }
+.item-icon img { width: 100%; height: 100%; object-fit: contain; }
 .category-card__badges { display: flex; flex-wrap: wrap; gap: 6px; padding: 0 18px 12px 86px; }
 .category-card__badges em { padding: 3px 8px; border-radius: 999px; font-size: 12px; font-style: normal; font-weight: 800; }
 .scope-asset { color: var(--color-primary); background: var(--color-primary-light); }

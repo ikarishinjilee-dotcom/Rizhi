@@ -1,7 +1,7 @@
 <template>
   <n-modal v-model:show="visible" preset="card" class="rizhi-daily-report-modal" :bordered="false" :closable="false" :style="{ width: 'min(780px, calc(100vw - 48px))', borderRadius: '22px' }">
     <section class="daily-report">
-      <header class="daily-report__header"><div><span>DAILY REPORT</span><h2>日报表</h2><p>{{ periodLabel }}</p></div><button type="button" aria-label="关闭日报表" @click="visible = false">×</button></header>
+      <header class="daily-report__header"><div><span>DAILY REPORT</span><h2>日报表</h2><p>{{ periodLabel }}</p></div><button type="button" aria-label="关闭日报表" @click="visible = false"><X :size="16" :stroke-width="2" /></button></header>
       <div class="daily-report__table-wrap">
         <table class="daily-report__table">
           <thead><tr><th>日期</th><th>收入</th><th>支出</th><th>结余</th></tr></thead>
@@ -18,6 +18,7 @@
 
 <script setup lang="ts">
 import { NModal } from "naive-ui";
+import { X } from "@lucide/vue";
 import { formatAmount } from "@/utils/formatters";
 
 export type LedgerReportRow = { key: string; label: string; income: number; expense: number; net: number };

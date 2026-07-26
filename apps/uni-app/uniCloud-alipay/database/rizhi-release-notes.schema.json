@@ -1,0 +1,18 @@
+{
+  "bsonType": "object",
+  "required": ["id", "platform", "version", "date", "status", "groups", "updatedAt"],
+  "permission": { "read": false, "create": false, "update": false, "delete": false },
+  "properties": {
+    "_id": { "description": "uniCloud document id" },
+    "id": { "bsonType": "string" },
+    "platform": { "bsonType": "string", "enum": ["web", "mini-program", "android", "ios"] },
+    "version": { "bsonType": "string" },
+    "date": { "bsonType": "string" },
+    "status": { "bsonType": "string", "enum": ["draft", "published"] },
+    "forceUpdate": { "bsonType": "bool" },
+    "minSupportedVersion": { "bsonType": "string" },
+    "groups": { "bsonType": "array" },
+    "createdAt": { "bsonType": "string" },
+    "updatedAt": { "bsonType": "string" }
+  }
+}

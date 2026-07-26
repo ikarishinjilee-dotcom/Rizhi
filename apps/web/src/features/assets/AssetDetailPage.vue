@@ -127,7 +127,7 @@
               <h2 id="addon-dialog-title">{{ editingAddonId ? "调整附加项信息和图片" : `给「${asset.name}」记录一笔附加项` }}</h2>
               <p>附加项支持支出和收入：新买 CPU 是支出，卖掉旧 CPU 是收入。保存后会同步资产档案和记账流水。</p>
             </div>
-            <button type="button" data-testid="asset-addon-close" aria-label="关闭" @click="requestCloseAddonModal">×</button>
+            <button type="button" data-testid="asset-addon-close" aria-label="关闭" @click="requestCloseAddonModal"><X :size="16" :stroke-width="2" /></button>
           </header>
 
           <div class="addon-dialog__body">
@@ -149,7 +149,7 @@
                   @click="addonDraft.imageUrl = image"
                 >
                   <img :src="image" :alt="`附加项图片 ${index + 1}`" />
-                  <span data-testid="addon-image-remove" @click.stop="openRemoveAddonImageConfirm(index)">×</span>
+                  <span data-testid="addon-image-remove" aria-label="删除图片" @click.stop="openRemoveAddonImageConfirm(index)"><X :size="14" :stroke-width="2" /></span>
                 </button>
               </div>
             </aside>
@@ -199,7 +199,10 @@
                   </label>
                   <label :class="{ invalid: addonErrors.accountId }">
                     <span>{{ addonDraft.direction === "income" ? "收款账户" : "付款账户" }}</span>
-                    <RSelect v-model="addonDraft.accountId" :options="accountOptions" :placeholder="addonDraft.direction === 'income' ? '选择收款账户' : '选择付款账户'" />
+                    <button type="button" class="addon-account-picker-trigger" @click="showAddonAccountPicker = true">
+                      <span>{{ addonSelectedAccountLabel }}</span>
+                      <ChevronDown :size="16" />
+                    </button>
                     <em>{{ addonErrors.accountId }}</em>
                   </label>
                   <label class="wide-field"><span>备注</span><RInput v-model="addonDraft.note" :placeholder="addonDraft.direction === 'income' ? '例如 闲鱼卖出旧 CPU，主机继续使用' : '例如 官方配件、透明壳、线下维修'" /></label>
@@ -230,6 +233,16 @@
       </div>
     </Teleport>
 
+    <LedgerAccountPickerModal
+      v-model="showAddonAccountPicker"
+      :title="addonDraft.direction === 'income' ? '收款账户' : '付款账户'"
+      target="from"
+      :selected-id="addonDraft.accountId"
+      :sections="addonAccountPickerSections"
+      :balance="addonAccountBalanceLabel"
+      @select="selectAddonAccount"
+    />
+
     <Teleport to="body">
       <div v-if="selectedAddon" class="modal-overlay">
         <section class="addon-detail-dialog" role="dialog" aria-modal="true" aria-labelledby="addon-detail-title">
@@ -239,7 +252,7 @@
               <h2 id="addon-detail-title">{{ selectedAddon.name }}</h2>
               <p>{{ addonDirectionLabel(selectedAddon) }} / {{ addonTypeLabel(selectedAddon.type, addonDirection(selectedAddon)) }} / {{ asset.name }}</p>
             </div>
-            <button type="button" aria-label="关闭" @click="selectedAddon = null">×</button>
+            <button type="button" aria-label="关闭" @click="selectedAddon = null"><X :size="16" :stroke-width="2" /></button>
           </header>
 
           <div class="addon-detail-dialog__body">
@@ -282,7 +295,7 @@
         <section class="transfer-dialog" role="dialog" aria-modal="true">
           <header class="modal-hero modal-hero--green">
             <div><span>资产转让</span><h2>记录这件物品离开你的时刻</h2><p>保存后会把资产标记为已转让，并生成一条收入记录。</p></div>
-            <button type="button" aria-label="关闭" @click="requestCloseTransferModal">×</button>
+            <button type="button" aria-label="关闭" @click="requestCloseTransferModal"><X :size="16" :stroke-width="2" /></button>
           </header>
           <div class="transfer-dialog__body">
             <aside class="transfer-summary"><span>资产总成本</span><strong>{{ formatAmount(totalCost) }}</strong><p>转让金额会作为当前估值，用于计算最终收益或损失。</p></aside>
@@ -372,9 +385,11 @@
 
 <script setup lang="ts">
 import { computed, onMounted, reactive, ref, watch } from "vue";
+import { ChevronDown, X } from "@lucide/vue";
 import { RouterLink, useRoute, useRouter } from "vue-router";
 import AssetUpsertModal, { type AssetUpsertDraft } from "@/components/business/AssetUpsertModal.vue";
 import DeleteConfirmModal from "@/components/business/DeleteConfirmModal.vue";
+import LedgerAccountPickerModal from "@/components/business/LedgerAccountPickerModal.vue";
 import PageHeader from "@/components/business/PageHeader.vue";
 import RButton from "@/components/ui/RButton.vue";
 import RCard from "@/components/ui/RCard.vue";
@@ -389,9 +404,10 @@ import AssetAddonListPanel from "@/components/business/AssetAddonListPanel.vue";
 import AssetHistoryPanel from "@/components/business/AssetHistoryPanel.vue";
 import AssetOverviewPanel from "@/components/business/AssetOverviewPanel.vue";
 import { addonImageUrls, assetImageUrls, assetTotalCost, includedAddonCost } from "@/domain/assetCalculations";
-import type { AssetAddonRecord, AssetRecord, PurchaseChannel } from "@/domain/models";
+import type { AssetAddonRecord, AssetRecord, CategoryRecord, MoneyAccountRecord, PurchaseChannel } from "@/domain/models";
 import { assetAddonService } from "@/services/assetAddonService";
 import { assetService } from "@/services/assetService";
+import { loadSystemBankCategories, resolveBankCategory, resolveBankIcon } from "@/services/bankIconService";
 import { useAppDataStore } from "@/stores/appDataStore";
 import { imageFileToPersistentUrl } from "@/utils/imageFiles";
 
@@ -407,6 +423,7 @@ const historyTab = "历史记录";
 const tabs = [overviewTab, addonTab, historyTab];
 const activeTab = ref(overviewTab);
 const showAddonModal = ref(false);
+const showAddonAccountPicker = ref(false);
 const showEditModal = ref(false);
 const showTransferModal = ref(false);
 const showDeleteModal = ref(false);
@@ -470,6 +487,40 @@ const asset = computed(() => store.assets.find((item) => item.id === route.param
 const assetAddons = computed(() => (asset.value ? store.assetAddons.filter((addon) => addon.assetId === asset.value?.id) : []));
 const accountOptions = computed(() => store.accounts.map((account) => ({ label: account.name, value: account.id })));
 const assetAccountOptions = computed(() => store.accounts.filter((account) => account.direction === "asset").map((account) => ({ label: account.name, value: account.id })));
+const systemBankCategories = ref<CategoryRecord[]>([]);
+const accountWithResolvedBankIcon = (account: MoneyAccountRecord) => {
+  const bank = resolveBankCategory(account, systemBankCategories.value);
+  return {
+    ...account,
+    bankName: bank?.name ?? account.bankName,
+    iconUrl: resolveBankIcon(account, systemBankCategories.value) ?? account.iconUrl,
+  };
+};
+const addonAccountPickerSections = computed(() => {
+  const configuredTypes = store.categories
+    .filter((category) => category.domain === "account" && category.enabled !== false && !category.deletedAt)
+    .sort((a, b) => a.sort - b.sort);
+  const included = new Set<string>();
+  const sections = configuredTypes
+    .map((category) => {
+      const accounts = store.activeAccounts.filter((account) => account.accountTypeId === category.id);
+      accounts.forEach((account) => included.add(String(account.id)));
+      return { key: String(category.id), title: category.name, accounts };
+    })
+    .filter((section) => section.accounts.length);
+  const remaining = store.activeAccounts.filter((account) => !included.has(String(account.id)));
+  if (remaining.length) sections.push({ key: "other", title: "其他账户", accounts: remaining });
+  return sections.map((section) => ({
+    ...section,
+    accounts: section.accounts.map(accountWithResolvedBankIcon),
+  }));
+});
+const addonSelectedAccountLabel = computed(() => {
+  const account = store.accounts.find((item) => String(item.id) === String(addonDraft.accountId));
+  if (!account) return addonDraft.direction === "income" ? "选择收款账户" : "选择付款账户";
+  const descriptor = account.bankName || account.institution || account.note;
+  return descriptor && descriptor !== account.name ? `${account.name} · ${descriptor}` : account.name;
+});
 type AddonTypeOption = { label: string; value: AssetAddonRecord["type"]; hint: string };
 
 const expenseAddonTypeOptions: AddonTypeOption[] = [
@@ -601,6 +652,7 @@ onMounted(initializeData);
 
 async function initializeData() {
   await store.init().catch(() => undefined);
+  systemBankCategories.value = await loadSystemBankCategories().catch(() => []);
 }
 
 watch(() => route.params.id, () => {
@@ -611,6 +663,17 @@ watch(() => route.params.id, () => {
 
 function formatAmount(value: number) {
   return `¥${value.toLocaleString("zh-CN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+}
+
+function addonAccountBalanceLabel(account: MoneyAccountRecord) {
+  return `${account.direction === "liability" ? "当前欠款" : "当前余额"} ${formatAmount(account.balance)}`;
+}
+
+function selectAddonAccount(id: string | number | null) {
+  if (id == null) return;
+  addonDraft.accountId = id;
+  addonErrors.accountId = "";
+  showAddonAccountPicker.value = false;
 }
 
 function formatHistoryTime(value: string) {
@@ -1162,9 +1225,9 @@ async function confirmRevokeTransfer() {
 .modal-overlay .v-binder-follower-container,
 .modal-overlay .n-date-panel,
 body > .v-binder-follower-container:has(.n-date-panel) { z-index: 3600 !important; }
-.transfer-dialog, .addon-dialog, .addon-detail-dialog { display: flex; flex-direction: column; max-height: calc(100dvh - 48px); overflow: visible; background: var(--color-bg-card); border: 1px solid rgba(255, 255, 255, 0.46); border-radius: 20px; box-shadow: 0 28px 90px rgba(17, 24, 39, 0.28); }
+.transfer-dialog, .addon-dialog, .addon-detail-dialog { display: flex; flex-direction: column; max-height: calc(100dvh - 48px); overflow: hidden; background: var(--color-bg-card); border: 1px solid rgba(255, 255, 255, 0.46); border-radius: 20px; box-shadow: 0 28px 90px rgba(17, 24, 39, 0.28); }
 .transfer-dialog { width: min(760px, calc(100vw - 48px)); }
-.addon-dialog { width: min(940px, calc(100vw - 48px)); max-height: calc(100vh - 48px); }
+.addon-dialog { width: min(940px, calc(100vw - 48px)); height: min(840px, calc(100dvh - 48px)); }
 .addon-detail-dialog { width: min(680px, calc(100vw - 48px)); }
 .modal-hero { display: flex; flex: 0 0 auto; justify-content: space-between; gap: var(--space-6); padding: 28px 32px; color: #fff; background: radial-gradient(circle at 86% 10%, rgba(255, 255, 255, 0.26), transparent 24%), linear-gradient(135deg, #1d4ed8, #1677ff 52%, #38bdf8); }
 .modal-hero--green { background: radial-gradient(circle at 84% 18%, rgba(255, 255, 255, 0.24), transparent 26%), linear-gradient(135deg, #0f9f6e, #16a36a); }
@@ -1173,9 +1236,11 @@ body > .v-binder-follower-container:has(.n-date-panel) { z-index: 3600 !importan
 .modal-hero p { margin: 0; opacity: 0.86; }
 .modal-hero button { display: grid; width: 32px; height: 32px; place-items: center; color: #fff; background: rgba(255, 255, 255, 0.16); border: 0; border-radius: 50%; cursor: pointer; font-size: 20px; }
 .modal-footer { display: flex; flex: 0 0 auto; justify-content: flex-end; gap: var(--space-3); padding: 20px 32px; background: var(--color-bg-hover); border-top: 1px solid var(--color-border); }
-.transfer-dialog__body, .addon-dialog__body { display: grid; flex: 1 1 auto; min-height: 0; gap: var(--space-6); overflow: visible; padding: 28px 32px; }
+.transfer-dialog__body, .addon-dialog__body { display: grid; flex: 1 1 auto; min-height: 0; gap: var(--space-6); overflow-x: hidden; overflow-y: auto; padding: 28px 32px; }
 .transfer-dialog__body { grid-template-columns: 220px 1fr; }
 .addon-dialog__body { grid-template-columns: 260px 1fr; }
+.addon-account-picker-trigger { display: flex; width: 100%; min-height: 40px; align-items: center; justify-content: space-between; gap: var(--space-2); padding: 0 12px; color: var(--color-text-primary); text-align: left; background: var(--color-bg-card); border: 1px solid var(--color-border); border-radius: var(--radius-md); cursor: pointer; }
+.addon-account-picker-trigger:hover, .addon-account-picker-trigger:focus-visible { border-color: var(--color-primary); outline: none; }
 .addon-uploader, .transfer-summary, .addon-detail-grid div, .addon-detail-note { padding: var(--space-4); background: var(--color-bg-hover); border: 1px solid var(--color-border); border-radius: 14px; }
 .addon-uploader { display: grid; align-content: start; gap: var(--space-3); border-style: dashed; }
 .addon-uploader__preview, .addon-detail-media { display: grid; place-items: center; overflow: hidden; color: var(--color-primary); background: linear-gradient(135deg, var(--color-primary-soft), #fff); border-radius: 14px; font-size: 48px; font-weight: 800; }

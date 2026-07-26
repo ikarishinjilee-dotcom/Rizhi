@@ -46,19 +46,6 @@ function createId(prefix: string) {
 async function ensureLocalUserCategoryCopy() {
   const copyVersion = "user-category-copy-v2";
   let systemCategories = await rizhiDb.categories.where("isSystem").equals(1).toArray();
-  if (!systemCategories.length) {
-    const builtInAssets = mockCategories.filter((category) =>
-      category.domain === "asset" && !category.parentId,
-    );
-    const builtInDefaults = [...builtInAssets, ...defaultTransactionCategoryTemplates];
-    await rizhiDb.categories.bulkPut(builtInDefaults.map((category) => ({
-      ...category,
-      isSystem: true,
-      enabled: true,
-      parentId: undefined,
-    })));
-    systemCategories = await rizhiDb.categories.where("isSystem").equals(1).toArray();
-  }
   const initialized = await rizhiDb.metadata.get(copyVersion);
   if (initialized) return;
   const defaults = systemCategories.filter((category) =>
@@ -182,7 +169,10 @@ export const indexedDbAppDataRepository: AppDataRepository = {
       accounts,
       transactions,
       accountFlows,
-      categories,
+      // User-facing snapshots must never expose the administrator's system
+      // templates. Those are read separately by the admin dictionary panels;
+      // regular pages should only operate on the user's independent copies.
+      categories: categories.filter((category) => category.isSystem !== true),
     };
   },
 };
@@ -247,6 +237,7 @@ export const indexedDbCategoryRepository: CategoryRepository = {
       icon: input.icon,
       iconUrl: input.iconUrl,
       iconFileId: input.iconFileId,
+      iconKey: input.iconKey,
       scopes: inputScopes(input),
       monthlyBudget: input.monthlyBudget,
       enabled: input.enabled ?? true,
@@ -290,6 +281,7 @@ export const indexedDbCategoryRepository: CategoryRepository = {
       icon: input.icon ?? category.icon,
       iconUrl: "iconUrl" in input ? input.iconUrl : category.iconUrl,
       iconFileId: "iconFileId" in input ? input.iconFileId : category.iconFileId,
+      iconKey: "iconKey" in input ? input.iconKey : category.iconKey,
       scopes: "scopes" in input ? input.scopes : category.scopes,
       monthlyBudget: "monthlyBudget" in input ? input.monthlyBudget : category.monthlyBudget,
       enabled: nextEnabled,
@@ -314,8 +306,9 @@ export const indexedDbCategoryRepository: CategoryRepository = {
   async delete(id) {
     const category = await rizhiDb.categories.get(id);
     if (!category) throw new Error("分类不存在");
+    const isSystemCategory = category.isSystem === true;
 
-    if (categoryHasScope(category, "expense") || categoryHasScope(category, "income")) {
+    if (!isSystemCategory && (categoryHasScope(category, "expense") || categoryHasScope(category, "income"))) {
       const children = await rizhiDb.categories.where("parentId").equals(id).toArray();
       const childIds = children.map((child) => child.id);
       const [directTransactions, subTransactions, childCategoryTransactions, childSubTransactions] = await Promise.all([
@@ -338,15 +331,21 @@ export const indexedDbCategoryRepository: CategoryRepository = {
       }
     }
 
-    const usage = await getCategoryUsage(id);
-    if (usage.assets > 0) {
+    const usage = isSystemCategory ? undefined : await getCategoryUsage(id);
+    if (usage && usage.assets > 0) {
       throw new Error(`该分类已有 ${usage.assets} 个资产使用，不能删除。请先把对应资产改到其他分类。`);
     }
-    if (usage.accounts > 0) {
+    if (usage && usage.accounts > 0) {
       throw new Error(`该分类已有 ${usage.accounts} 个账户使用，不能删除。请先把对应账户改到其他分类。`);
     }
-    if (usage.childCategories > 0) {
-      throw new Error(`该分类下面还有 ${usage.childCategories} 个子分类，不能删除。请先删除子分类。`);
+    const children = (await rizhiDb.categories.where("parentId").equals(id).toArray())
+      .filter((child) => isSystemCategory ? child.isSystem === true : child.isSystem !== true);
+    if (isSystemCategory && children.length) {
+      // System categories are only templates, so removing a parent also
+      // removes its default children. User-owned copies remain untouched.
+      await rizhiDb.categories.bulkDelete(children.map((child) => child.id));
+    } else if (children.length) {
+      throw new Error(`该分类下面还有 ${children.length} 个子分类，不能删除。请先删除子分类。`);
     }
 
     await rizhiDb.categories.delete(id);

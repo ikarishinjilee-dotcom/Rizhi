@@ -149,6 +149,7 @@ export type CreateAccountInput = {
   icon?: string;
   iconUrl?: string;
   iconFileId?: string;
+  iconKey?: string;
   bankName?: string;
   bankId?: ID;
   note?: string;
@@ -170,6 +171,8 @@ export type CreateCategoryInput = {
   icon?: string;
   iconUrl?: string;
   iconFileId?: string;
+  /** Stable cross-platform icon library identifier. */
+  iconKey?: string;
   scopes?: CategoryRecord["scopes"];
   bankName?: string;
   bankId?: ID;

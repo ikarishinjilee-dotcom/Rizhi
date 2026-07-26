@@ -1,7 +1,7 @@
 "use strict";
 
-const PERMISSION_KEYS = ["system_users", "default_categories", "account_types", "banks", "branding"];
-const PERMISSION_VERSION = 2;
+const PERMISSION_KEYS = ["system_users", "default_categories", "account_types", "banks", "branding", "release_notes"];
+const PERMISSION_VERSION = 3;
 
 function makeRole(values) {
   return Object.fromEntries(PERMISSION_KEYS.map((key) => [key, values[key] !== false]));
@@ -20,6 +20,7 @@ DEFAULT_PERMISSION_MATRIX.user = Object.freeze(makeRole({
   account_types: false,
   banks: false,
   branding: false,
+  release_notes: false,
 }));
 Object.freeze(DEFAULT_PERMISSION_MATRIX);
 

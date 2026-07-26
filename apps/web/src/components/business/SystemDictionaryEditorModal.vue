@@ -16,7 +16,7 @@
           <span>{{ draft.parentId ? "SUBCATEGORY" : domain === "account" ? "ACCOUNT TYPE" : "CATEGORY" }}</span>
           <h3>{{ draft.id ? "编辑" : draft.parentId ? "新增子分类" : "新增" }}{{ draft.parentId ? "" : panelTitle }}</h3>
         </div>
-        <button type="button" aria-label="关闭" @click="$emit('close')">×</button>
+        <button type="button" aria-label="关闭" @click="$emit('close')"><X :size="16" :stroke-width="2" /></button>
       </header>
       <RInlineFeedback v-if="message" :tone="messageTone" class="dictionary-form__feedback">{{ message }}</RInlineFeedback>
       <div class="dictionary-form__body">
@@ -35,17 +35,14 @@
           </div>
           <small>资产和支出可以共用分类；三餐、出行等只勾选支出；工资、转卖等只勾选收入。</small>
         </div>
-        <label>
-          <span>分类图标</span>
-          <div class="icon-upload">
-            <span class="icon-preview"><img v-if="draft.iconUrl" :src="draft.iconUrl" alt="" /><ImageIcon v-else :size="22" /></span>
-            <RButton type="button" variant="secondary" :loading="uploading" @click="fileInput?.click()">上传图片</RButton>
-            <button v-if="draft.iconUrl" type="button" class="remove-icon" @click="$emit('remove-icon')">移除</button>
-            <input ref="fileInput" hidden type="file" accept="image/png,image/jpeg,image/webp" @change="$emit('select-icon', $event)" />
-          </div>
-        </label>
         <label class="enabled-row"><input v-model="draft.enabled" type="checkbox" /> 启用该项</label>
       </div>
+        <IconLibraryPicker
+          v-model="draft.iconKey"
+          :kind="domain === 'bank' ? 'bank' : 'standard'"
+          compact
+          @select="$emit('select-icon-key', $event)"
+        />
       <div class="form-actions">
         <RButton native-type="button" variant="secondary" @click="$emit('close')">取消</RButton>
         <RButton v-if="draft.id && deleteBlocked && draft.enabled" native-type="button" variant="secondary" :loading="deactivating" @click="$emit('deactivate')">停用该项</RButton>
@@ -57,14 +54,14 @@
 </template>
 
 <script setup lang="ts">
-import { ref } from "vue";
-import { ImageIcon } from "@lucide/vue";
+import { X } from "@lucide/vue";
 import { NModal } from "naive-ui";
 import type { CategoryDomain, CategoryRecord, CategoryScope } from "@/domain/models";
 import RButton from "@/components/ui/RButton.vue";
 import RInput from "@/components/ui/RInput.vue";
 import RSelect from "@/components/ui/RSelect.vue";
 import RInlineFeedback from "@/components/ui/RInlineFeedback.vue";
+import IconLibraryPicker from "@/components/ui/IconLibraryPicker.vue";
 
 defineProps<{
   show: boolean;
@@ -79,6 +76,7 @@ defineProps<{
     accountGroup: string;
     requiresBank: boolean;
     iconUrl: string;
+    iconKey: string;
     scopes: CategoryScope[];
     enabled: boolean;
   };
@@ -101,9 +99,9 @@ defineEmits<{
   "delete-request": [];
   "remove-icon": [];
   "select-icon": [event: Event];
+  "select-icon-key": [key: string];
 }>();
 
-const fileInput = ref<HTMLInputElement | null>(null);
 </script>
 
 <style scoped>

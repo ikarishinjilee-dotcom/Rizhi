@@ -20,7 +20,7 @@
       <section class="list-panel">
         <div class="panel-head"><h3>近期还款提醒</h3><span>{{ repaymentReminders.length }}条待还</span></div>
         <button v-for="item in repaymentReminders" :key="item.id" class="reminder-line" type="button" @click="$emit('open-account', item.id)">
-          <span class="account-icon danger-bg">{{ item.icon }}</span><div><strong>{{ item.name }}</strong><small>还款日 {{ item.date }}</small></div><div><em>{{ formatAmount(item.balance) }}</em><small :class="item.days <= 1 ? 'danger' : 'success'">{{ item.daysText }}</small></div>
+          <span class="account-icon danger-bg"><img v-if="item.iconUrl" :src="item.iconUrl" :alt="item.name" /><template v-else>{{ item.icon }}</template></span><div><strong>{{ item.name }}</strong><small>还款日 {{ item.date }}</small></div><div><em>{{ formatAmount(item.balance) }}</em><small :class="item.days <= 1 ? 'danger' : 'success'">{{ item.daysText }}</small></div>
         </button>
         <REmptyState v-if="!repaymentReminders.length" compact title="暂无近期还款" description="设置负债账户的还款日后会在这里提醒。" />
         <button v-else class="panel-link" type="button" @click="$emit('open-account-list', 'repayment')">查看全部还款计划 ›</button>
@@ -40,7 +40,7 @@ import { formatAmount } from "@/utils/formatters";
 defineProps<{
   assetAccounts: MoneyAccountRecord[];
   liabilityAccounts: MoneyAccountRecord[];
-  repaymentReminders: Array<{ id: string; icon: string; name: string; date: string; balance: number; days: number; daysText: string }>;
+  repaymentReminders: Array<{ id: string; icon: string; iconUrl?: string; name: string; date: string; balance: number; days: number; daysText: string }>;
   accountSparklinePoints: (id: string) => string | undefined;
 }>();
 defineEmits<{
@@ -56,7 +56,8 @@ defineEmits<{
 .panel-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: var(--space-3); }
 .panel-head h3 { margin: 0; font-size: var(--font-card-title); }
 .panel-head span { color: var(--color-text-tertiary); }
-.account-icon { display: grid; width: 30px; height: 30px; place-items: center; color: #fff; border-radius: 9px; font-size: 12px; font-weight: 800; }
+.account-icon { display: grid; width: 30px; height: 30px; place-items: center; overflow: hidden; color: #fff; border-radius: 9px; font-size: 12px; font-weight: 800; }
+.account-icon img { width: 100%; height: 100%; object-fit: contain; }
 .reminder-line { width: 100%; min-height: 64px; display: grid; grid-template-columns: 34px 1fr auto; align-items: center; gap: var(--space-3); color: var(--color-text-primary); background: transparent; border: 0; border-bottom: 1px solid var(--color-border); cursor: pointer; text-align: left; }
 .reminder-line:hover { background: var(--color-bg-hover); }
 .reminder-line strong { font-weight: 800; }

@@ -43,7 +43,7 @@ export type SettingsCategoryState = {
   personalBatchSaving: Ref<boolean>;
   personalBatchDeleteVisible: Ref<boolean>;
   personalBatchDeleting: Ref<boolean>;
-  categoryDraft: Reactive<{ name: string; type: string | number | null; parentId: string | number | null; sort: string; iconUrl: string; iconFileId: string; scopes: CategoryScope[]; monthlyBudget: string; enabled: boolean }>;
+  categoryDraft: Reactive<{ name: string; type: string | number | null; parentId: string | number | null; sort: string; iconUrl: string; iconFileId: string; iconKey: string; scopes: CategoryScope[]; monthlyBudget: string; enabled: boolean }>;
   initialCategoryDraftSnapshot: Ref<string>;
   visiblePersonalCategories: ComputedRef<CategoryRecord[]>;
   personalBatchItems: ComputedRef<CategoryRecord[]>;
@@ -108,7 +108,7 @@ export function useSettingsCategories(store: Store, categoryService: CategorySer
   const personalBatchSaving = ref(false);
   const personalBatchDeleteVisible = ref(false);
   const personalBatchDeleting = ref(false);
-  const categoryDraft = reactive({ name: "", type: "other" as string | number | null, parentId: null as string | number | null, sort: "999", iconUrl: "", iconFileId: "", scopes: ["asset", "expense"] as CategoryScope[], monthlyBudget: "", enabled: true });
+  const categoryDraft = reactive({ name: "", type: "other" as string | number | null, parentId: null as string | number | null, sort: "999", iconUrl: "", iconFileId: "", iconKey: "", scopes: ["asset", "expense"] as CategoryScope[], monthlyBudget: "", enabled: true });
   const initialCategoryDraftSnapshot = ref("");
 
   const scopeLabel = (scope: CategoryScope) => ({ asset: "资产", expense: "支出", income: "收入" })[scope];

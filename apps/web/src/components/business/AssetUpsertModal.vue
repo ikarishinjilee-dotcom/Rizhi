@@ -23,7 +23,7 @@
             }}
           </p>
         </div>
-        <button type="button" data-testid="asset-upsert-close" aria-label="关闭" @click="requestClose">×</button>
+        <button type="button" data-testid="asset-upsert-close" aria-label="关闭" @click="requestClose"><X :size="16" :stroke-width="2" /></button>
       </header>
 
       <div class="asset-modal__body">
@@ -69,7 +69,7 @@
             <div class="form-grid form-grid--three">
               <label :class="{ invalid: errors.cost }"><span>购入价格</span><RInput v-model="draft.cost" data-testid="asset-cost-field" placeholder="¥ 0.00" /><em>{{ errors.cost }}</em></label>
               <label :class="{ invalid: errors.purchaseDate }"><span>购买日期</span><RDatePicker v-model="draft.purchaseDate" placeholder="选择日期" /><em>{{ errors.purchaseDate }}</em></label>
-              <label :class="{ invalid: errors.accountId }"><span>付款账户</span><RSelect v-model="draft.accountId" :options="accountOptions" placeholder="选择账户" /><em>{{ errors.accountId }}</em></label>
+              <label :class="{ invalid: errors.accountId }"><span>付款账户</span><button type="button" class="asset-account-picker-trigger" @click="showAccountPicker = true"><span>{{ selectedAccountLabel }}</span><ChevronDown :size="16" /></button><em>{{ errors.accountId }}</em></label>
             </div>
             <RInlineFeedback v-if="formError" tone="danger">{{ formError }}</RInlineFeedback>
             <div class="notice-card">
@@ -99,6 +99,16 @@
     </section>
   </n-modal>
 
+  <LedgerAccountPickerModal
+    v-model="showAccountPicker"
+    title="付款账户"
+    target="from"
+    :selected-id="draft.accountId"
+    :sections="accountPickerSections"
+    :balance="accountBalanceLabel"
+    @select="selectPaymentAccount"
+  />
+
   <DeleteConfirmModal
     v-model:show="showRemoveImageModal"
     title="移除这张资产图片？"
@@ -119,17 +129,20 @@
 </template>
 
 <script setup lang="ts">
-import { computed, reactive, ref, watch } from "vue";
+import { computed, onMounted, reactive, ref, watch } from "vue";
+import { ChevronDown, X } from "@lucide/vue";
 import { NModal } from "naive-ui";
 import DeleteConfirmModal from "@/components/business/DeleteConfirmModal.vue";
 import AssetImageUploader from "@/components/business/AssetImageUploader.vue";
+import LedgerAccountPickerModal from "@/components/business/LedgerAccountPickerModal.vue";
 import RButton from "@/components/ui/RButton.vue";
 import RDatePicker from "@/components/ui/RDatePicker.vue";
 import RInput from "@/components/ui/RInput.vue";
 import RSelect from "@/components/ui/RSelect.vue";
 import RInlineFeedback from "@/components/ui/RInlineFeedback.vue";
 import { assetImageUrls } from "@/domain/assetCalculations";
-import type { AssetRecord } from "@/domain/models";
+import type { AssetRecord, CategoryRecord, MoneyAccountRecord } from "@/domain/models";
+import { loadSystemBankCategories, resolveBankIcon } from "@/services/bankIconService";
 import { useAppDataStore } from "@/stores/appDataStore";
 import { imageFileToPersistentUrl } from "@/utils/imageFiles";
 
@@ -171,8 +184,10 @@ const emit = defineEmits<{
 const store = useAppDataStore();
 const showRemoveImageModal = ref(false);
 const showUnsavedModal = ref(false);
+const showAccountPicker = ref(false);
 const pendingRemoveImageIndex = ref<number | null>(null);
 const initialDraftSnapshot = ref("");
+const systemBankItems = ref<CategoryRecord[]>([]);
 
 const assetCategories = computed(() => store.categories
   .filter((category) => category.domain === "asset" && !category.deletedAt && category.enabled !== false)
@@ -180,7 +195,50 @@ const assetCategories = computed(() => store.categories
 const assetRootCategories = computed(() => assetCategories.value.filter((category) => !category.parentId));
 const selectedRootCategoryId = ref<string | number | null>(null);
 const selectedSubCategories = computed(() => assetCategories.value.filter((category) => category.parentId === selectedRootCategoryId.value));
-const accountOptions = computed(() => store.accounts.map((account) => ({ label: account.name, value: account.id })));
+const bankCategories = computed(() => systemBankItems.value.length
+  ? systemBankItems.value
+  : store.categories.filter((category) => category.domain === "bank" && category.enabled !== false && !category.deletedAt));
+const accountWithBankIcon = (account: MoneyAccountRecord) => ({
+  ...account,
+  iconUrl: resolveBankIcon(account, bankCategories.value) ?? account.iconUrl,
+});
+const rawAccountPickerSections = computed(() => {
+  const configured = store.categories
+    .filter((category) => category.domain === "account" && category.enabled !== false && !category.deletedAt)
+    .sort((left, right) => left.sort - right.sort);
+  if (!configured.length) {
+    return [
+      { key: "asset", title: "资产账户", accounts: store.activeAccounts.filter((account) => account.direction === "asset") },
+      { key: "liability", title: "信用账户", accounts: store.activeAccounts.filter((account) => account.direction === "liability") },
+    ].filter((section) => section.accounts.length);
+  }
+  const included = new Set<string>();
+  const sections = configured.map((category) => {
+    const accounts = store.activeAccounts.filter((account) => account.accountTypeId === category.id);
+    accounts.forEach((account) => included.add(account.id));
+    return { key: String(category.id), title: category.name, accounts };
+  }).filter((section) => section.accounts.length);
+  const remaining = store.activeAccounts.filter((account) => !included.has(account.id));
+  if (remaining.length) sections.push({ key: "other", title: "其他账户", accounts: remaining });
+  return sections;
+});
+const accountPickerSections = computed(() => rawAccountPickerSections.value.map((section) => ({
+  ...section,
+  accounts: section.accounts.map(accountWithBankIcon),
+})));
+const selectedAccountLabel = computed(() => {
+  const account = store.accounts.find((item) => item.id === draft.accountId);
+  if (!account) return "选择付款账户";
+  const descriptor = account.bankName || account.institution || account.note;
+  return descriptor && descriptor !== account.name ? `${account.name} · ${descriptor}` : account.name;
+});
+function accountBalanceLabel(account: { balance: number; direction: string }) {
+  return `${account.direction === "liability" ? "当前欠款" : "当前余额"} ¥${account.balance.toFixed(2)}`;
+}
+function selectPaymentAccount(id: string | number | null) {
+  draft.accountId = id;
+  showAccountPicker.value = false;
+}
 const lifeOptions = [1, 2, 3, 5, 8].map((year) => ({ label: `${year} 年`, value: year }));
 
 const draft = reactive<AssetUpsertDraft>({
@@ -211,6 +269,10 @@ const previewSymbol = computed(() => draft.name.trim().slice(0, 1).toUpperCase()
 const coverImage = computed(() => draft.imageUrl || draft.imageUrls[0] || "");
 const formError = computed(() => errors.form || props.error);
 const isDirty = computed(() => props.show && serializeDraft() !== initialDraftSnapshot.value);
+
+onMounted(async () => {
+  systemBankItems.value = await loadSystemBankCategories();
+});
 
 function toTime(value?: string) {
   if (!value) return null;
@@ -546,6 +608,35 @@ watch([() => props.asset, assetCategories, () => store.accounts.length], () => {
 .form-grid label.invalid :deep(.n-base-selection) {
   border-color: var(--color-danger);
   box-shadow: 0 0 0 2px rgba(240, 68, 56, 0.08);
+}
+
+.asset-account-picker-trigger {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  min-height: 34px;
+  gap: var(--space-2);
+  padding: 0 12px;
+  color: var(--color-text-secondary);
+  text-align: left;
+  background: rgba(255, 255, 255, 0.92);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  cursor: pointer;
+}
+
+.asset-account-picker-trigger:hover,
+.asset-account-picker-trigger:focus-visible {
+  border-color: var(--color-primary);
+  box-shadow: 0 0 0 2px var(--color-primary-soft);
+  outline: 0;
+}
+
+.asset-account-picker-trigger > span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .form-grid label em {

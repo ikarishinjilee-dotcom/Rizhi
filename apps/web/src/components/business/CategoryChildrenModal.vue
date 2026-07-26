@@ -14,7 +14,7 @@
           <span>SUBCATEGORIES</span>
           <h3>{{ title }}</h3>
         </div>
-        <button type="button" aria-label="关闭" @click="visible = false">×</button>
+        <button type="button" aria-label="关闭" @click="visible = false"><X :size="16" :stroke-width="2" /></button>
       </header>
       <div class="children-modal__body"><slot /></div>
       <footer class="children-modal__footer"><slot name="footer"><RButton variant="secondary" @click="visible = false">关闭</RButton></slot></footer>
@@ -24,6 +24,7 @@
 
 <script setup lang="ts">
 import { computed } from "vue";
+import { X } from "@lucide/vue";
 import { NModal } from "naive-ui";
 import RButton from "@/components/ui/RButton.vue";
 

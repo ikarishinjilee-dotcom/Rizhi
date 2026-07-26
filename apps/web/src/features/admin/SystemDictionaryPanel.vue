@@ -8,6 +8,8 @@
 			<div class="panel-actions">
 				<template v-if="domain === 'asset'">
 					<RButton variant="secondary" @click="exportDefaults">导出默认分类备份</RButton>
+					<RButton variant="secondary" :disabled="importing" @click="openImportPicker">导入默认分类备份</RButton>
+					<input ref="importFileInput" class="visually-hidden" type="file" accept="application/json,.json" @change="importDefaultsFile" />
 				</template>
 			</div>
 		</header>
@@ -30,7 +32,6 @@
 			<template #actions>
 				<template v-if="domain === 'asset'">
 					<RButton variant="secondary" @click="startBatch">批量管理</RButton>
-					<RButton variant="secondary" @click="refreshAdminItems">刷新</RButton>
 				</template>
 			</template>
 			<template #card="{ category: item }">
@@ -38,12 +39,18 @@
 					:key="item.id"
 					:category="item"
 					:active="draft.id === item.id"
-					:show-sort="false"
+					:sort-only="true"
+					:show-sort="true"
+					:show-reorder="true"
+					:can-move-up="parentItems.findIndex((candidate) => candidate.id === item.id) > 0"
+					:can-move-down="parentItems.findIndex((candidate) => candidate.id === item.id) < parentItems.length - 1"
 					:show-scopes="domain === 'asset'"
 					:show-child-actions="domain === 'asset'"
 					@edit="edit"
 					@view-children="openChildren"
 					@add-child="startCreateChild"
+					@move-up="moveCategory(item, -1)"
+					@move-down="moveCategory(item, 1)"
 				/>
 			</template>
 		</CategoryManagerGrid>
@@ -51,15 +58,19 @@
 		<CategoryChildrenModal v-model:show="childrenVisible" :title="`「${selectedChildParent?.name ?? ''}」的子分类`">
 				<div class="children-list">
 					<template v-for="child in selectedChildItems" :key="child.id">
-						<button type="button" class="children-item" @click="edit(child)">
+						<div class="children-item">
 							<span class="item-icon small"
 								:style="{ backgroundColor: '#eef4ff' }">
 								<img v-if="child.iconUrl" :src="child.iconUrl" alt="" />
 								<b v-else>{{ child.icon || child.name.slice(0, 1) }}</b>
 							</span>
-							<span><strong>{{ child.name }}</strong><small>{{ groupLabel(child) }}</small></span>
+							<button type="button" class="children-item__content" @click="edit(child)"><strong>{{ child.name }}</strong><small>{{ groupLabel(child) }}</small></button>
 							<em>{{ categoryStatusLabel(child) }}</em>
-						</button>
+							<span class="children-item__reorder">
+								<button type="button" :disabled="selectedChildItems.findIndex((item) => item.id === child.id) === 0" aria-label="上移子分类" title="上移" @click="moveChildCategory(child, -1)">↑</button>
+								<button type="button" :disabled="selectedChildItems.findIndex((item) => item.id === child.id) === selectedChildItems.length - 1" aria-label="下移子分类" title="下移" @click="moveChildCategory(child, 1)">↓</button>
+							</span>
+						</div>
 					</template>
 					<div v-if="!selectedChildItems.length" class="empty-state">暂无子分类。</div>
 				</div>
@@ -89,12 +100,13 @@
 			@delete-request="deleteVisible = true"
 			@remove-icon="removeIcon"
 			@select-icon="selectIcon"
+			@select-icon-key="draft.iconKey = $event"
 		/>
 
-		<DeleteConfirmModal v-model:show="deleteVisible" title="删除系统分类？" description="已被资产或账户使用时将无法删除，建议优先停用。"
+		<DeleteConfirmModal v-model:show="deleteVisible" title="删除默认分类？" description="删除只会影响系统默认模板，不会影响已有用户的个人分类。若包含子分类，将一并删除默认子分类。"
 			:loading="deleting" @confirm="confirmDelete" />
-		<DeleteConfirmModal v-model:show="batchDeleteVisible" title="批量删除分类？"
-			:description="`将尝试删除 ${selectedBatchItems.length} 个分类。已被资产、记账或账户使用的分类会被系统阻止删除。`"
+		<DeleteConfirmModal v-model:show="batchDeleteVisible" title="批量删除默认分类？"
+			:description="`将删除 ${selectedBatchItems.length} 个默认分类。只影响新用户初始化时的模板，不会影响已有用户的个人分类。`"
 			:loading="batchDeleting" @confirm="confirmBatchDelete" />
 
 		<n-modal v-model:show="batchVisible" preset="card" :bordered="false" :closable="false" :mask-closable="false"
@@ -106,7 +118,7 @@
 						<span>BATCH</span>
 						<h3>批量管理分类</h3>
 					</div>
-					<button type="button" aria-label="关闭" @click="batchVisible = false">×</button>
+					<button type="button" aria-label="关闭" @click="batchVisible = false"><X :size="16" :stroke-width="2" /></button>
 				</header>
 				<div class="batch-body">
 					<section class="batch-picker">
@@ -153,7 +165,7 @@
 						</div>
 						<div v-if="batchOperation === 'delete'" class="batch-danger-note">
 							<strong>删除前确认</strong>
-							<p>删除会先经过二次确认；有业务引用的分类会被系统阻止删除。建议优先停用不用的分类。</p>
+					<p>删除只会移除系统默认模板，不会影响已有用户的个人分类；删除一级分类时会一并移除默认子分类。</p>
 						</div>
 						<div class="batch-preview">
 							<span>执行预览</span>
@@ -172,10 +184,11 @@
 
 <script setup lang="ts">
 	import { computed, onMounted, reactive, ref } from "vue";
+	import { X } from "@lucide/vue";
 	import { NModal } from "naive-ui";
 	import { categoryScopes, isBusinessCategory } from "@/domain/categoryScopes";
 	import type { CategoryDomain, CategoryRecord, CategoryScope } from "@/domain/models";
-	import type { CreateCategoryInput } from "@/services/categoryService";
+	import type { CategoryDefaultsBackup, CreateCategoryInput } from "@/services/categoryService";
 	import { categoryService } from "@/services/categoryService";
 	import { imageFileToPersistentUrl } from "@/utils/imageFiles";
 	import { uploadImageDataUrl } from "@/services/cloudApiService";
@@ -199,6 +212,8 @@ import SystemDictionaryEditorModal from "@/components/business/SystemDictionaryE
 	const batchSaving = ref(false);
 	const batchDeleteVisible = ref(false);
 	const batchDeleting = ref(false);
+	const importing = ref(false);
+	const importFileInput = ref<HTMLInputElement | null>(null);
 	const selectedChildParent = ref<CategoryRecord | null>(null);
 	const selectedBatchIds = ref<string[]>([]);
 	const batchOperation = ref<"enable" | "disable" | "scopes" | "delete">("enable");
@@ -207,7 +222,7 @@ import SystemDictionaryEditorModal from "@/components/business/SystemDictionaryE
 	const statusFilter = ref<"all" | "enabled" | "disabled">("all");
 	const scopeFilter = ref<"all" | CategoryScope>("all");
 	const message = ref(""), messageTone = ref<"success" | "danger">("success");
-	const draft = reactive({ id: "", name: "", note: "", sort: "100", type: "other", parentId: "", accountDirection: "asset", accountGroup: "asset", requiresBank: false, iconUrl: "", iconFileId: "", scopes: ["asset", "expense"] as CategoryScope[], enabled: true });
+	const draft = reactive({ id: "", name: "", note: "", sort: "100", type: "other", parentId: "", accountDirection: "asset", accountGroup: "asset", requiresBank: false, iconUrl: "", iconFileId: "", iconKey: "", scopes: ["asset", "expense"] as CategoryScope[], enabled: true });
 	const items = computed(() => systemItems.value
 		.filter((item) => props.domain === "asset" ? isBusinessCategory(item) : item.domain === props.domain)
 		.sort((a, b) => a.sort - b.sort));
@@ -231,19 +246,33 @@ import SystemDictionaryEditorModal from "@/components/business/SystemDictionaryE
 	const panelDescription = computed(() => props.domain === "asset" ? "维护新用户首次使用时获得的默认资产与记账分类。" : props.domain === "account" ? "维护新用户首次使用时获得的默认资金账户类型。" : "维护新用户首次使用时获得的默认银行列表。");
 	async function loadSystemItems() {
 		try {
-			let items = await categoryService.list({ scope: "system" });
-			if (!items.length && props.domain === "asset") {
-				const backup = await categoryService.getBuiltinDefaults();
-				if (backup.categories.length) {
-					await categoryService.importDefaults(backup);
-					items = await categoryService.list({ scope: "system" });
-				}
-			}
-			systemItems.value = items;
+			systemItems.value = await categoryService.list({ scope: "system" });
 		} catch (error) {
 			systemItems.value = [];
 			showError(error);
 		}
+	}
+	async function moveCategory(item: CategoryRecord, direction: -1 | 1) {
+		const index = parentItems.value.findIndex((candidate) => candidate.id === item.id);
+		const target = parentItems.value[index + direction];
+		if (index < 0 || !target) return;
+		const currentSort = item.sort;
+		await Promise.all([
+			categoryService.update({ id: item.id, sort: target.sort }),
+			categoryService.update({ id: target.id, sort: currentSort }),
+		]);
+		await loadSystemItems();
+	}
+	async function moveChildCategory(item: CategoryRecord, direction: -1 | 1) {
+		const siblings = selectedChildItems.value;
+		const index = siblings.findIndex((candidate) => candidate.id === item.id);
+		const target = siblings[index + direction];
+		if (index < 0 || !target) return;
+		await Promise.all([
+			categoryService.update({ id: item.id, sort: target.sort }),
+			categoryService.update({ id: target.id, sort: item.sort }),
+		]);
+		await loadSystemItems();
 	}
 	async function refreshAdminItems() { await Promise.all([store.refresh(), loadSystemItems()]); }
 	async function exportDefaults() {
@@ -251,6 +280,28 @@ import SystemDictionaryEditorModal from "@/components/business/SystemDictionaryE
 		const blob = new Blob([JSON.stringify(backup, null, 2)], { type: "application/json" });
 		const url = URL.createObjectURL(blob);
 		const link = document.createElement("a"); link.href = url; link.download = "rizhi-default-categories.json"; link.click(); URL.revokeObjectURL(url);
+	}
+	function openImportPicker() { importFileInput.value?.click(); }
+	async function importDefaultsFile(event: Event) {
+		const input = event.target as HTMLInputElement;
+		const file = input.files?.[0];
+		if (!file) return;
+		importing.value = true;
+		try {
+			const parsed = JSON.parse(await file.text()) as Partial<CategoryDefaultsBackup>;
+			if (parsed.version !== 1 || !Array.isArray(parsed.categories)) {
+				throw new Error("默认分类备份格式不正确");
+			}
+			await categoryService.importDefaults(parsed as CategoryDefaultsBackup);
+			await refreshAdminItems();
+			message.value = `已导入 ${parsed.categories.length} 个默认分类`;
+			messageTone.value = "success";
+		} catch (error) {
+			showError(error);
+		} finally {
+			importing.value = false;
+			input.value = "";
+		}
 	}
 	const statusOptions = [{ label: "状态：全部", value: "all" }, { label: "状态：启用", value: "enabled" }, { label: "状态：停用", value: "disabled" }];
 	const scopeOptions = [{ label: "分类类型：全部", value: "all" }, { label: "资产", value: "asset" }, { label: "支出", value: "expense" }, { label: "收入", value: "income" }];
@@ -262,7 +313,7 @@ import SystemDictionaryEditorModal from "@/components/business/SystemDictionaryE
 		if (!count) return "请选择至少一个分类。";
 		if (batchOperation.value === "enable") return `将启用 ${count} 个分类。`;
 		if (batchOperation.value === "disable") return `将停用 ${count} 个分类，已有关联数据仍会保留。`;
-		if (batchOperation.value === "delete") return `将尝试删除 ${count} 个分类；有业务引用的分类会被阻止删除。`;
+		if (batchOperation.value === "delete") return `将删除 ${count} 个默认分类，不影响已有用户的个人分类。`;
 		return `将 ${count} 个分类的适用范围改为：${batchScopes.value.map(scopeLabel).join(" / ") || "未选择"}`;
 	});
 
@@ -347,11 +398,24 @@ import SystemDictionaryEditorModal from "@/components/business/SystemDictionaryE
 		}
 	}
 	async function confirmBatchDelete() {
-		const selectedItems = selectedBatchItems.value;
+		// Delete children first so a parent is not blocked by a child selected in
+		// the same batch. Deduplicate IDs because old data may contain duplicates.
+		const selectedItems = Array.from(new Map(selectedBatchItems.value
+			.slice()
+			.sort((a, b) => Number(Boolean(b.parentId)) - Number(Boolean(a.parentId)))
+			.map((item) => [item.id, item])).values());
 		if (!selectedItems.length) return;
 		batchDeleting.value = true;
 		try {
-			const results = await Promise.allSettled(selectedItems.map((item) => categoryService.delete(item.id)));
+			const results: PromiseSettledResult<unknown>[] = [];
+			for (const item of selectedItems) {
+				try {
+					await categoryService.delete(item.id);
+					results.push({ status: "fulfilled", value: undefined });
+				} catch (reason) {
+					results.push({ status: "rejected", reason });
+				}
+			}
 			const deletedCount = results.filter((result) => result.status === "fulfilled").length;
 			const failedCount = results.length - deletedCount;
 			await refreshAdminItems();
@@ -371,7 +435,7 @@ import SystemDictionaryEditorModal from "@/components/business/SystemDictionaryE
 			batchDeleting.value = false;
 		}
 	}
-	function reset() { deleteBlocked.value = false; Object.assign(draft, { id: "", name: "", note: "", sort: "100", type: "other", parentId: "", accountDirection: "asset", accountGroup: "asset", requiresBank: false, iconUrl: "", iconFileId: "", scopes: props.domain === "asset" ? ["asset", "expense"] : [], enabled: true }); }
+	function reset() { deleteBlocked.value = false; Object.assign(draft, { id: "", name: "", note: "", sort: "100", type: "other", parentId: "", accountDirection: "asset", accountGroup: "asset", requiresBank: false, iconUrl: "", iconFileId: "", iconKey: "", scopes: props.domain === "asset" ? ["asset", "expense"] : [], enabled: true }); }
 	function clearEditorMessage() { message.value = ""; messageTone.value = "danger"; deleteBlocked.value = false; }
 	function startCreate() {
 		clearEditorMessage();
@@ -395,7 +459,7 @@ import SystemDictionaryEditorModal from "@/components/business/SystemDictionaryE
 	}
 	function edit(item : CategoryRecord) {
 		clearEditorMessage();
-		Object.assign(draft, { id: item.id, name: item.name, note: item.note || "", sort: String(item.sort), type: String(item.type || "other"), parentId: item.parentId || "", accountDirection: item.accountDirection || (item.accountGroup === "credit" ? "liability" : "asset"), accountGroup: item.accountGroup || "asset", requiresBank: item.requiresBank ?? (item.type === "debit_card" || item.type === "credit_card"), iconUrl: item.iconUrl || "", iconFileId: item.iconFileId || "", scopes: categoryScopes(item), enabled: item.enabled !== false });
+		Object.assign(draft, { id: item.id, name: item.name, note: item.note || "", sort: String(item.sort), type: String(item.type || "other"), parentId: item.parentId || "", accountDirection: item.accountDirection || (item.accountGroup === "credit" ? "liability" : "asset"), accountGroup: item.accountGroup || "asset", requiresBank: item.requiresBank ?? (item.type === "debit_card" || item.type === "credit_card"), iconUrl: item.iconUrl || "", iconFileId: item.iconFileId || "", iconKey: item.iconKey || "", scopes: categoryScopes(item), enabled: item.enabled !== false });
 		selectedChildParent.value = item.parentId ? items.value.find((parent) => parent.id === item.parentId) || null : null;
 		editorVisible.value = true;
 	}
@@ -416,7 +480,7 @@ import SystemDictionaryEditorModal from "@/components/business/SystemDictionaryE
 		saving.value = true;
 		const businessType = draft.scopes.includes("income") && !draft.scopes.includes("expense") ? "income" : draft.type;
 		const domain : CategoryDomain = props.domain === "asset" ? (draft.scopes.includes("asset") ? "asset" : "transaction") : props.domain;
-		const payload : CreateCategoryInput = { domain, name: draft.name.trim(), note: props.domain === "bank" ? draft.note.trim() || undefined : undefined, sort, parentId: draft.parentId || undefined, type: (props.domain === "asset" ? businessType : draft.type) as CategoryRecord["type"], scopes: props.domain === "asset" ? [...draft.scopes] : undefined, enabled: draft.enabled, isSystem: true, iconUrl: draft.iconUrl || undefined, iconFileId: draft.iconFileId || undefined, accountDirection: props.domain === "account" ? draft.accountDirection as CategoryRecord["accountDirection"] : undefined, accountGroup: props.domain === "account" ? draft.accountGroup as CategoryRecord["accountGroup"] : undefined, requiresBank: props.domain === "account" ? draft.requiresBank : undefined, scope: "system" };
+		const payload : CreateCategoryInput = { domain, name: draft.name.trim(), note: props.domain === "bank" ? draft.note.trim() || undefined : undefined, sort, parentId: draft.parentId || undefined, type: (props.domain === "asset" ? businessType : draft.type) as CategoryRecord["type"], scopes: props.domain === "asset" ? [...draft.scopes] : undefined, enabled: draft.enabled, isSystem: true, iconUrl: draft.iconUrl || undefined, iconFileId: draft.iconFileId || undefined, iconKey: draft.iconKey || undefined, accountDirection: props.domain === "account" ? draft.accountDirection as CategoryRecord["accountDirection"] : undefined, accountGroup: props.domain === "account" ? draft.accountGroup as CategoryRecord["accountGroup"] : undefined, requiresBank: props.domain === "account" ? draft.requiresBank : undefined, scope: "system" };
 		try {
 			draft.id ? await categoryService.update({ id: draft.id, ...payload }) : await categoryService.create(payload);
 			if (draft.id && props.domain === "asset" && !draft.parentId && !draft.enabled) {
@@ -564,6 +628,7 @@ import SystemDictionaryEditorModal from "@/components/business/SystemDictionaryE
 
 	.dictionary-form__feedback { margin: 16px 20px 0; }
 	.panel-actions { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+	.visually-hidden { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0; }
 
 	.category-card__main .category-card__note {
 		margin-top: 3px;
@@ -691,7 +756,6 @@ import SystemDictionaryEditorModal from "@/components/business/SystemDictionaryE
 		background: #fff;
 		border: 1px solid var(--color-border);
 		border-radius: 12px;
-		cursor: pointer;
 	}
 
 	.children-item:hover {
@@ -709,6 +773,35 @@ import SystemDictionaryEditorModal from "@/components/business/SystemDictionaryE
 		color: var(--color-text-muted);
 		font-size: 12px;
 		font-style: normal;
+	}
+
+	.children-item__content {
+		min-width: 0;
+		padding: 0;
+		text-align: left;
+		background: transparent;
+		border: 0;
+		cursor: pointer;
+	}
+
+	.children-item__reorder {
+		display: flex;
+		gap: 4px;
+	}
+
+	.children-item__reorder button {
+		width: 28px;
+		height: 28px;
+		color: var(--color-primary);
+		background: #fff;
+		border: 1px solid #bbd5ff;
+		border-radius: 7px;
+		cursor: pointer;
+	}
+
+	.children-item__reorder button:disabled {
+		cursor: not-allowed;
+		opacity: .38;
 	}
 
 	.batch-modal {

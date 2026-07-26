@@ -1,7 +1,7 @@
 import { getAuthToken, handleUnauthorized } from "@/services/authService";
 import { isUniCloudDataSource, requireApiBaseUrl, requireUniCloudMode } from "@/services/apiConfig";
 
-export const permissionKeys = ["system_users", "default_categories", "account_types", "banks", "branding"] as const;
+export const permissionKeys = ["system_users", "default_categories", "account_types", "banks", "branding", "release_notes"] as const;
 export type PermissionKey = typeof permissionKeys[number];
 export type PermissionRole = "super_admin" | "admin" | "user";
 export type PermissionMatrix = Record<PermissionRole, Record<PermissionKey, boolean>>;

@@ -4,7 +4,7 @@
       <section class="transfer-dialog" data-testid="asset-transfer-modal" role="dialog" aria-modal="true" aria-labelledby="asset-transfer-title">
         <header class="modal-hero modal-hero--green">
           <div><span>资产转让</span><h2 id="asset-transfer-title">记录这件物品离开你的时刻</h2><p>保存后会把资产标记为已转让，并生成一条收入记录。</p></div>
-          <button type="button" aria-label="关闭" @click="$emit('close')">×</button>
+          <button type="button" aria-label="关闭" @click="$emit('close')"><X :size="16" :stroke-width="2" /></button>
         </header>
         <div class="transfer-dialog__body">
           <aside class="transfer-summary"><span>资产总成本</span><strong>{{ formatAmount(totalCost) }}</strong><p>转让金额会作为当前估值，用于计算最终收益或损失。</p></aside>
@@ -23,6 +23,7 @@
 </template>
 
 <script setup lang="ts">
+import { X } from "@lucide/vue";
 import RButton from "@/components/ui/RButton.vue";
 import RDatePicker from "@/components/ui/RDatePicker.vue";
 import RInlineFeedback from "@/components/ui/RInlineFeedback.vue";

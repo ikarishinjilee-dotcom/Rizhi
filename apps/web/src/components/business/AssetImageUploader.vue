@@ -17,7 +17,7 @@
         @click="$emit('select-image', image)"
       >
         <img :src="image" :alt="`${draft.name || '资产'}图片${index + 1}`" />
-        <span data-testid="asset-image-remove" @click.stop="$emit('remove-image', index)">×</span>
+        <span data-testid="asset-image-remove" aria-label="删除图片" @click.stop="$emit('remove-image', index)"><X :size="14" :stroke-width="2" /></span>
       </button>
     </div>
   </aside>
@@ -25,6 +25,7 @@
 
 <script setup lang="ts">
 import { ref } from "vue";
+import { X } from "@lucide/vue";
 import RButton from "@/components/ui/RButton.vue";
 
 type AssetImageDraft = {

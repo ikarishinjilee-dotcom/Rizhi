@@ -2,7 +2,7 @@
   <RDataGate :loading="store.loading" :ready="store.initialized" :error="store.error" @retry="initializeData">
     <section class="ledger-page">
     <div v-if="mode === 'records'" class="ledger-dashboard">
-      <header class="ledger-dashboard__toolbar">
+      <div>
         <LedgerFilterToolbar
           :ledger-view="ledgerView"
           :month-label="monthLabel"
@@ -33,7 +33,7 @@
           @update:sub-category-filter="subCategoryFilter = $event"
           @update:account-filter="accountFilter = $event"
         />
-      </header>
+      </div>
 
       <LedgerOverviewCards :month-label="monthLabel" :month-income="monthIncome" :month-expense="monthExpense" :month-net="monthNet" :daily-expense-average="dailyExpenseAverage" />
 
@@ -257,6 +257,7 @@ import type { AssetAddonRecord, MoneyAccountRecord, TransactionRecord, Transacti
 import { assetAddonService } from "@/services/assetAddonService";
 import { accountService } from "@/services/accountService";
 import { transactionService } from "@/services/transactionService";
+import { loadSystemBankCategories, resolveBankCategory, resolveBankIcon } from "@/services/bankIconService";
 import { useAppDataStore } from "@/stores/appDataStore";
 
 use([BarChart, GridComponent, LegendComponent, TooltipComponent, CanvasRenderer]);
@@ -318,6 +319,7 @@ const calendarMonth = ref(startOfMonth(new Date()).getTime());
 const selectedDateKey = ref(toDateKey(new Date()));
 const dayEntriesPanel = ref<{ openDatePicker: () => void } | null>(null);
 const initialLedgerDraftSnapshot = ref("");
+const systemBankItems = ref<Awaited<ReturnType<typeof loadSystemBankCategories>>>([]);
 
 const transactionCategories = computed(() => store.categories.filter((category) => category.domain === "transaction"));
 const activeTransactionCategories = computed(() => transactionCategories.value.filter((category) => category.enabled !== false && !category.deletedAt));
@@ -352,22 +354,33 @@ const accountPickerTitle = computed(() => accountPickerTarget.value === "draft"
   ? (draftType.value === "income" ? "收款账户" : "付款账户")
   : accountPickerTarget.value === "from" ? "转出账户" : "转入账户");
 const accountPickerSections = computed<Array<{ key: string; title: string; accounts: MoneyAccountRecord[] }>>(() => {
+  const bankCategories = systemBankItems.value.length
+    ? systemBankItems.value
+    : store.categories.filter((category) => category.domain === "bank" && category.enabled !== false && !category.deletedAt);
+  const withBankPresentation = (account: MoneyAccountRecord) => {
+    const bank = resolveBankCategory(account, bankCategories);
+    return {
+      ...account,
+      bankName: bank?.name ?? account.bankName,
+      iconUrl: resolveBankIcon(account, bankCategories) ?? account.iconUrl,
+    };
+  };
   const configured = store.categories
     .filter((category) => category.domain === "account" && category.enabled !== false && !category.deletedAt)
     .sort((left, right) => left.sort - right.sort);
   if (!configured.length) {
     return [
-      { key: "asset", title: "资产账户", accounts: store.accounts.filter((account) => account.direction === "asset") },
-      { key: "liability", title: "信用账户", accounts: store.accounts.filter((account) => account.direction === "liability") },
+      { key: "asset", title: "资产账户", accounts: store.accounts.filter((account) => account.direction === "asset").map(withBankPresentation) },
+      { key: "liability", title: "信用账户", accounts: store.accounts.filter((account) => account.direction === "liability").map(withBankPresentation) },
     ].filter((section) => section.accounts.length);
   }
   const included = new Set<string | number>();
   const sections = configured.map((category) => {
-    const accounts = store.accounts.filter((account) => account.accountTypeId === category.id);
+    const accounts = store.accounts.filter((account) => account.accountTypeId === category.id).map(withBankPresentation);
     accounts.forEach((account) => included.add(account.id));
     return { key: String(category.id), title: category.name, accounts };
   }).filter((section) => section.accounts.length);
-  const remaining = store.accounts.filter((account) => !included.has(account.id));
+  const remaining = store.accounts.filter((account) => !included.has(account.id)).map(withBankPresentation);
   if (remaining.length) sections.push({ key: "other", title: "其他账户", accounts: remaining });
   return sections;
 });
@@ -758,6 +771,7 @@ onMounted(initializeData);
 
 async function initializeData() {
   await store.init().catch(() => undefined);
+  systemBankItems.value = await loadSystemBankCategories();
   if (store.initialized) {
     applyRouteState();
     selectDefaultDateForMonth(new Date(calendarMonth.value));
@@ -1149,7 +1163,17 @@ function categoryIconText(category: { icon?: string; name: string }) {
 }
 
 function accountForEntry(entry: TransactionRecord) {
-  return store.accounts.find((account) => account.id === entry.accountId);
+  const account = store.accounts.find((item) => item.id === entry.accountId);
+  const bankCategories = systemBankItems.value.length
+    ? systemBankItems.value
+    : store.categories.filter((category) => category.domain === "bank" && category.enabled !== false && !category.deletedAt);
+  if (!account) return undefined;
+  const bank = resolveBankCategory(account, bankCategories);
+  return {
+    ...account,
+    bankName: bank?.name ?? account.bankName,
+    iconUrl: resolveBankIcon(account, bankCategories) ?? account.iconUrl,
+  };
 }
 
 function accountRelationLabel(entry: TransactionRecord) {

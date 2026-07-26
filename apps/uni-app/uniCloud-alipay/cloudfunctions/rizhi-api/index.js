@@ -6,6 +6,16 @@ const command = db.command;
 const userProfiles = db.collection("rizhi-user-profiles");
 const uniIdUsers = db.collection("uni-id-users");
 const siteBranding = db.collection("rizhi-site-branding");
+const systemCategoryState = db.collection("rizhi-system-category-state");
+const userCategoryState = db.collection("rizhi-user-category-state");
+const releaseNotes = db.collection("rizhi-release-notes");
+const {
+  hasInitializedState,
+  shouldInitializeSystemTemplates,
+  shouldCopyUserCategories,
+  buildUserCategoryCopies,
+  shouldDeleteSystemChildren,
+} = require("./categoryState");
 const permissions = db.collection("rizhi-permissions");
 const {
   DEFAULT_PERMISSION_MATRIX,
@@ -98,74 +108,87 @@ const systemCategoryDefaults = [
   { id: "account-transport", domain: "account", type: "wallet", name: "交通卡", icon: "交", color: "#0EA5E9", sort: 730, accountGroup: "stored_value", accountDirection: "asset" },
 ];
 
+let ensureSystemCategoriesPromise = null;
+const ensureUserCategoriesPromises = new Map();
+
 async function ensureSystemCategories() {
-  const existing = await collections.categories.where({ userId: SYSTEM_USER_ID }).get();
-  const ids = new Set(existing.data.map((item) => item.id));
-  const missing = systemCategoryDefaults
-    .filter((item) => !ids.has(item.id))
-    .map((item) => ({ ...normalizeCategory(item), userId: SYSTEM_USER_ID, enabled: true, isSystem: true }));
-  // Multiple page requests can initialize the defaults at the same time. Add
-  // one document at a time and treat a concurrent duplicate as success.
-  for (const category of missing) {
+  if (ensureSystemCategoriesPromise) return ensureSystemCategoriesPromise;
+  ensureSystemCategoriesPromise = (async () => {
     try {
-      await collections.categories.add(category);
-    } catch (error) {
-      const message = String(error?.message || error || "");
-      if (!/already exists|duplicate|已存在/i.test(message)) throw error;
+      const state = await systemCategoryState.where({ key: "initialized" }).limit(1).get();
+      if (!shouldInitializeSystemTemplates(state)) return;
+
+      // Reading categories must never recreate defaults. Defaults are created
+      // only by an explicit import/initialization action in the admin center.
+      // This is important because an administrator may intentionally remove
+      // every default category.
+      await systemCategoryState.add({ key: "initialized", initializedAt: now() });
+    } finally {
+      ensureSystemCategoriesPromise = null;
     }
-  }
+  })();
+  return ensureSystemCategoriesPromise;
 }
 
 async function ensureUserCategories(userId) {
-  await ensureSystemCategories();
-  const [systemResult, userResult] = await Promise.all([
-    collections.categories.where({ userId: SYSTEM_USER_ID }).get(),
-    collections.categories.where({ userId }).get(),
-  ]);
-  const systemCategories = systemResult.data || [];
-  const userCategories = userResult.data || [];
-  const bySource = new Map(userCategories.filter((item) => item.sourceCategoryId).map((item) => [item.sourceCategoryId, item]));
-  const missing = systemCategories.filter((item) => !bySource.has(item.id));
-  if (!missing.length) return userCategories;
-
-  const idMap = new Map(missing.map((item) => [item.id, newId("cat")]));
-  for (const source of missing) {
-    const copy = {
-      // A cloud query includes the document's internal `_id`. Never carry it
-      // into a per-user copy, otherwise CloudBase rejects it as an existing
-      // document and every snapshot for a new user fails to load.
-      ...normalizeCategory(withoutInternalFields(source)),
-      id: idMap.get(source.id),
-      userId,
-      parentId: source.parentId ? idMap.get(source.parentId) || bySource.get(source.parentId)?.id : undefined,
-      sourceCategoryId: source.id,
-      isSystem: false,
-      enabled: source.enabled !== false,
-      createdAt: now(),
-      updatedAt: now(),
-    };
-    await collections.categories.add(copy);
-  }
-
-  // Existing records may still point to the old shared system category IDs.
-  for (const source of missing) {
-    const targetId = idMap.get(source.id);
-    await Promise.all([
-      collections.assets.where({ userId, categoryId: source.id }).update({ categoryId: targetId }),
-      collections.accounts.where({ userId, accountTypeId: source.id }).update({ accountTypeId: targetId }),
-      collections.accounts.where({ userId, bankId: source.id }).update({ bankId: targetId }),
-      collections.transactions.where({ userId, categoryId: source.id }).update({ categoryId: targetId }),
-      collections.transactions.where({ userId, subCategoryId: source.id }).update({ subCategoryId: targetId }),
+  if (ensureUserCategoriesPromises.has(userId)) return ensureUserCategoriesPromises.get(userId);
+  const promise = (async () => {
+    await ensureSystemCategories();
+    const initialized = await userCategoryState.where({ userId, key: "initialized" }).limit(1).get();
+    const [systemResult, userResult] = await Promise.all([
+      collections.categories.where({ userId: SYSTEM_USER_ID }).get(),
+      collections.categories.where({ userId }).get(),
     ]);
+    const systemCategories = systemResult.data || [];
+    const userCategories = userResult.data || [];
+
+    // A user's categories are a one-time copy of the system defaults. Once
+    // initialized, never re-sync missing records: deleting or editing a user
+    // category must remain independent from later admin template changes.
+    if (hasInitializedState(initialized)) return userCategories;
+
+    // Users created before the initialization marker was introduced already
+    // have their own category records. Treat those records as initialized
+    // instead of backfilling from the current admin template (which could
+    // resurrect a category the user intentionally deleted).
+    if (userCategories.length) {
+      await userCategoryState.add({ userId, key: "initialized", initializedAt: now() });
+      return userCategories;
+    }
+
+    if (!shouldCopyUserCategories(initialized, userCategories)) return userCategories;
+    const copies = buildUserCategoryCopies({
+      systemCategories,
+      userId,
+      idFactory: newId,
+      normalize: normalizeCategory,
+      strip: withoutInternalFields,
+      timestamp: now,
+    });
+    for (const { source, copy } of copies) {
+      await collections.categories.add(copy);
+    }
+
+    // Existing records may still point to the old shared system category IDs.
+    for (const { source, copy } of copies) {
+      const targetId = copy.id;
+      await Promise.all([
+        collections.assets.where({ userId, categoryId: source.id }).update({ categoryId: targetId }),
+        collections.accounts.where({ userId, accountTypeId: source.id }).update({ accountTypeId: targetId }),
+        collections.accounts.where({ userId, bankId: source.id }).update({ bankId: targetId }),
+        collections.transactions.where({ userId, categoryId: source.id }).update({ categoryId: targetId }),
+        collections.transactions.where({ userId, subCategoryId: source.id }).update({ subCategoryId: targetId }),
+      ]);
+    }
+    await userCategoryState.add({ userId, key: "initialized", initializedAt: now() });
+    return [...userCategories, ...copies.map(({ copy }) => copy)];
+  })();
+  ensureUserCategoriesPromises.set(userId, promise);
+  try {
+    return await promise;
+  } finally {
+    ensureUserCategoriesPromises.delete(userId);
   }
-  return [...userCategories, ...missing.map((source) => ({
-    ...normalizeCategory(source),
-    id: idMap.get(source.id),
-    userId,
-    parentId: source.parentId ? idMap.get(source.parentId) || bySource.get(source.parentId)?.id : undefined,
-    sourceCategoryId: source.id,
-    isSystem: false,
-  }))];
 }
 
 async function clearUserBusinessData(userId) {
@@ -710,10 +733,70 @@ async function replace(name, userId, id, record) {
 }
 
 async function remove(name, userId, id) {
-  const existing = await findOne(name, userId, id);
-  if (!existing) throw new Error("记录不存在");
-  await collections[name].doc(existing._id).remove();
-  return withoutInternalFields(existing);
+  const result = await collections[name].where({ userId, id }).get();
+  if (!result.data.length) throw new Error("记录不存在");
+  await Promise.all(result.data.map((record) => collections[name].doc(record._id).remove()));
+  return withoutInternalFields(result.data[0]);
+}
+
+function normalizeReleaseNote(body, existing = {}) {
+  const groups = Array.isArray(body.groups) ? body.groups : existing.groups;
+  return {
+    id: String(body.id || existing.id || newId("release")),
+    platform: ["web", "mini-program", "android", "ios"].includes(body.platform) ? body.platform : (existing.platform || "web"),
+    version: String(body.version || existing.version || "").trim(),
+    date: String(body.date || existing.date || "").trim(),
+    status: body.status === "published" ? "published" : "draft",
+    forceUpdate: body.forceUpdate === true,
+    minSupportedVersion: String(body.minSupportedVersion || "").trim(),
+    groups: ["new", "improved", "fixed"].map((type) => ({
+      label: type === "new" ? "新增" : type === "improved" ? "优化" : "修复",
+      type,
+      items: Array.isArray(groups?.find((group) => group.type === type)?.items)
+        ? groups.find((group) => group.type === type)?.items.map((item) => String(item).trim()).filter(Boolean)
+        : [],
+    })),
+    createdAt: existing.createdAt || now(),
+    updatedAt: now(),
+  };
+}
+
+async function listReleaseNotes(query = {}, admin = false) {
+  const condition = {};
+  if (query.platform) condition.platform = String(query.platform);
+  if (!admin || String(query.publishedOnly) === "true") condition.status = "published";
+  const result = await releaseNotes.where(condition).orderBy("date", "desc").limit(1000).get();
+  return result.data.map(withoutInternalFields);
+}
+
+async function handleReleaseNotes(method, path, body, query, auth, matrix) {
+  if (method === "GET" && path === "/release-notes") return ok(await listReleaseNotes(query));
+  if (!path.startsWith("/admin/release-notes")) return null;
+  requireFeaturePermission(auth, matrix, "release_notes");
+  if (method === "GET" && path === "/admin/release-notes") return ok(await listReleaseNotes(query, true));
+  if (method === "POST" && path === "/admin/release-notes") {
+    const record = normalizeReleaseNote(body);
+    if (!record.version || !record.date) throw new Error("版本号和发布日期不能为空");
+    await releaseNotes.add(record);
+    return ok(record, 201);
+  }
+  const match = path.match(/^\/admin\/release-notes\/([^/]+)$/);
+  if (!match) return null;
+  const id = decodeURIComponent(match[1]);
+  const existingResult = await releaseNotes.where({ id }).limit(1).get();
+  const existing = existingResult.data[0];
+  if (!existing) throw new Error("版本记录不存在");
+  if (method === "PATCH") {
+    const record = normalizeReleaseNote({ ...body, id }, existing);
+    if (!record.version || !record.date) throw new Error("版本号和发布日期不能为空");
+    await releaseNotes.doc(existing._id).set(record);
+    return ok(record);
+  }
+  if (method === "DELETE") {
+    await releaseNotes.doc(existing._id).remove();
+    return ok(null);
+  }
+  return null;
 }
 
 async function getSnapshot(userId) {
@@ -1287,7 +1370,10 @@ async function handleCategories(method, path, body, userId, query, auth, matrix)
     return ok({ importedCount: categories.length });
   }
   if (method === "GET" && path === "/categories") {
-    if (query.scope === "system") requireFeaturePermission(auth, matrix, permissionForDomain(query.domain));
+    // Bank metadata, including administrator-uploaded icons, is safe to read for account pickers.
+    if (query.scope === "system" && query.domain !== "bank") {
+      requireFeaturePermission(auth, matrix, permissionForDomain(query.domain));
+    }
     const allCategories = query.scope === "system"
       ? (await ensureSystemCategories(), await findAll("categories", SYSTEM_USER_ID, "sort", "asc"))
       : await ensureUserCategories(userId);
@@ -1317,11 +1403,15 @@ async function handleCategories(method, path, body, userId, query, auth, matrix)
   }
   const usageMatch = path.match(/^\/categories\/([^/]+)\/usage$/);
   if (method === "GET" && usageMatch) {
-    requireAdmin(auth);
     const id = decodeURIComponent(usageMatch[1]);
     const existing = await findOne("categories", SYSTEM_USER_ID, id)
       || await findOne("categories", userId, id);
     if (!existing) throw new Error("分类不存在或已被删除");
+    if (existing.userId === SYSTEM_USER_ID) {
+      requireFeaturePermission(auth, matrix, permissionForDomain(existing.domain));
+    } else {
+      requireAdmin(auth);
+    }
     return ok(await categoryUsage(existing.userId, id));
   }
   const migrateMatch = path.match(/^\/categories\/([^/]+)\/migrate-transactions$/);
@@ -1389,7 +1479,11 @@ async function handleCategories(method, path, body, userId, query, auth, matrix)
     }
     if (usage.assets > 0) throw new Error(`该分类已被 ${usage.assets} 个资产使用，不能删除。`);
     if (usage.transactions > 0) throw new Error(`该分类已有 ${usage.transactions} 条记账记录，不能删除。`);
-    if (usage.childCategories > 0) throw new Error(`该分类下还有 ${usage.childCategories} 个子分类，不能删除。`);
+    if (usage.childCategories > 0) {
+      if (!shouldDeleteSystemChildren(existing.userId, SYSTEM_USER_ID)) throw new Error(`该分类下还有 ${usage.childCategories} 个子分类，不能删除。`);
+      const children = await collections.categories.where({ userId: SYSTEM_USER_ID, parentId: id }).get();
+      await Promise.all((children.data || []).map((child) => remove("categories", SYSTEM_USER_ID, child.id)));
+    }
     if (usage.banks > 0) throw new Error(`该银行已被 ${usage.banks} 个资金账户关联，不能删除。请先在资金页更换或移除这些账户的银行。`);
     await remove("categories", existing.userId === SYSTEM_USER_ID ? SYSTEM_USER_ID : userId, id);
     return ok(null);
@@ -1481,6 +1575,8 @@ async function route(event) {
   if (method === "PATCH" && path === "/admin/permissions") {
     return ok(await updatePermissionMatrix(auth, body));
   }
+  const releaseResult = await handleReleaseNotes(method, path, body, query, auth, permissionMatrix);
+  if (releaseResult) return releaseResult;
   const adminRoleMatch = path.match(/^\/admin\/users\/([^/]+)\/admin-role$/);
   if (method === "PATCH" && adminRoleMatch) {
     return ok(await updateAdminRole(auth, decodeURIComponent(adminRoleMatch[1]), body.enabled === true, permissionMatrix));

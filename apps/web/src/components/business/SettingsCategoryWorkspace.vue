@@ -25,6 +25,7 @@
         @delete="emit('delete-editing-category')"
         @remove-icon="emit('remove-category-icon')"
         @select-icon="emit('select-category-icon', $event)"
+        @select-icon-key="emit('select-category-icon-key', $event)"
       />
 
       <CategoryManagerGrid
@@ -51,11 +52,16 @@
             :active="selectedParentCategoryId === category.id"
             :sort-only="true"
             :show-sort="false"
+            :show-reorder="true"
+            :can-move-up="visiblePersonalCategories.findIndex((candidate) => candidate.id === category.id) > 0"
+            :can-move-down="visiblePersonalCategories.findIndex((candidate) => candidate.id === category.id) < visiblePersonalCategories.length - 1"
             :show-child-actions="true"
             :data-testid="`category-item-${category.id}`"
             @edit="emit('edit-category', $event)"
             @view-children="emit('view-children', $event)"
             @add-child="emit('create-child', $event.id)"
+            @move-up="emit('move-up', $event)"
+            @move-down="emit('move-down', $event)"
           />
         </template>
       </CategoryManagerGrid>
@@ -125,7 +131,7 @@ type CategoryStatus = "active" | "disabled" | "all";
 type BatchOperation = "enable" | "disable" | "scopes" | "delete";
 type Option = { label: string; value: string | number };
 type ScopeOption = { label: string; value: CategoryScope };
-type CategoryDraft = { name: string; type: string | number | null; parentId: string | number | null; sort: string; iconUrl: string; iconFileId: string; scopes: CategoryScope[]; monthlyBudget: string; enabled: boolean };
+type CategoryDraft = { name: string; type: string | number | null; parentId: string | number | null; sort: string; iconUrl: string; iconFileId: string; iconKey: string; scopes: CategoryScope[]; monthlyBudget: string; enabled: boolean };
 
 const props = defineProps<{
   categoryEditorVisible: boolean; categoryFormTitle: string; categoryLevel: "parent" | "child"; categoryDraft: CategoryDraft;
@@ -153,10 +159,11 @@ const emit = defineEmits<{
   "update:personal-category-scope-filter": [value: "all" | CategoryScope]; "update:batch-visible": [value: boolean];
   "update:children-visible": [value: boolean]; "update:batch-ids": [value: string[]]; "update:batch-operation": [value: BatchOperation];
   "update:batch-scopes": [value: CategoryScope[]]; "close-editor": []; "save-category": []; "delete-editing-category": [];
-  "remove-category-icon": []; "select-category-icon": [event: Event]; "create-parent": []; "open-batch": []; refresh: [];
+  "remove-category-icon": []; "select-category-icon": [event: Event]; "select-category-icon-key": [key: string]; "create-parent": []; "open-batch": []; refresh: [];
   "edit-category": [category: CategoryRecord]; "view-children": [category: CategoryRecord]; "create-child": [parentId: string];
   "select-all-batch": []; "apply-batch": []; "confirm-batch-delete": []; "edit-child": [category: CategoryRecord];
   "delete-child": [categoryId: string]; "close-children": []; "create-child-from-modal": [];
+  "move-up": [category: CategoryRecord]; "move-down": [category: CategoryRecord];
 }>();
 
 const editorVisible = computed({ get: () => props.categoryEditorVisible, set: (value) => emit("update:category-editor-visible", value) });

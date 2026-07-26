@@ -16,7 +16,7 @@
           <span>CATEGORY</span>
           <h3>{{ categoryFormTitle }}</h3>
         </div>
-        <button type="button" aria-label="关闭" @click="$emit('close')">×</button>
+        <button type="button" aria-label="关闭" @click="$emit('close')"><X :size="16" :stroke-width="2" /></button>
       </header>
       <div class="category-form__body">
         <p class="category-form__hint">通过适用范围决定此分类在资产、支出或收入中可用。</p>
@@ -36,22 +36,16 @@
             </label>
           </div>
         </div>
-        <label>
-          <span>分类图标</span>
-          <div class="category-icon-upload">
-            <span class="category-icon-preview">
-              <img v-if="categoryDraft.iconUrl" :src="categoryDraft.iconUrl" alt="当前分类图标" />
-              <span v-else>{{ categoryDraft.name.trim().slice(0, 1) || "分" }}</span>
-            </span>
-            <RButton native-type="button" variant="secondary" :loading="uploadingCategoryIcon" @click="categoryIconFileInput?.click()">上传图标</RButton>
-            <button v-if="categoryDraft.iconUrl" type="button" class="text-danger-button" @click="$emit('remove-icon')">移除图标</button>
-            <input ref="categoryIconFileInput" class="hidden-file" type="file" accept="image/png,image/jpeg,image/webp" @change="$emit('select-icon', $event)" />
-          </div>
-        </label>
         <label class="category-enabled-row">
           <input v-model="categoryDraft.enabled" type="checkbox" />
           <span>启用该项</span>
         </label>
+        <IconLibraryPicker
+          v-model="categoryDraft.iconKey"
+          kind="standard"
+          compact
+          @select="(key) => $emit('select-icon-key', key)"
+        />
         <RInlineFeedback v-if="categoryMessage" :tone="categoryMessageTone">{{ categoryMessage }}</RInlineFeedback>
       </div>
       <footer class="category-form__actions">
@@ -64,12 +58,13 @@
 </template>
 
 <script setup lang="ts">
-import { ref } from "vue";
+import { X } from "@lucide/vue";
 import { NModal } from "naive-ui";
 import RButton from "@/components/ui/RButton.vue";
 import RInlineFeedback from "@/components/ui/RInlineFeedback.vue";
 import RInput from "@/components/ui/RInput.vue";
 import RSelect from "@/components/ui/RSelect.vue";
+import IconLibraryPicker from "@/components/ui/IconLibraryPicker.vue";
 import type { CategoryScope } from "@/domain/models";
 
 defineProps<{
@@ -81,6 +76,7 @@ defineProps<{
     name: string;
     scopes: CategoryScope[];
     iconUrl: string;
+    iconKey: string;
     enabled: boolean;
   };
   parentCategoryOptions: Array<{ label: string; value: string }>;
@@ -99,9 +95,9 @@ defineEmits<{
   delete: [];
   "remove-icon": [];
   "select-icon": [event: Event];
+  "select-icon-key": [key: string];
 }>();
 
-const categoryIconFileInput = ref<HTMLInputElement | null>(null);
 </script>
 
 <style scoped>

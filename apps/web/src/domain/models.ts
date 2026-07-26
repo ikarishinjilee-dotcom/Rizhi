@@ -119,6 +119,8 @@ export type MoneyAccountRecord = TimestampFields & {
   repaymentDay?: number;
   color?: string;
   icon?: string;
+  /** Stable cross-platform icon library identifier. */
+  iconKey?: string;
   iconUrl?: string;
   iconFileId?: string;
   bankName?: string;
@@ -177,6 +179,8 @@ export type CategoryRecord = {
   icon?: string;
   iconUrl?: string;
   iconFileId?: string;
+  /** Stable cross-platform icon library identifier. */
+  iconKey?: string;
   scopes?: CategoryScope[];
   bankName?: string;
   bankId?: ID;

@@ -116,12 +116,15 @@
           @delete-editing-category="requestDeleteEditingCategory"
           @remove-category-icon="removeCategoryIcon"
           @select-category-icon="selectCategoryIcon"
+          @select-category-icon-key="categoryDraft.iconKey = $event"
           @create-parent="startCreateParentCategory"
           @open-batch="openPersonalBatchManager"
           @refresh="refreshPersonalCategories"
           @edit-category="editCategory"
           @view-children="openPersonalChildren"
           @create-child="startCreateChildCategory"
+          @move-up="movePersonalCategory($event, -1)"
+          @move-down="movePersonalCategory($event, 1)"
           @select-all-batch="selectAllPersonalBatchItems"
           @apply-batch="applyPersonalBatch"
           @confirm-batch-delete="confirmPersonalBatchDelete"
@@ -607,6 +610,7 @@ function resetCategoryDraft() {
   categoryDraft.sort = "999";
   categoryDraft.iconUrl = "";
   categoryDraft.iconFileId = "";
+  categoryDraft.iconKey = "";
   categoryDraft.scopes = ["asset", "expense"];
   categoryDraft.monthlyBudget = "";
   categoryDraft.enabled = true;
@@ -626,6 +630,7 @@ function editCategory(category: CategoryRecord) {
   categoryDraft.sort = String(category.sort);
   categoryDraft.iconUrl = category.iconUrl || "";
   categoryDraft.iconFileId = category.iconFileId || "";
+  categoryDraft.iconKey = category.iconKey || "";
   categoryDraft.scopes = [...scopesOf(category)];
   categoryDraft.monthlyBudget = category.monthlyBudget ? String(category.monthlyBudget) : "";
   categoryDraft.enabled = category.enabled !== false;
@@ -725,6 +730,18 @@ function startCreateChildFromModal() {
   if (parentId) startCreateChildCategory(parentId);
 }
 
+async function movePersonalCategory(category: CategoryRecord, direction: -1 | 1) {
+  const parents = store.categories
+    .filter((item) => !item.parentId && !item.deletedAt && (item.domain === "asset" || item.domain === "transaction"))
+    .sort((left, right) => left.sort - right.sort || left.name.localeCompare(right.name, "zh-CN"));
+  const index = parents.findIndex((item) => item.id === category.id);
+  const target = parents[index + direction];
+  if (index < 0 || !target) return;
+  await categoryService.update({ id: category.id, sort: target.sort });
+  await categoryService.update({ id: target.id, sort: category.sort });
+  await refreshPersonalCategories();
+}
+
 function startCreateParentCategory() {
   categoryLevel.value = "parent";
   resetCategoryDraft();
@@ -792,6 +809,7 @@ async function saveCategory() {
         monthlyBudget: budget,
         iconUrl: categoryDraft.iconUrl || undefined,
         iconFileId: categoryDraft.iconFileId || undefined,
+        iconKey: categoryDraft.iconKey || undefined,
         enabled: categoryDraft.enabled,
       });
       setCategoryMessage("分类已保存。");
@@ -806,6 +824,7 @@ async function saveCategory() {
         monthlyBudget: budget,
         iconUrl: categoryDraft.iconUrl || undefined,
         iconFileId: categoryDraft.iconFileId || undefined,
+        iconKey: categoryDraft.iconKey || undefined,
         enabled: categoryDraft.enabled,
       });
       setCategoryMessage("分类已新增。");

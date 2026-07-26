@@ -6,7 +6,7 @@
         <h2>{{ editingAccountId ? "维护账户档案" : "把资金账户统一建档" }}</h2>
         <p>{{ editingAccountId ? "可修改账户类型、名称、余额、额度、账单日和还款日；已有流水的账户不能在资产和负债之间切换。" : "选择账户类型后填写余额、欠款、账单日和还款日。" }}</p>
       </div>
-      <button type="button" @click="$emit('close')">×</button>
+      <button type="button" aria-label="关闭" @click="$emit('close')"><X :size="16" :stroke-width="2" /></button>
     </header>
 
     <div class="account-modal__body">
@@ -27,8 +27,8 @@
         <div class="form-grid">
           <label :class="{ invalid: accountErrors.name }"><span>名称 *</span><RInput v-model="accountDraft.name" placeholder="例如 花呗" /><em>{{ accountErrors.name }}</em></label>
           <label><span>备注</span><RInput v-model="accountDraft.note" placeholder="例如 日常消费分期" /></label>
-          <label v-if="selectedAccountNeedsBank"><span>所属银行</span><button type="button" class="bank-picker-trigger" @click="$emit('open-bank-picker')"><span v-if="selectedBank" class="bank-picker-trigger__value"><b :style="{ background: selectedBank.color || '#1677ff' }">{{ selectedBank.icon || selectedBank.name.slice(0, 1) }}</b>{{ selectedBank.name }}</span><span v-else class="bank-picker-trigger__placeholder">选择银行</span><span>⌄</span></button></label>
-          <div class="account-total-assets-toggle"><span>资产汇总</span><label class="switch-row"><input v-model="accountDraft.includeInTotalAssets" type="checkbox" /> 计入总资产</label><small>关闭后仍保留账户和流水，但不计入总资产与净资产。</small></div>
+          <label v-if="selectedAccountNeedsBank"><span>所属银行</span><button type="button" class="bank-picker-trigger" @click="$emit('open-bank-picker')"><span v-if="selectedBank" class="bank-picker-trigger__value"><span class="bank-picker-trigger__icon" :class="{ 'bank-picker-trigger__icon--image': selectedBank.iconUrl }"><img v-if="selectedBank.iconUrl" :src="selectedBank.iconUrl" :alt="`${selectedBank.name}图标`" /><b v-else :style="{ background: selectedBank.color || '#1677ff' }">{{ selectedBank.icon || selectedBank.name.slice(0, 1) }}</b></span>{{ selectedBank.name }}</span><span v-else class="bank-picker-trigger__placeholder">选择银行</span><span>⌄</span></button></label>
+          <div class="account-total-assets-toggle"><div><strong>是否计入总资产</strong><small>关闭后仍保留账户和流水，但不计入总资产与净资产。</small></div><label class="switch-row"><input v-model="accountDraft.includeInTotalAssets" type="checkbox" /><span>计入总资产</span></label></div>
           <label :class="{ invalid: accountErrors.balance }"><span>{{ selectedAccountType.direction === "liability" ? "当前欠款" : "当前余额" }}</span><RInput v-model="accountDraft.balance" placeholder="1,256.00" /><em>{{ accountErrors.balance }}</em></label>
           <label v-if="selectedAccountIsCredit"><span>总额度</span><RInput v-model="accountDraft.creditLimit" placeholder="5,000.00" /></label>
           <label v-if="selectedAccountIsCredit"><span>出账日</span><RSelect v-model="accountDraft.billDay" :options="dayOptions" placeholder="每月10日" /></label>
@@ -42,6 +42,7 @@
 </template>
 
 <script setup lang="ts">
+import { X } from "@lucide/vue";
 import RButton from "@/components/ui/RButton.vue";
 import RInlineFeedback from "@/components/ui/RInlineFeedback.vue";
 import RInput from "@/components/ui/RInput.vue";
@@ -50,7 +51,7 @@ import type { AccountType, MoneyAccountRecord } from "@/domain/models";
 
 type AccountTypeItem = { key: string; label: string; icon: string; color: string; direction: MoneyAccountRecord["direction"]; requiresBank?: boolean; type: AccountType; group?: "asset" | "credit" | "stored_value" };
 type AccountTypeGroup = { title: string; items: AccountTypeItem[] };
-type BankItem = { name: string; color?: string; icon?: string };
+type BankItem = { name: string; color?: string; icon?: string; iconUrl?: string };
 
 defineProps<{
   editingAccountId: string | null;
@@ -93,10 +94,14 @@ defineEmits<{ close: []; submit: []; "select-type": [item: AccountTypeItem]; "op
 .bank-picker-trigger { display: flex; align-items: center; justify-content: space-between; width: 100%; min-height: 40px; padding: 0 12px; color: var(--color-text-primary); background: #fff; border: 1px solid var(--color-border); border-radius: 10px; cursor: pointer; text-align: left; }
 .bank-picker-trigger:hover { border-color: var(--color-primary); }
 .bank-picker-trigger__value { display: flex; align-items: center; gap: 8px; }
-.bank-picker-trigger__value b { display: grid; width: 28px; height: 28px; place-items: center; overflow: hidden; color: #fff; border-radius: 8px; font-size: 12px; font-weight: 800; }
+.bank-picker-trigger__icon, .bank-picker-trigger__value b { display: grid; width: 28px; height: 28px; place-items: center; overflow: hidden; color: #fff; border-radius: 8px; font-size: 12px; font-weight: 800; }
+.bank-picker-trigger__icon--image { background: transparent; }
+.bank-picker-trigger__icon img { width: 100%; height: 100%; object-fit: contain; }
 .bank-picker-trigger__placeholder { color: var(--color-text-muted); }
-.account-total-assets-toggle { display: grid; grid-column: 1 / -1; gap: var(--space-2); color: var(--color-text-secondary); font-size: var(--font-caption); font-weight: 700; }
-.account-total-assets-toggle .switch-row { display: flex; align-items: center; gap: var(--space-2); color: var(--color-text-primary); font-weight: 700; }
+.account-total-assets-toggle { display: flex; grid-column: 1 / -1; align-items: center; justify-content: space-between; gap: var(--space-5); padding: 12px 14px; color: var(--color-text-secondary); background: var(--color-fill-secondary); border: 1px solid var(--color-border); border-radius: 12px; font-size: var(--font-caption); }
+.account-total-assets-toggle > div { display: grid; gap: 3px; }
+.account-total-assets-toggle strong { color: var(--color-text-primary); font-weight: 700; }
+.account-total-assets-toggle .switch-row { display: flex; flex: 0 0 auto; align-items: center; gap: var(--space-2); color: var(--color-text-primary); font-weight: 700; white-space: nowrap; }
 .account-total-assets-toggle .switch-row input { accent-color: var(--color-primary); }
 .account-total-assets-toggle small { color: var(--color-text-tertiary); font-weight: 500; }
 .account-form footer { display: flex; justify-content: flex-end; gap: var(--space-3); margin-top: var(--space-5); }

@@ -1,12 +1,12 @@
 <template>
   <button v-if="variant === 'asset'" class="account-line" data-testid="fund-account-line" type="button" @click="$emit('select', account.id)">
-    <span class="account-icon" :style="{ background: account.color || '#1677ff' }">{{ account.icon || account.name.slice(0, 1) }}</span>
+    <span class="account-icon" :style="{ background: account.color || '#1677ff' }"><img v-if="account.iconUrl" :src="account.iconUrl" :alt="account.name" /><template v-else>{{ account.icon || account.name.slice(0, 1) }}</template></span>
     <strong>{{ account.name }}</strong><em>{{ formatAmount(account.balance) }}</em>
     <svg v-if="sparkline" viewBox="0 0 72 24" aria-hidden="true"><polyline :points="sparkline" /></svg>
     <small v-else class="mini-trend-empty">暂无趋势</small>
   </button>
   <button v-else class="debt-line" data-testid="fund-account-line" type="button" @click="$emit('select', account.id)">
-    <span class="account-icon" :style="{ background: account.color || '#ef4444' }">{{ account.icon || account.name.slice(0, 1) }}</span>
+    <span class="account-icon" :style="{ background: account.color || '#ef4444' }"><img v-if="account.iconUrl" :src="account.iconUrl" :alt="account.name" /><template v-else>{{ account.icon || account.name.slice(0, 1) }}</template></span>
     <div><strong>{{ account.name }}</strong><small>剩余额度 {{ formatAmount(Math.max((account.creditLimit ?? 0) - account.balance, 0)) }}</small></div>
     <div><em>当前欠款 {{ formatAmount(account.balance) }}</em><small>总额度 {{ formatAmount(account.creditLimit ?? 0) }}</small></div>
   </button>
@@ -25,7 +25,8 @@ defineEmits<{ select: [id: string] }>();
 .account-line { grid-template-columns: 34px 1fr auto 68px; }
 .debt-line { grid-template-columns: 34px 1fr auto; }
 .account-line:hover, .debt-line:hover { background: var(--color-bg-hover); }
-.account-icon { display: grid; width: 30px; height: 30px; place-items: center; color: #fff; border-radius: 9px; font-size: 12px; font-weight: 800; }
+.account-icon { display: grid; width: 30px; height: 30px; place-items: center; color: #fff; border-radius: 9px; font-size: 12px; font-weight: 800; overflow: hidden; }
+.account-icon img { width: 100%; height: 100%; object-fit: contain; }
 .account-line strong, .debt-line strong { font-weight: 800; }
 .account-line em, .debt-line em { font-style: normal; font-weight: 800; }
 .account-line small, .debt-line small { display: block; margin-top: 3px; color: var(--color-text-tertiary); font-size: 11px; }

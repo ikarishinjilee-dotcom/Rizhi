@@ -17,7 +17,7 @@
           <h2>{{ draftType === "income" ? "记录一笔收入" : draftType === "transfer" ? "记录一次账户转账" : "记录一笔日常支出" }}</h2>
           <p>{{ draftType === "income" ? "收入会增加所选账户余额。" : draftType === "transfer" ? "转账会生成转出和转入两条账户流水。" : "支出会减少现金账户余额，或增加信用/负债账户欠款。" }}</p>
         </div>
-        <button type="button" @click="$emit('close')">×</button>
+        <button type="button" aria-label="关闭" @click="$emit('close')"><X :size="16" :stroke-width="2" /></button>
       </header>
       <div class="ledger-modal__body"><slot /></div>
       <footer class="ledger-modal__footer">
@@ -32,6 +32,7 @@
 
 <script setup lang="ts">
 import { NModal } from "naive-ui";
+import { X } from "@lucide/vue";
 import RButton from "@/components/ui/RButton.vue";
 
 const visible = defineModel<boolean>({ required: true });

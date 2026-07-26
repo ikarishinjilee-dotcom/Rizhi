@@ -13,7 +13,7 @@
     <section class="personal-batch">
       <header class="personal-batch__head">
         <div><span>BATCH</span><h3>批量管理分类</h3></div>
-        <button type="button" aria-label="关闭" @click="$emit('update:show', false)">×</button>
+        <button type="button" aria-label="关闭" @click="$emit('update:show', false)"><X :size="16" :stroke-width="2" /></button>
       </header>
       <div class="personal-batch__body">
         <section class="personal-batch__picker">
@@ -76,6 +76,7 @@
 
 <script setup lang="ts">
 import { NModal } from "naive-ui";
+import { X } from "@lucide/vue";
 import RButton from "@/components/ui/RButton.vue";
 import RSelect from "@/components/ui/RSelect.vue";
 import type { CategoryRecord, CategoryScope } from "@/domain/models";

@@ -1,6 +1,6 @@
 <template>
   <button class="account-row" type="button" @click="$emit('open', account.id)">
-    <div class="account-row__icon" :style="{ background: account.color ?? fallbackColor }">{{ account.icon ?? "账" }}</div>
+    <div class="account-row__icon" :style="{ background: account.color ?? fallbackColor }"><img v-if="account.iconUrl" :src="account.iconUrl" :alt="account.name" /><template v-else>{{ account.icon ?? "账" }}</template></div>
     <div class="account-row__main">
       <strong>{{ account.name }}</strong>
       <span>{{ typeLabel }}</span>
@@ -75,6 +75,13 @@ const typeLabel = computed(() => {
   border-radius: 50%;
   font-size: 13px;
   font-weight: 700;
+  overflow: hidden;
+}
+
+.account-row__icon img {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
 }
 
 .account-row__main strong,

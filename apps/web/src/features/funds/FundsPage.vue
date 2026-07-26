@@ -40,7 +40,7 @@
         @close="requestCloseAccountModal"
         @submit="submitAccount"
         @select-type="selectAccountType"
-        @open-bank-picker="bankPickerVisible = true"
+        @open-bank-picker="openBankPicker"
       />
     </FundsModalShell>
 
@@ -48,11 +48,11 @@
       <section class="bank-picker-modal">
         <header class="bank-picker-modal__head">
           <div><span>银行选择</span><h3>选择所属银行</h3><p>选择后会回填到当前资金账户。</p></div>
-          <button type="button" @click="bankPickerVisible = false">×</button>
+          <button type="button" aria-label="关闭" @click="bankPickerVisible = false"><X :size="16" :stroke-width="2" /></button>
         </header>
         <div class="bank-picker-grid">
           <button v-for="bank in bankItems" :key="bank.id" type="button" :class="{ active: accountDraft.bankId === bank.id }" @click="selectBank(bank)">
-            <span class="bank-picker-card__icon" :style="{ background: bank.color || '#1677ff' }"><img v-if="bank.iconUrl" :src="bank.iconUrl" alt="" /><b v-else>{{ bank.icon || bank.name.slice(0, 1) }}</b></span>
+            <span class="bank-picker-card__icon" :class="{ 'bank-picker-card__icon--image': bankIconUrl(bank) }"><img v-if="bankIconUrl(bank)" :src="bankIconUrl(bank)" :alt="`${bank.name}图标`" /><b v-else :style="{ background: bank.color || '#1677ff' }">{{ bank.icon || bank.name.slice(0, 1) }}</b></span>
             <strong>{{ bank.name }}</strong>
             <small v-if="bank.note">{{ bank.note }}</small>
           </button>
@@ -69,7 +69,7 @@
             <h2>记录一次账户间资金流动</h2>
             <p>转账会生成转出和转入两条账户流水。</p>
           </div>
-          <button type="button" @click="requestCloseTransferModal">×</button>
+          <button type="button" aria-label="关闭" @click="requestCloseTransferModal"><X :size="16" :stroke-width="2" /></button>
         </header>
         <div class="transfer-body">
           <label :class="{ invalid: transferErrors.fromAccountId }"><span>转出账户</span><RSelect v-model="transferDraft.fromAccountId" :options="accountOptions" placeholder="选择转出账户" /><em>{{ transferErrors.fromAccountId }}</em></label>
@@ -93,7 +93,7 @@
             <h2>记录一次负债账户还款</h2>
             <p>还款会减少付款账户余额，并同步减少负债账户欠款。</p>
           </div>
-          <button type="button" @click="requestCloseRepaymentModal">×</button>
+          <button type="button" aria-label="关闭" @click="requestCloseRepaymentModal"><X :size="16" :stroke-width="2" /></button>
         </header>
         <div class="transfer-body">
           <label :class="{ invalid: repaymentErrors.fromAccountId }"><span>付款账户</span><RSelect v-model="repaymentDraft.fromAccountId" :options="assetAccountOptions" placeholder="选择付款账户" /><em>{{ repaymentErrors.fromAccountId }}</em></label>
@@ -113,7 +113,10 @@
     <RDrawer v-model:show="showDetailDrawer" title="账户详情" :width="720">
       <div v-if="selectedAccount" class="account-detail" data-testid="fund-account-detail">
         <section class="account-detail-hero" :class="selectedAccount.direction">
-          <div class="account-detail__icon" :style="{ background: selectedAccount.color ?? '#1677FF' }">{{ selectedAccount.icon ?? "账" }}</div>
+          <div class="account-detail__icon" :class="{ 'account-detail__icon--image': selectedAccountBank && bankIconUrl(selectedAccountBank) }" :style="selectedAccountBank && bankIconUrl(selectedAccountBank) ? undefined : { background: selectedAccountBank?.color ?? selectedAccount.color ?? '#1677FF' }">
+            <img v-if="selectedAccountBank && bankIconUrl(selectedAccountBank)" :src="bankIconUrl(selectedAccountBank)" :alt="selectedAccountBank.name" />
+            <span v-else>{{ selectedAccountBank?.icon ?? selectedAccount.icon ?? "账" }}</span>
+          </div>
           <div>
             <span>{{ selectedAccount.direction === "liability" ? "负债账户" : "资产账户" }}</span>
             <h3>{{ selectedAccount.name }}</h3>
@@ -229,7 +232,7 @@
             type="button"
             @click="openAccountFromList(account.id)"
           >
-            <span class="account-icon" :style="{ background: account.color || (account.direction === 'liability' ? '#ef4444' : '#1677ff') }">{{ account.icon || account.name.slice(0, 1) }}</span>
+            <span class="account-icon" :class="{ 'account-icon--image': accountIconUrl(account) }"><img v-if="accountIconUrl(account)" :src="accountIconUrl(account)" :alt="account.name" /><span v-else :style="{ color: account.color || (account.direction === 'liability' ? '#ef4444' : '#1677ff') }">{{ account.icon || account.name.slice(0, 1) }}</span></span>
             <div>
               <strong>{{ account.name }}</strong>
               <small>{{ account.institution || accountTypeLabel(account.type) }} · {{ account.enabled === false ? "已停用" : "启用中" }}</small>
@@ -261,7 +264,7 @@
             type="button"
             @click="openAccountFromList(item.id)"
           >
-            <span class="account-icon danger-bg">{{ item.icon }}</span>
+            <span class="account-icon danger-bg"><img v-if="item.iconUrl" :src="item.iconUrl" :alt="item.name" /><template v-else>{{ item.icon }}</template></span>
             <div>
               <strong>{{ item.name }}</strong>
               <small>还款日 {{ item.date }} · {{ item.daysText }}</small>
@@ -360,6 +363,7 @@
 
 <script setup lang="ts">
 import { computed, onMounted, reactive, ref, watch } from "vue";
+import { X } from "@lucide/vue";
 import { useRoute, useRouter } from "vue-router";
 import DeleteConfirmModal from "@/components/business/DeleteConfirmModal.vue";
 import { accountFlowDelta } from "@/domain/accountCalculations";
@@ -379,9 +383,10 @@ import RSelect from "@/components/ui/RSelect.vue";
 import RDataGate from "@/components/ui/RDataGate.vue";
 import RInlineFeedback from "@/components/ui/RInlineFeedback.vue";
 import REmptyState from "@/components/ui/REmptyState.vue";
-import type { AccountFlowRecord, AccountType, MoneyAccountRecord } from "@/domain/models";
+import type { AccountFlowRecord, AccountType, CategoryRecord, MoneyAccountRecord } from "@/domain/models";
 import { accountService } from "@/services/accountService";
 import { transactionService } from "@/services/transactionService";
+import { loadSystemBankCategories, resolveBankIcon } from "@/services/bankIconService";
 import { useAppDataStore } from "@/stores/appDataStore";
 import { formatAmount, formatDateTime } from "@/utils/formatters";
 
@@ -511,20 +516,29 @@ const repaymentDraft = reactive({
 });
 const repaymentErrors = reactive({ fromAccountId: "", liabilityAccountId: "", amount: "", date: "", form: "" });
 
-const assetAccounts = computed(() => store.assetAccounts);
-const liabilityAccounts = computed(() => store.liabilityAccounts);
+const accountWithBankIcon = (account: MoneyAccountRecord) => ({
+  ...account,
+  iconUrl: resolveBankIcon(account, systemBankItems.value) ?? account.iconUrl,
+});
+const assetAccounts = computed(() => store.assetAccounts.map(accountWithBankIcon));
+const liabilityAccounts = computed(() => store.liabilityAccounts.map(accountWithBankIcon));
 const availableCredit = computed(() => store.liabilityAccounts.reduce((sum, account) => sum + Math.max((account.creditLimit ?? 0) - account.balance, 0), 0));
 const accountOptions = computed(() => store.activeAccounts.map((account) => ({ label: account.name, value: account.id })));
 const assetAccountOptions = computed(() => store.assetAccounts.map((account) => ({ label: account.name, value: account.id })));
 const liabilityAccountOptions = computed(() => store.liabilityAccounts.map((account) => ({ label: account.name, value: account.id })));
 const dayOptions = Array.from({ length: 28 }, (_, index) => ({ label: `每月${index + 1}日`, value: index + 1 }));
-const bankOptions = computed(() => store.categories
-  .filter((item) => item.domain === "bank" && item.enabled !== false)
-  .sort((a, b) => a.sort - b.sort)
-  .map((item) => ({ label: item.name, value: item.id })));
-const bankItems = computed(() => store.categories
-  .filter((item) => item.domain === "bank" && item.enabled !== false)
+const systemBankItems = ref<CategoryRecord[]>([]);
+const bankItems = computed(() => (systemBankItems.value.length ? systemBankItems.value : store.categories
+  .filter((item) => item.domain === "bank" && item.enabled !== false))
+  .slice()
   .sort((a, b) => a.sort - b.sort));
+const bankOptions = computed(() => bankItems.value.map((item) => ({ label: item.name, value: item.id })));
+function bankIconUrl(bank: CategoryRecord) {
+  return resolveBankIcon(bank, systemBankItems.value);
+}
+function accountIconUrl(account: MoneyAccountRecord) {
+  return resolveBankIcon(account, systemBankItems.value);
+}
 const selectedBank = computed(() => bankItems.value.find((item) => item.id === accountDraft.bankId) ?? null);
 const summaryCards = computed(() => {
   const netWorthTrend = buildSummaryTrend("netWorth");
@@ -558,6 +572,7 @@ const allRepaymentReminders = computed(() => store.liabilityAccounts
     id: account.id,
     name: account.name,
     icon: account.icon || account.name.slice(0, 1),
+    iconUrl: accountIconUrl(account),
     balance: account.balance,
     date: `2025-06-${String(account.repaymentDay).padStart(2, "0")}`,
     days: calcDaysUntil(account.repaymentDay ?? 1),
@@ -579,6 +594,38 @@ const selectedAccountAvailableCredit = computed(() => {
   if (!selectedAccount.value || selectedAccount.value.direction !== "liability") return 0;
   return Math.max((selectedAccount.value.creditLimit ?? 0) - selectedAccount.value.balance, 0);
 });
+const selectedAccountBank = computed(() => {
+  const account = selectedAccount.value;
+  if (!account) return null;
+  return bankItems.value.find((bank) => accountBelongsToBank(account, bank)) ?? null;
+});
+
+const bankAliases: Record<string, string[]> = {
+  "中国工商银行": ["工商", "工行"],
+  "中国农业银行": ["农业", "农行"],
+  "中国银行": ["中国银行", "中行"],
+  "中国建设银行": ["建设", "建行"],
+  "交通银行": ["交通", "交行"],
+  "招商银行": ["招商", "招行"],
+  "中国邮政储蓄银行": ["邮政", "邮储", "邮储银行"],
+  "中国民生银行": ["民生", "民生银行"],
+  "浦发银行": ["浦发"],
+  "兴业银行": ["兴业"],
+  "平安银行": ["平安"],
+};
+
+function normalizeBankText(value?: string) {
+  return (value || "").replace(/[\s·()（）\-_]/g, "").toLocaleLowerCase("zh-CN");
+}
+
+function accountBelongsToBank(account: MoneyAccountRecord, bank: CategoryRecord) {
+  if (account.bankId && bank.id === account.bankId) return true;
+  const fields = [account.bankName, account.institution, account.name].map(normalizeBankText).filter(Boolean);
+  const bankName = normalizeBankText(bank.name);
+  if (bankName && fields.some((field) => field.includes(bankName) || bankName.includes(field))) return true;
+  const aliases = bankAliases[bank.name] || [];
+  return aliases.some((alias) => fields.some((field) => field.includes(normalizeBankText(alias))));
+}
 
 const editingAccount = computed(() => {
   if (!editingAccountId.value) return null;
@@ -644,6 +691,7 @@ onMounted(initializeData);
 
 async function initializeData() {
   await store.init().catch(() => undefined);
+  systemBankItems.value = await loadSystemBankCategories();
   if (store.initialized) applyRouteState();
 }
 
@@ -654,6 +702,13 @@ watch(() => [route.query.accountId, route.query.view], () => {
 function openAccountModal() {
   resetAccountForm();
   showAccountModal.value = true;
+}
+
+async function openBankPicker() {
+  // Re-read the system bank catalogue so a newly uploaded bank icon appears
+  // immediately instead of waiting for a full page refresh.
+  systemBankItems.value = await loadSystemBankCategories(true);
+  bankPickerVisible.value = true;
 }
 
 function openEditAccount(id: string) {
@@ -1250,7 +1305,9 @@ function goLedger() {
 .account-line { grid-template-columns: 34px 1fr auto 68px; }
 .debt-line, .reminder-line { grid-template-columns: 34px 1fr auto; }
 .account-line:hover, .debt-line:hover, .reminder-line:hover { background: var(--color-bg-hover); }
-.account-icon { display: grid; width: 30px; height: 30px; place-items: center; color: #fff; border-radius: 9px; font-size: 12px; font-weight: 800; }
+.account-icon { display: grid; width: 30px; height: 30px; place-items: center; border-radius: 9px; font-size: 12px; font-weight: 800; overflow: hidden; background: transparent; }
+.account-icon img { width: 100%; height: 100%; object-fit: contain; }
+.account-icon > span { display: grid; width: 100%; height: 100%; place-items: center; }
 .account-line strong, .debt-line strong, .reminder-line strong { font-weight: 800; }
 .account-line em, .debt-line em, .reminder-line em { font-style: normal; font-weight: 800; }
 .account-line small, .debt-line small, .reminder-line small { display: block; margin-top: 3px; color: var(--color-text-tertiary); font-size: 11px; }
@@ -1293,7 +1350,9 @@ function goLedger() {
 .bank-picker-trigger:hover { border-color: var(--color-primary); }
 .bank-picker-trigger__value { display: flex; align-items: center; gap: 8px; }
 .bank-picker-trigger__value b, .bank-picker-card__icon { display: grid; width: 28px; height: 28px; place-items: center; overflow: hidden; color: #fff; border-radius: 8px; font-size: 12px; font-weight: 800; }
-.bank-picker-card__icon img { width: 100%; height: 100%; object-fit: cover; }
+.bank-picker-card__icon b { display: grid; width: 100%; height: 100%; place-items: center; border-radius: inherit; }
+.bank-picker-card__icon--image { background: transparent; }
+.bank-picker-card__icon img { width: 100%; height: 100%; object-fit: contain; }
 .bank-picker-trigger__placeholder { color: var(--color-text-muted); }
 .bank-picker-modal__head { display: flex; align-items: flex-start; justify-content: space-between; padding: 22px 24px; color: #fff; background: linear-gradient(135deg, #102a72, #3b82f6); }
 .bank-picker-modal__head span { font-size: 11px; font-weight: 800; letter-spacing: .08em; opacity: .78; }
@@ -1325,6 +1384,8 @@ function goLedger() {
 .account-detail-hero { display: grid; grid-template-columns: 56px 1fr auto; gap: var(--space-4); align-items: center; padding: var(--space-5); color: #fff; background: linear-gradient(135deg, #111827, #2563eb 58%, #60a5fa); border-radius: 18px; box-shadow: 0 18px 42px rgba(22, 119, 255, 0.16); }
 .account-detail-hero.liability { background: linear-gradient(135deg, #7f1d1d, #ef4444 58%, #fb7185); box-shadow: 0 18px 42px rgba(239, 68, 68, 0.14); }
 .account-detail__icon { display: grid; width: 52px; height: 52px; place-items: center; color: #fff; border: 1px solid rgba(255,255,255,.32); border-radius: 16px; font-weight: 800; box-shadow: inset 0 0 0 999px rgba(255,255,255,.08); }
+.account-detail__icon--image { background: transparent; box-shadow: none; }
+.account-detail__icon img { width: 42px; height: 42px; object-fit: contain; border-radius: 8px; }
 .account-detail h3, .account-detail p { margin: 0; }
 .account-detail-hero span { font-size: var(--font-caption); font-weight: 800; opacity: .82; }
 .account-detail-hero h3 { margin: 4px 0; font-size: 22px; }
