@@ -19,15 +19,50 @@
         <section class="personal-batch__picker">
           <div class="personal-batch__picker-head">
             <div>
-              <strong>选择分类</strong>
-              <small>当前筛选结果内共 {{ items.length }} 项，已选 {{ selectedIds.length }} 项。</small>
+              <strong>{{ operation === 'sort' ? '排序分类' : '选择分类' }}</strong>
+              <small>{{ operation === 'sort' ? `当前共 ${items.length} 项，拖拽调整顺序。` : `当前筛选结果内共 ${items.length} 项，已选 ${selectedIds.length} 项。` }}</small>
             </div>
-            <div class="personal-batch__picker-actions">
+            <div v-if="operation !== 'sort'" class="personal-batch__picker-actions">
               <button type="button" @click="$emit('select-all')">全选</button>
               <button type="button" @click="$emit('update:selectedIds', [])">清空</button>
             </div>
           </div>
-          <div class="personal-batch__list">
+          <div v-if="operation === 'sort'" class="personal-batch__list personal-batch__sort-list">
+            <div class="personal-batch__sort-tip">拖拽分类调整顺序；一级分类和子分类分别排序。</div>
+            <div
+              v-for="category in visibleSortableItems"
+              :key="category.id"
+              class="personal-batch__item personal-batch__sort-item"
+              :class="{ child: Boolean(category.parentId), dragging: draggingId === category.id }"
+              draggable="true"
+              @dragstart="startDrag(category)"
+              @dragover.prevent
+              @drop="dropCategory(category)"
+              @dragend="draggingId = null"
+            >
+              <GripVertical :size="16" class="personal-batch__drag-handle" />
+              <span class="item-icon small" :style="{ backgroundColor: '#eef4ff' }">
+                <img v-if="category.iconUrl" :src="category.iconUrl" alt="" />
+                <b v-else>{{ category.icon || category.name.slice(0, 1) }}</b>
+              </span>
+              <span>
+                <strong>{{ category.name }}</strong>
+                <small>{{ category.parentId ? "子分类" : "一级分类" }} · {{ category.parentId ? "拖拽到同一父分类内排序" : "拖拽调整大类顺序" }}</small>
+              </span>
+              <button
+                v-if="!category.parentId && hasChildren(category.id)"
+                type="button"
+                class="personal-batch__expand"
+                :aria-label="expandedParentIds.has(category.id) ? '收起子分类' : '展开子分类'"
+                :title="expandedParentIds.has(category.id) ? '收起子分类' : '展开子分类'"
+                @click.stop="toggleParent(category.id)"
+              >
+                <ChevronUp v-if="expandedParentIds.has(category.id)" :size="16" />
+                <ChevronDown v-else :size="16" />
+              </button>
+            </div>
+          </div>
+          <div v-else class="personal-batch__list">
             <label
               v-for="category in items"
               :key="category.id"
@@ -63,12 +98,13 @@
             <strong>删除前确认</strong>
             <p>有业务记录的分类可能无法直接删除，需要先迁移相关数据。</p>
           </div>
-          <div class="personal-batch__preview"><span>执行预览</span><p>{{ previewText }}</p></div>
+          <div v-if="operation === 'sort'" class="personal-batch__preview"><span>排序说明</span><p>拖拽完成后点击“保存排序”，一级分类和子分类会分别保存顺序。</p></div>
+          <div v-else class="personal-batch__preview"><span>执行预览</span><p>{{ previewText }}</p></div>
         </section>
       </div>
       <footer class="personal-batch__footer">
         <RButton variant="secondary" @click="$emit('update:show', false)">取消</RButton>
-        <RButton :loading="saving" @click="$emit('apply')">应用批量操作</RButton>
+        <RButton :loading="saving" @click="applyChanges">{{ operation === 'sort' ? '保存排序' : '应用批量操作' }}</RButton>
       </footer>
     </section>
   </NModal>
@@ -76,7 +112,8 @@
 
 <script setup lang="ts">
 import { NModal } from "naive-ui";
-import { X } from "@lucide/vue";
+import { ChevronDown, ChevronUp, GripVertical, X } from "@lucide/vue";
+import { computed, ref, watch } from "vue";
 import RButton from "@/components/ui/RButton.vue";
 import RSelect from "@/components/ui/RSelect.vue";
 import type { CategoryRecord, CategoryScope } from "@/domain/models";
@@ -85,7 +122,7 @@ const props = defineProps<{
   show: boolean;
   items: CategoryRecord[];
   selectedIds: string[];
-  operation: "enable" | "disable" | "scopes" | "delete";
+  operation: "enable" | "disable" | "scopes" | "delete" | "sort";
   operationOptions: Array<{ label: string; value: string }>;
   selectedScopes: CategoryScope[];
   batchScopes: Array<{ label: string; value: CategoryScope }>;
@@ -98,14 +135,66 @@ const props = defineProps<{
 const emit = defineEmits<{
   "update:show": [value: boolean];
   "update:selectedIds": [value: string[]];
-  "update:operation": [value: "enable" | "disable" | "scopes" | "delete"];
+  "update:operation": [value: "enable" | "disable" | "scopes" | "delete" | "sort"];
   "update:selectedScopes": [value: CategoryScope[]];
   "select-all": [];
   apply: [];
+  "apply-sort": [ids: string[]];
 }>();
 
+const sortableItems = ref<CategoryRecord[]>([]);
+const draggingId = ref<string | null>(null);
+const expandedParentIds = ref(new Set<string>());
+const visibleSortableItems = computed(() => sortableItems.value.filter((item) => !item.parentId || expandedParentIds.value.has(String(item.parentId))));
+
+watch(() => [props.show, props.operation] as const, ([show, operation]) => {
+  if (show && operation === "sort") {
+    sortableItems.value = [...props.items];
+    expandedParentIds.value = new Set();
+  }
+}, { immediate: true });
+
+watch(() => props.items, (items) => {
+  if (props.show && props.operation === "sort" && !draggingId.value) sortableItems.value = [...items];
+});
+
 function updateOperation(value: string | number | null) {
-  emit("update:operation", String(value) as "enable" | "disable" | "scopes" | "delete");
+  emit("update:operation", String(value) as "enable" | "disable" | "scopes" | "delete" | "sort");
+}
+
+function startDrag(category: CategoryRecord) {
+  draggingId.value = category.id;
+}
+
+function hasChildren(parentId: string) {
+  return sortableItems.value.some((item) => String(item.parentId) === parentId);
+}
+
+function toggleParent(parentId: string) {
+  const next = new Set(expandedParentIds.value);
+  if (next.has(parentId)) next.delete(parentId);
+  else next.add(parentId);
+  expandedParentIds.value = next;
+}
+
+function dropCategory(target: CategoryRecord) {
+  const sourceId = draggingId.value;
+  draggingId.value = null;
+  if (!sourceId || sourceId === target.id) return;
+  const source = sortableItems.value.find((item) => item.id === sourceId);
+  if (!source || source.parentId !== target.parentId) return;
+  const from = sortableItems.value.findIndex((item) => item.id === sourceId);
+  const to = sortableItems.value.findIndex((item) => item.id === target.id);
+  if (from < 0 || to < 0) return;
+  const next = [...sortableItems.value];
+  const [moved] = next.splice(from, 1);
+  next.splice(to, 0, moved);
+  sortableItems.value = next;
+}
+
+function applyChanges() {
+  if (props.operation === "sort") emit("apply-sort", sortableItems.value.map((item) => item.id));
+  else emit("apply");
 }
 
 function toggleCategory(id: string) {
@@ -137,9 +226,15 @@ function toggleScope(scope: CategoryScope) {
 .personal-batch__picker-actions { display: flex; gap: 8px; }
 .personal-batch__picker-actions button { padding: 6px 10px; color: var(--color-primary); background: #fff; border: 1px solid var(--color-border); border-radius: 8px; cursor: pointer; font-weight: 800; }
 .personal-batch__list { display: grid; gap: 10px; max-height: 460px; overflow: auto; padding-right: 4px; }
-.personal-batch__item { display: grid; grid-template-columns: auto auto minmax(0, 1fr); align-items: center; gap: 12px; padding: 12px; background: #fff; border: 1px solid var(--color-border); border-radius: 13px; cursor: pointer; }
+.personal-batch__item { display: grid; grid-template-columns: auto auto minmax(0, 1fr) auto; align-items: center; gap: 12px; padding: 12px; background: #fff; border: 1px solid var(--color-border); border-radius: 13px; cursor: pointer; }
 .personal-batch__item.child { margin-left: 24px; }
 .personal-batch__item.checked { border-color: #1677ff; box-shadow: 0 0 0 3px rgba(22,119,255,.1); }
+.personal-batch__sort-tip { padding: 10px 12px; color: var(--color-text-muted); background: #eef4ff; border-radius: 10px; font-size: 12px; }
+.personal-batch__sort-item { cursor: grab; }
+.personal-batch__sort-item:active { cursor: grabbing; }
+.personal-batch__sort-item.dragging { opacity: .45; }
+.personal-batch__drag-handle { color: var(--color-primary); }
+.personal-batch__expand { display: grid; width: 28px; height: 28px; place-items: center; color: var(--color-primary); background: var(--color-primary-light); border: 1px solid #bbd5ff; border-radius: 8px; cursor: pointer; }
 .personal-batch__item .item-icon { display: grid; width: 34px; height: 34px; overflow: hidden; place-items: center; color: #fff; border-radius: 9px; }
 .personal-batch__item .item-icon img { width: 100%; height: 100%; object-fit: cover; }
 .personal-batch__item strong, .personal-batch__item small { display: block; }

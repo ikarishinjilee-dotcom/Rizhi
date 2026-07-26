@@ -64,6 +64,61 @@ function persist() {
 	}
 }
 
+function stripImageBackground(dataUrl: string) {
+	if (typeof Image === "undefined" || typeof document === "undefined" || !dataUrl.startsWith("data:image/")) return Promise.resolve(dataUrl);
+	return new Promise<string>((resolve) => {
+		const image = new Image();
+		image.onload = () => {
+			const canvas = document.createElement("canvas");
+			canvas.width = image.naturalWidth;
+			canvas.height = image.naturalHeight;
+			const context = canvas.getContext("2d");
+			if (!context || !canvas.width || !canvas.height) return resolve(dataUrl);
+			context.drawImage(image, 0, 0);
+			const pixels = context.getImageData(0, 0, canvas.width, canvas.height);
+			const { data, width, height } = pixels;
+			const ring: Array<[number, number, number]> = [];
+			const marginX = Math.max(1, Math.floor(width * 0.08));
+			const marginY = Math.max(1, Math.floor(height * 0.08));
+			for (let y = marginY; y < height - marginY; y += Math.max(1, Math.floor(height / 12))) {
+				for (const x of [marginX, width - marginX - 1]) {
+					const index = (y * width + x) * 4;
+					if (data[index + 3] > 180) ring.push([data[index], data[index + 1], data[index + 2]]);
+				}
+			}
+			for (let x = marginX; x < width - marginX; x += Math.max(1, Math.floor(width / 12))) {
+				for (const y of [marginY, height - marginY - 1]) {
+					const index = (y * width + x) * 4;
+					if (data[index + 3] > 180) ring.push([data[index], data[index + 1], data[index + 2]]);
+				}
+			}
+			if (!ring.length) return resolve(dataUrl);
+			const background = ring[Math.floor(ring.length / 2)];
+			const matchingSamples = ring.filter(([red, green, blue]) => Math.abs(red - background[0]) + Math.abs(green - background[1]) + Math.abs(blue - background[2]) < 42).length;
+			if (matchingSamples < Math.max(3, Math.ceil(ring.length * 0.35))) return resolve(dataUrl);
+			for (let index = 0; index < data.length; index += 4) {
+				const distance = Math.abs(data[index] - background[0]) + Math.abs(data[index + 1] - background[1]) + Math.abs(data[index + 2] - background[2]);
+				if (data[index + 3] > 0 && distance < 42) data[index + 3] = 0;
+			}
+			resolve(canvas.toDataURL("image/png"));
+		};
+		image.onerror = () => resolve(dataUrl);
+		image.src = dataUrl;
+	});
+}
+
+async function normalizeBankIcons() {
+	let changed = false;
+	for (const icon of iconLibraryState.icons.filter((item) => item.kind === "bank" && item.assetUrl)) {
+		const normalized = await stripImageBackground(icon.assetUrl!);
+		if (normalized !== icon.assetUrl) {
+			icon.assetUrl = normalized;
+			changed = true;
+		}
+	}
+	if (changed) persist();
+}
+
 export function addIconGroup(label: string, kind: IconLibraryKind) {
 	const name = label.trim();
 	if (!name) return;
@@ -133,3 +188,5 @@ export function inferIconKey(label: string) {
 export function getGroups(kind?: IconLibraryKind) {
 	return iconLibraryState.groups.filter((group) => !kind || group.kind === kind);
 }
+
+void normalizeBankIcons();

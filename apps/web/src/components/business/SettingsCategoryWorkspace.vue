@@ -52,16 +52,11 @@
             :active="selectedParentCategoryId === category.id"
             :sort-only="true"
             :show-sort="false"
-            :show-reorder="true"
-            :can-move-up="visiblePersonalCategories.findIndex((candidate) => candidate.id === category.id) > 0"
-            :can-move-down="visiblePersonalCategories.findIndex((candidate) => candidate.id === category.id) < visiblePersonalCategories.length - 1"
             :show-child-actions="true"
             :data-testid="`category-item-${category.id}`"
             @edit="emit('edit-category', $event)"
             @view-children="emit('view-children', $event)"
             @add-child="emit('create-child', $event.id)"
-            @move-up="emit('move-up', $event)"
-            @move-down="emit('move-down', $event)"
           />
         </template>
       </CategoryManagerGrid>
@@ -84,6 +79,7 @@
       @update:selected-scopes="emit('update:batch-scopes', $event)"
       @select-all="emit('select-all-batch')"
       @apply="emit('apply-batch')"
+      @apply-sort="emit('apply-sort', $event)"
     />
 
     <DeleteConfirmModal
@@ -128,7 +124,7 @@ import RSelect from "@/components/ui/RSelect.vue";
 import type { CategoryRecord, CategoryScope } from "@/domain/models";
 
 type CategoryStatus = "active" | "disabled" | "all";
-type BatchOperation = "enable" | "disable" | "scopes" | "delete";
+type BatchOperation = "enable" | "disable" | "scopes" | "delete" | "sort";
 type Option = { label: string; value: string | number };
 type ScopeOption = { label: string; value: CategoryScope };
 type CategoryDraft = { name: string; type: string | number | null; parentId: string | number | null; sort: string; iconUrl: string; iconFileId: string; iconKey: string; scopes: CategoryScope[]; monthlyBudget: string; enabled: boolean };
@@ -161,7 +157,7 @@ const emit = defineEmits<{
   "update:batch-scopes": [value: CategoryScope[]]; "close-editor": []; "save-category": []; "delete-editing-category": [];
   "remove-category-icon": []; "select-category-icon": [event: Event]; "select-category-icon-key": [key: string]; "create-parent": []; "open-batch": []; refresh: [];
   "edit-category": [category: CategoryRecord]; "view-children": [category: CategoryRecord]; "create-child": [parentId: string];
-  "select-all-batch": []; "apply-batch": []; "confirm-batch-delete": []; "edit-child": [category: CategoryRecord];
+  "select-all-batch": []; "apply-batch": []; "apply-sort": [ids: string[]]; "confirm-batch-delete": []; "edit-child": [category: CategoryRecord];
   "delete-child": [categoryId: string]; "close-children": []; "create-child-from-modal": [];
   "move-up": [category: CategoryRecord]; "move-down": [category: CategoryRecord];
 }>();

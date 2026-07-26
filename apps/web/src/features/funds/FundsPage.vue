@@ -386,7 +386,7 @@ import REmptyState from "@/components/ui/REmptyState.vue";
 import type { AccountFlowRecord, AccountType, CategoryRecord, MoneyAccountRecord } from "@/domain/models";
 import { accountService } from "@/services/accountService";
 import { transactionService } from "@/services/transactionService";
-import { loadSystemBankCategories, resolveBankIcon } from "@/services/bankIconService";
+import { loadSystemBankCategories, resolveBankIcon, resolveBankIconKey } from "@/services/bankIconService";
 import { useAppDataStore } from "@/stores/appDataStore";
 import { formatAmount, formatDateTime } from "@/utils/formatters";
 
@@ -519,6 +519,7 @@ const repaymentErrors = reactive({ fromAccountId: "", liabilityAccountId: "", am
 const accountWithBankIcon = (account: MoneyAccountRecord) => ({
   ...account,
   iconUrl: resolveBankIcon(account, systemBankItems.value) ?? account.iconUrl,
+  iconKey: resolveBankIconKey(account, systemBankItems.value) ?? account.iconKey,
 });
 const assetAccounts = computed(() => store.assetAccounts.map(accountWithBankIcon));
 const liabilityAccounts = computed(() => store.liabilityAccounts.map(accountWithBankIcon));
@@ -539,7 +540,10 @@ function bankIconUrl(bank: CategoryRecord) {
 function accountIconUrl(account: MoneyAccountRecord) {
   return resolveBankIcon(account, systemBankItems.value);
 }
-const selectedBank = computed(() => bankItems.value.find((item) => item.id === accountDraft.bankId) ?? null);
+const selectedBank = computed(() => {
+  const bank = bankItems.value.find((item) => item.id === accountDraft.bankId);
+  return bank ? { ...bank, iconUrl: resolveBankIcon(bank, systemBankItems.value) ?? bank.iconUrl } : null;
+});
 const summaryCards = computed(() => {
   const netWorthTrend = buildSummaryTrend("netWorth");
   const assetTrend = buildSummaryTrend("assets");
@@ -994,6 +998,7 @@ function validateAccount() {
   if (editingAccount.value && editingAccountFlowCount.value > 0 && selectedAccountType.value.direction !== editingAccount.value.direction) {
     accountErrors.form = `该账户已有 ${editingAccountFlowCount.value} 条资金流水，不能在资产账户和负债账户之间切换。`;
   }
+  if (selectedAccountNeedsBank.value && !accountDraft.bankId) accountErrors.form = "请选择所属银行。";
   return !accountErrors.name && !accountErrors.balance && !accountErrors.form;
 }
 
@@ -1306,6 +1311,7 @@ function goLedger() {
 .debt-line, .reminder-line { grid-template-columns: 34px 1fr auto; }
 .account-line:hover, .debt-line:hover, .reminder-line:hover { background: var(--color-bg-hover); }
 .account-icon { display: grid; width: 30px; height: 30px; place-items: center; border-radius: 9px; font-size: 12px; font-weight: 800; overflow: hidden; background: transparent; }
+.account-icon--image { background: transparent; }
 .account-icon img { width: 100%; height: 100%; object-fit: contain; }
 .account-icon > span { display: grid; width: 100%; height: 100%; place-items: center; }
 .account-line strong, .debt-line strong, .reminder-line strong { font-weight: 800; }
@@ -1363,6 +1369,8 @@ function goLedger() {
 .bank-picker-grid > button { display: grid; grid-template-columns: auto 1fr; grid-template-rows: auto auto; align-items: center; gap: 3px 10px; min-height: 76px; padding: 12px; color: var(--color-text-primary); text-align: left; background: #fff; border: 1px solid var(--color-border); border-radius: 12px; cursor: pointer; }
 .bank-picker-grid > button:hover, .bank-picker-grid > button.active { border-color: var(--color-primary); box-shadow: 0 8px 18px rgba(22,119,255,.12); }
 .bank-picker-grid > button .bank-picker-card__icon { grid-row: 1 / -1; }
+.bank-picker-grid > button:not(:has(small)) { grid-template-rows: 1fr; }
+.bank-picker-grid > button:not(:has(small)) strong { align-self: center; }
 .bank-picker-grid > button strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .bank-picker-grid > button small { overflow: hidden; color: #94a3b8; text-overflow: ellipsis; white-space: nowrap; }
 .account-total-assets-toggle { display: grid; grid-column: 1 / -1; gap: var(--space-2); color: var(--color-text-secondary); font-size: var(--font-caption); font-weight: 700; }

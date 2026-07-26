@@ -124,10 +124,9 @@
           @edit-category="editCategory"
           @view-children="openPersonalChildren"
           @create-child="startCreateChildCategory"
-          @move-up="movePersonalCategory($event, -1)"
-          @move-down="movePersonalCategory($event, 1)"
           @select-all-batch="selectAllPersonalBatchItems"
           @apply-batch="applyPersonalBatch"
+          @apply-sort="applyPersonalCategorySort"
           @confirm-batch-delete="confirmPersonalBatchDelete"
           @edit-child="editPersonalChild"
           @delete-child="deletePersonalChild"
@@ -410,6 +409,7 @@ const {
   serializeCategoryDraft, setCategoryMessage, buildDeleteCategoryImpact,
     } = useSettingsCategories(store, categoryService);
 const personalBatchOperationOptions = [
+  { label: "分类排序", value: "sort" },
   { label: "批量启用", value: "enable" },
   { label: "批量停用", value: "disable" },
   { label: "批量修改适用范围", value: "scopes" },
@@ -424,6 +424,9 @@ async function initializeData() {
 }
 
 watch(categoryDomain, () => {
+  // 编辑已有分类时，切换领域只需要更新表单上下文，不能清空编辑状态。
+  // 否则 editCategory 刚设置的 editingCategoryId 会被重置，弹窗标题会误显示为“新增一级分类”。
+  if (editingCategoryId.value) return;
   resetCategoryDraft();
 });
 
@@ -881,6 +884,32 @@ async function refreshPersonalCategories() {
     setCategoryMessage("分类已刷新。");
   } catch (err) {
     setCategoryMessage(err instanceof Error ? err.message : "刷新分类失败", "danger");
+  }
+}
+
+async function applyPersonalCategorySort(ids: string[]) {
+  if (!ids.length) return;
+  personalBatchSaving.value = true;
+  setCategoryMessage("");
+  try {
+    const nextSortByParent = new Map<string | null, number>();
+    await Promise.all(ids.map((id) => {
+      const category = store.categories.find((item) => item.id === id);
+      if (!category) return Promise.resolve();
+      const parentKey = category.parentId ?? null;
+      const nextSort = (nextSortByParent.get(parentKey) ?? 0) + 10;
+      nextSortByParent.set(parentKey, nextSort);
+      return categoryService.update({ id, sort: nextSort });
+    }));
+    await store.refresh();
+    personalBatchVisible.value = false;
+    personalBatchIds.value = [];
+    personalBatchOperation.value = "enable";
+    setCategoryMessage("分类排序已保存。");
+  } catch (err) {
+    setCategoryMessage(err instanceof Error ? err.message : "分类排序保存失败", "danger");
+  } finally {
+    personalBatchSaving.value = false;
   }
 }
 

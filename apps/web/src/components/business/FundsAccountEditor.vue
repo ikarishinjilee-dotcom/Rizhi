@@ -51,7 +51,7 @@ import type { AccountType, MoneyAccountRecord } from "@/domain/models";
 
 type AccountTypeItem = { key: string; label: string; icon: string; color: string; direction: MoneyAccountRecord["direction"]; requiresBank?: boolean; type: AccountType; group?: "asset" | "credit" | "stored_value" };
 type AccountTypeGroup = { title: string; items: AccountTypeItem[] };
-type BankItem = { name: string; color?: string; icon?: string; iconUrl?: string };
+type BankItem = { name: string; color?: string; icon?: string; iconUrl?: string; iconKey?: string };
 
 defineProps<{
   editingAccountId: string | null;
@@ -89,6 +89,7 @@ defineEmits<{ close: []; submit: []; "select-type": [item: AccountTypeItem]; "op
 .account-form { padding: var(--space-5); }
 .account-form .form-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--space-4); }
 .account-form .form-grid label { display: grid; grid-template-rows: auto auto 16px; gap: var(--space-2); color: var(--color-text-secondary); font-size: var(--font-caption); font-weight: 700; }
+.account-form .form-grid label:has(.bank-picker-trigger) > span::after { content: " *"; color: var(--color-danger); }
 .account-form .form-grid label.invalid { color: var(--color-danger); }
 .account-form .form-grid em { min-height: 16px; color: var(--color-danger); font-style: normal; line-height: 16px; }
 .bank-picker-trigger { display: flex; align-items: center; justify-content: space-between; width: 100%; min-height: 40px; padding: 0 12px; color: var(--color-text-primary); background: #fff; border: 1px solid var(--color-border); border-radius: 10px; cursor: pointer; text-align: left; }

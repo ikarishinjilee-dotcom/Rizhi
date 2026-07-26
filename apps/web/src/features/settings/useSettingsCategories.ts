@@ -38,7 +38,7 @@ export type SettingsCategoryState = {
   personalCategoryScopeFilter: Ref<"all" | CategoryScope>;
   personalBatchVisible: Ref<boolean>;
   personalBatchIds: Ref<string[]>;
-  personalBatchOperation: Ref<"enable" | "disable" | "scopes" | "delete">;
+  personalBatchOperation: Ref<"enable" | "disable" | "scopes" | "delete" | "sort">;
   personalBatchScopes: Ref<CategoryScope[]>;
   personalBatchSaving: Ref<boolean>;
   personalBatchDeleteVisible: Ref<boolean>;
@@ -103,7 +103,7 @@ export function useSettingsCategories(store: Store, categoryService: CategorySer
   const personalCategoryScopeFilter = ref<"all" | CategoryScope>("all");
   const personalBatchVisible = ref(false);
   const personalBatchIds = ref<string[]>([]);
-  const personalBatchOperation = ref<"enable" | "disable" | "scopes" | "delete">("enable");
+  const personalBatchOperation = ref<"enable" | "disable" | "scopes" | "delete" | "sort">("enable");
   const personalBatchScopes = ref<CategoryScope[]>(["asset", "expense"]);
   const personalBatchSaving = ref(false);
   const personalBatchDeleteVisible = ref(false);

@@ -1,4 +1,5 @@
 import type { CategoryRecord, MoneyAccountRecord } from "@/domain/models";
+import { getIconDefinition } from "@/domain/iconLibrary";
 import { categoryService } from "@/services/categoryService";
 
 let systemBanksCache: CategoryRecord[] | null = null;
@@ -56,6 +57,14 @@ export function resolveBankCategory(source: CategoryRecord | MoneyAccountRecord 
 
 export function resolveBankIcon(source: CategoryRecord | MoneyAccountRecord | null | undefined, banks: CategoryRecord[]) {
   if (!source) return undefined;
-  if (source.iconUrl) return source.iconUrl;
-  return resolveBankCategory(source, banks)?.iconUrl;
+  const bank = resolveBankCategory(source, banks);
+  const libraryKey = source.iconKey || bank?.iconKey;
+  const libraryAsset = libraryKey ? getIconDefinition(libraryKey)?.assetUrl : undefined;
+  return libraryAsset || source.iconUrl || bank?.iconUrl;
+}
+
+export function resolveBankIconKey(source: CategoryRecord | MoneyAccountRecord | null | undefined, banks: CategoryRecord[]) {
+  if (!source) return undefined;
+  if (source.iconKey) return source.iconKey;
+  return resolveBankCategory(source, banks)?.iconKey;
 }
