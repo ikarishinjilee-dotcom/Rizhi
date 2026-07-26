@@ -6,7 +6,7 @@
     </div>
     <div class="backup-zone"><div><h3>备份与恢复</h3><p>导出 JSON 备份文件，后续可覆盖恢复到本地 IndexedDB。导入会先校验文件格式。</p></div><div class="action-row"><RButton variant="secondary" :loading="exporting" @click="$emit('export-backup')">导出备份</RButton><RButton :loading="importing" @click="backupFileInput?.click()">导入恢复</RButton><input ref="backupFileInput" class="hidden-file" type="file" accept="application/json,.json" @change="$emit('import-backup', $event)" /></div></div>
     <RInlineFeedback v-if="backupMessage" :tone="backupMessageTone">{{ backupMessage }}</RInlineFeedback>
-    <div class="danger-zone"><div><h3>开发期重置</h3><p>会清空当前浏览器里的本地数据，并重新写入最新的初始数据。这个按钮后续正式上线前需要移除或加权限保护。</p></div><RButton variant="danger" :loading="resetting" @click="$emit('reset-data')">重置本地数据</RButton></div>
+    <div v-if="showReset" class="danger-zone"><div><h3>开发期重置</h3><p>会清空当前浏览器里的本地数据，并重新写入最新的初始数据。这个按钮仅在测试环境提供。</p></div><RButton variant="danger" :loading="resetting" @click="$emit('reset-data')">重置本地数据</RButton></div>
   </div>
 </template>
 
@@ -17,7 +17,7 @@ import RInlineFeedback from "@/components/ui/RInlineFeedback.vue";
 
 defineProps<{
   assets: number; assetAddons: number; accounts: number; transactions: number;
-  exporting: boolean; importing: boolean; resetting: boolean;
+  exporting: boolean; importing: boolean; resetting: boolean; showReset: boolean;
   backupMessage: string; backupMessageTone: "success" | "danger";
 }>();
 defineEmits<{ "export-backup": []; "import-backup": [event: Event]; "reset-data": [] }>();

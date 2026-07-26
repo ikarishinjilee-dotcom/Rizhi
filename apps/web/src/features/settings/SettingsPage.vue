@@ -40,6 +40,7 @@
         :exporting="exporting"
         :importing="importing"
         :resetting="resetting"
+        :show-reset="isTestEnvironment"
         :backup-message="backupMessage"
         :backup-message-tone="backupMessageTone"
         @export-backup="exportBackup"
@@ -177,9 +178,10 @@
     </DeleteConfirmModal>
 
     <DeleteConfirmModal
+      v-if="isTestEnvironment"
       v-model:show="resetDataModalVisible"
       title="重置本地数据？"
-      description="这会清空当前浏览器里的 IndexedDB 数据，并重新写入最新的初始数据。当前资产、附加项、账户和交易都会被替换。"
+      description="这会清空当前浏览器的 IndexedDB 数据，并重新写入最新的初始数据。当前资产、附加项、账户和交易都会被替换。"
       eyebrow="重置本地数据"
       confirm-text="确认重置"
       :loading="resetting"
@@ -192,7 +194,7 @@
           <div><span>账户</span><strong>{{ store.accounts.length }}</strong></div>
           <div><span>交易</span><strong>{{ store.transactions.length }}</strong></div>
         </div>
-        <p>建议先导出备份。确认后，本地现有数据会被开发期初始数据覆盖。</p>
+        <p>建议先导出备份。确认后，本地现有数据会被测试环境初始数据覆盖。</p>
       </div>
     </DeleteConfirmModal>
 
@@ -281,6 +283,7 @@ const profileDraft = reactive({
   currency: "CNY" as string | number | null,
   locale: "zh-CN" as string | number | null,
 });
+const isTestEnvironment = import.meta.env.VITE_APP_ENV === "test";
 const resetting = ref(false);
 const exporting = ref(false);
 const importing = ref(false);
@@ -506,21 +509,6 @@ async function selectAvatar(event: Event) {
   }
 }
 
-function resetData() {
-  resetDataModalVisible.value = true;
-}
-
-async function confirmResetData() {
-  resetting.value = true;
-  try {
-    await store.resetLocalData();
-    resetDataModalVisible.value = false;
-    setBackupMessage("本地数据已重置。");
-  } finally {
-    resetting.value = false;
-  }
-}
-
 function setBackupMessage(message: string, tone: "success" | "danger" = "success") {
   backupMessage.value = message;
   backupMessageTone.value = tone;
@@ -740,6 +728,23 @@ async function movePersonalCategory(category: CategoryRecord, direction: -1 | 1)
   await categoryService.update({ id: category.id, sort: target.sort });
   await categoryService.update({ id: target.id, sort: category.sort });
   await refreshPersonalCategories();
+}
+
+function resetData() {
+  if (!isTestEnvironment) return;
+  resetDataModalVisible.value = true;
+}
+
+async function confirmResetData() {
+  if (!isTestEnvironment) return;
+  resetting.value = true;
+  try {
+    await store.resetLocalData();
+    resetDataModalVisible.value = false;
+    setBackupMessage("本地数据已重置。");
+  } finally {
+    resetting.value = false;
+  }
 }
 
 function startCreateParentCategory() {

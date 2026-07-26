@@ -69,6 +69,9 @@ export const useAppDataStore = defineStore("appData", () => {
   }
 
   async function resetLocalData() {
+    if (import.meta.env.VITE_APP_ENV !== "test") {
+      throw new Error("本地数据重置仅允许在测试环境执行");
+    }
     loading.value = true;
     error.value = null;
     try {
