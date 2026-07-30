@@ -1,5 +1,5 @@
 <template>
-  <n-select v-model:value="proxyValue" class="r-select" :options="options" :placeholder="placeholder" :to="false" clearable />
+  <n-select v-model:value="proxyValue" class="r-select" :options="options" :placeholder="placeholder" :to="false" :clearable="clearable" />
 </template>
 
 <script setup lang="ts">
@@ -12,8 +12,10 @@ const props = withDefaults(defineProps<{
   modelValue?: SelectValue;
   options: SelectOption[];
   placeholder?: string;
+  clearable?: boolean;
 }>(), {
   modelValue: null,
+  clearable: true,
 });
 
 const emit = defineEmits<{

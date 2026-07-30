@@ -7,8 +7,8 @@
 			</div>
 			<div class="panel-actions">
 				<template v-if="domain === 'asset'">
-					<RButton variant="secondary" @click="exportDefaults">导出默认分类备份</RButton>
-					<RButton variant="secondary" :disabled="importing" @click="openImportPicker">导入默认分类备份</RButton>
+					<RButton variant="secondary" :loading="exporting" @click="exportDefaults">导出默认分类备份</RButton>
+					<RButton variant="secondary" :loading="importing" @click="openImportPicker">导入默认分类备份</RButton>
 					<input ref="importFileInput" class="visually-hidden" type="file" accept="application/json,.json" @change="importDefaultsFile" />
 				</template>
 			</div>
@@ -86,7 +86,6 @@
 			:panel-title="panelTitle"
 			:draft="draft"
 			:parent-options="parentOptions"
-			:direction-options="directionOptions"
 			:account-group-options="accountGroupOptions"
 			:uploading="uploading"
 			:message="message"
@@ -103,10 +102,10 @@
 			@select-icon-key="draft.iconKey = $event"
 		/>
 
-		<DeleteConfirmModal v-model:show="deleteVisible" title="删除默认分类？" description="删除只会影响系统默认模板，不会影响已有用户的个人分类。若包含子分类，将一并删除默认子分类。"
+		<DeleteConfirmModal v-model:show="deleteVisible" :title="`删除${domain === 'account' ? '资金账户类型' : domain === 'bank' ? '银行' : '默认分类'}？`" :description="deleteDescription"
 			:loading="deleting" @confirm="confirmDelete" />
-		<DeleteConfirmModal v-model:show="batchDeleteVisible" title="批量删除默认分类？"
-			:description="`将删除 ${selectedBatchItems.length} 个默认分类。只影响新用户初始化时的模板，不会影响已有用户的个人分类。`"
+		<DeleteConfirmModal v-model:show="batchDeleteVisible" :title="`批量删除${domain === 'asset' ? '默认分类' : domain === 'account' ? '资金账户类型' : '银行'}？`"
+			:description="batchDeleteDescription"
 			:loading="batchDeleting" @confirm="confirmBatchDelete" />
 
 		<n-modal v-model:show="batchVisible" preset="card" :bordered="false" :closable="false" :mask-closable="false"
@@ -213,6 +212,7 @@ import SystemDictionaryEditorModal from "@/components/business/SystemDictionaryE
 	const batchDeleteVisible = ref(false);
 	const batchDeleting = ref(false);
 	const importing = ref(false);
+	const exporting = ref(false);
 	const importFileInput = ref<HTMLInputElement | null>(null);
 	const selectedChildParent = ref<CategoryRecord | null>(null);
 	const selectedBatchIds = ref<string[]>([]);
@@ -242,8 +242,16 @@ import SystemDictionaryEditorModal from "@/components/business/SystemDictionaryE
 	const selectedChildItems = computed(() => selectedChildParent.value ? childItemsOf(selectedChildParent.value.id) : []);
 	const batchItems = computed(() => visibleParentItems.value.flatMap((item) => [item, ...childItemsOf(item.id)]));
 	const selectedBatchItems = computed(() => batchItems.value.filter((item) => selectedBatchIds.value.includes(item.id)));
-	const panelTitle = computed(() => props.domain === "asset" ? "默认资产与记账分类" : props.domain === "account" ? "默认资金账户类型" : "默认银行列表");
-	const panelDescription = computed(() => props.domain === "asset" ? "维护新用户首次使用时获得的默认资产与记账分类。" : props.domain === "account" ? "维护新用户首次使用时获得的默认资金账户类型。" : "维护新用户首次使用时获得的默认银行列表。");
+	const panelTitle = computed(() => props.domain === "asset" ? "默认资产与记账分类" : props.domain === "account" ? "全局资金账户类型" : "全局银行列表");
+	const panelDescription = computed(() => props.domain === "asset" ? "维护新用户首次使用时复制的默认资产与记账分类。" : props.domain === "account" ? "维护全局资金账户类型；管理员修改后，所有用户同步使用最新配置。" : "维护全局银行列表；管理员修改后，所有用户同步使用最新配置。");
+	const deleteDescription = computed(() => props.domain === "asset"
+		? "删除只会影响系统默认模板，不会影响已有用户的个人分类。若包含子分类，将一并删除默认子分类。"
+		: props.domain === "account"
+			? "删除后所有用户都将无法继续选择该资金账户类型，已有账户记录不会被删除。"
+			: "删除后所有用户都将无法继续选择该银行，已有资金账户记录不会被删除。");
+	const batchDeleteDescription = computed(() => props.domain === "asset"
+		? `将删除 ${selectedBatchItems.value.length} 个默认分类，只影响新用户初始化模板，不会影响已有用户的个人分类。`
+		: `将删除 ${selectedBatchItems.value.length} 个全局${props.domain === "account" ? "资金账户类型" : "银行"}，已有业务记录不会被删除。`);
 	async function loadSystemItems() {
 		try {
 			systemItems.value = await categoryService.list({ scope: "system" });
@@ -276,10 +284,20 @@ import SystemDictionaryEditorModal from "@/components/business/SystemDictionaryE
 	}
 	async function refreshAdminItems() { await Promise.all([store.refresh(), loadSystemItems()]); }
 	async function exportDefaults() {
-		const backup = await categoryService.exportDefaults();
-		const blob = new Blob([JSON.stringify(backup, null, 2)], { type: "application/json" });
-		const url = URL.createObjectURL(blob);
-		const link = document.createElement("a"); link.href = url; link.download = "rizhi-default-categories.json"; link.click(); URL.revokeObjectURL(url);
+		if (exporting.value) return;
+		exporting.value = true;
+		try {
+			const backup = await categoryService.exportDefaults();
+			const blob = new Blob([JSON.stringify(backup, null, 2)], { type: "application/json" });
+			const url = URL.createObjectURL(blob);
+			const link = document.createElement("a"); link.href = url; link.download = "rizhi-default-categories.json"; link.click(); URL.revokeObjectURL(url);
+			message.value = "默认分类备份已导出";
+			messageTone.value = "success";
+		} catch (error) {
+			showError(error);
+		} finally {
+			exporting.value = false;
+		}
 	}
 	function openImportPicker() { importFileInput.value?.click(); }
 	async function importDefaultsFile(event: Event) {
@@ -305,7 +323,6 @@ import SystemDictionaryEditorModal from "@/components/business/SystemDictionaryE
 	}
 	const statusOptions = [{ label: "状态：全部", value: "all" }, { label: "状态：启用", value: "enabled" }, { label: "状态：停用", value: "disabled" }];
 	const scopeOptions = [{ label: "分类类型：全部", value: "all" }, { label: "资产", value: "asset" }, { label: "支出", value: "expense" }, { label: "收入", value: "income" }];
-	const directionOptions = [{ label: "资产账户", value: "asset" }, { label: "负债账户", value: "liability" }];
 	const accountGroupOptions = [{ label: "现金账户", value: "asset" }, { label: "信用账户", value: "credit" }, { label: "充值账户", value: "stored_value" }];
 	const batchOperationOptions = [{ label: "批量启用", value: "enable" }, { label: "批量停用", value: "disable" }, { label: "批量修改适用范围", value: "scopes" }, { label: "批量删除", value: "delete" }];
 	const batchPreviewText = computed(() => {
@@ -480,7 +497,7 @@ import SystemDictionaryEditorModal from "@/components/business/SystemDictionaryE
 		saving.value = true;
 		const businessType = draft.scopes.includes("income") && !draft.scopes.includes("expense") ? "income" : draft.type;
 		const domain : CategoryDomain = props.domain === "asset" ? (draft.scopes.includes("asset") ? "asset" : "transaction") : props.domain;
-		const payload : CreateCategoryInput = { domain, name: draft.name.trim(), note: props.domain === "bank" ? draft.note.trim() || undefined : undefined, sort, parentId: draft.parentId || undefined, type: (props.domain === "asset" ? businessType : draft.type) as CategoryRecord["type"], scopes: props.domain === "asset" ? [...draft.scopes] : undefined, enabled: draft.enabled, isSystem: true, iconUrl: draft.iconUrl || undefined, iconFileId: draft.iconFileId || undefined, iconKey: draft.iconKey || undefined, accountDirection: props.domain === "account" ? draft.accountDirection as CategoryRecord["accountDirection"] : undefined, accountGroup: props.domain === "account" ? draft.accountGroup as CategoryRecord["accountGroup"] : undefined, requiresBank: props.domain === "account" ? draft.requiresBank : undefined, scope: "system" };
+		const payload : CreateCategoryInput = { domain, name: draft.name.trim(), note: props.domain === "bank" ? draft.note.trim() || undefined : undefined, sort, parentId: draft.parentId || undefined, type: (props.domain === "asset" ? businessType : draft.type) as CategoryRecord["type"], scopes: props.domain === "asset" ? [...draft.scopes] : undefined, enabled: draft.enabled, isSystem: true, iconUrl: draft.iconUrl || undefined, iconFileId: draft.iconFileId || undefined, iconKey: draft.iconKey || undefined, accountDirection: props.domain === "account" ? (draft.accountGroup === "credit" ? "liability" : "asset") : undefined, accountGroup: props.domain === "account" ? draft.accountGroup as CategoryRecord["accountGroup"] : undefined, requiresBank: props.domain === "account" ? draft.requiresBank : undefined, scope: "system" };
 		try {
 			draft.id ? await categoryService.update({ id: draft.id, ...payload }) : await categoryService.create(payload);
 			if (draft.id && props.domain === "asset" && !draft.parentId && !draft.enabled) {

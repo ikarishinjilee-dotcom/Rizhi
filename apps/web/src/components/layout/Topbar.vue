@@ -91,7 +91,7 @@
 							{{ notificationSettingsMessage }}
 						</p>
 						<div class="notification-settings__actions">
-							<button class="primary" type="button" @click="saveNotificationSettings">保存设置</button>
+							<button class="primary" type="button" :disabled="savingNotificationSettings" @click="saveNotificationSettings"><span v-if="savingNotificationSettings" class="button-spinner" aria-hidden="true"></span>{{ savingNotificationSettings ? "保存中…" : "保存设置" }}</button>
 							<button v-if="ignoredNotificationIds.size" type="button"
 								@click="restoreIgnoredNotifications">
 								恢复 {{ ignoredNotificationIds.size }} 条已忽略提醒
@@ -227,6 +227,7 @@
 	const ignoredNotificationIds = ref(new Set<string>());
 	const notificationSettingsMessage = ref("");
 	const notificationSettingsTone = ref<"success" | "danger">("success");
+	const savingNotificationSettings = ref(false);
 	const notificationPreferences = reactive({
 		warrantyDays: 90,
 		repaymentDays: 30,
@@ -477,6 +478,7 @@
 	}
 
 	async function saveNotificationSettings() {
+		if (savingNotificationSettings.value) return;
 		const warrantyDays = Number(notificationDraft.warrantyDays);
 		const repaymentDays = Number(notificationDraft.repaymentDays);
 		const idleDays = Number(notificationDraft.idleDays);
@@ -486,16 +488,24 @@
 			return;
 		}
 
-		notificationPreferences.warrantyDays = warrantyDays;
-		notificationPreferences.repaymentDays = repaymentDays;
-		notificationPreferences.idleDays = idleDays;
-		await settingsService.update({
-			warrantyReminderDays: warrantyDays,
-			repaymentReminderDays: repaymentDays,
-			idleReminderDays: idleDays,
-		});
-		notificationSettingsTone.value = "success";
-		notificationSettingsMessage.value = "提醒阈值已保存。";
+		savingNotificationSettings.value = true;
+		try {
+			notificationPreferences.warrantyDays = warrantyDays;
+			notificationPreferences.repaymentDays = repaymentDays;
+			notificationPreferences.idleDays = idleDays;
+			await settingsService.update({
+				warrantyReminderDays: warrantyDays,
+				repaymentReminderDays: repaymentDays,
+				idleReminderDays: idleDays,
+			});
+			notificationSettingsTone.value = "success";
+			notificationSettingsMessage.value = "提醒阈值已保存。";
+		} catch (error) {
+			notificationSettingsTone.value = "danger";
+			notificationSettingsMessage.value = error instanceof Error ? error.message : "提醒设置保存失败";
+		} finally {
+			savingNotificationSettings.value = false;
+		}
 	}
 
 	function toggleNotificationSettings() {
@@ -1257,5 +1267,19 @@
 
 	.account-menu__panel>button.danger {
 		color: var(--color-danger);
+	}
+
+	.button-spinner {
+		display: inline-block;
+		width: 14px;
+		height: 14px;
+		border: 2px solid currentColor;
+		border-right-color: transparent;
+		border-radius: 50%;
+		animation: topbar-button-spin .8s linear infinite;
+	}
+
+	@keyframes topbar-button-spin {
+		to { transform: rotate(360deg); }
 	}
 </style>

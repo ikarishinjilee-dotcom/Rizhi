@@ -36,7 +36,7 @@ import type {
   TransactionRepository,
   UpdateCategoryInput,
 } from "@/repositories/contracts";
-import type { CategoryRecord, CategoryScope, ID, TransactionRecord } from "@/domain/models";
+import type { CategoryRecord, CategoryScope, ID, MoneyAccountRecord, TransactionRecord } from "@/domain/models";
 
 function createId(prefix: string) {
   const randomId = globalThis.crypto?.randomUUID?.() ?? `${Date.now()}-${Math.random().toString(36).slice(2)}`;
@@ -60,6 +60,28 @@ async function ensureLocalUserCategoryCopy() {
     })));
   }
   await rizhiDb.metadata.put({ key: copyVersion, value: "true" });
+}
+
+async function migrateLocalGlobalCategoryReferences() {
+  const copiedGlobals = await rizhiDb.categories
+    .filter((category) => (category.domain === "account" || category.domain === "bank") && Boolean((category as CategoryRecord & { sourceCategoryId?: string }).sourceCategoryId))
+    .toArray();
+  if (!copiedGlobals.length) return;
+  const idMap = new Map<string, string>();
+  copiedGlobals.forEach((category) => {
+    const sourceCategoryId = (category as CategoryRecord & { sourceCategoryId?: string }).sourceCategoryId;
+    if (sourceCategoryId) idMap.set(category.id, sourceCategoryId);
+  });
+  const accounts = await rizhiDb.accounts.toArray();
+  const updates: MoneyAccountRecord[] = [];
+  accounts.forEach((account) => {
+    const accountTypeId = (account.accountTypeId ? idMap.get(account.accountTypeId) : undefined) || account.accountTypeId;
+    const bankId = (account.bankId ? idMap.get(account.bankId) : undefined) || account.bankId;
+    if (accountTypeId !== account.accountTypeId || bankId !== account.bankId) {
+      updates.push({ ...account, ...(accountTypeId ? { accountTypeId } : {}), ...(bankId ? { bankId } : {}) });
+    }
+  });
+  if (updates.length) await rizhiDb.accounts.bulkPut(updates);
 }
 
 function defaultCategoryType(input: CreateCategoryInput): CategoryRecord["type"] {
@@ -144,6 +166,7 @@ export const indexedDbAppDataRepository: AppDataRepository = {
   async initialize() {
     await seedDatabaseIfNeeded();
     await ensureLocalUserCategoryCopy();
+    await migrateLocalGlobalCategoryReferences();
     await upgradeLegacyMidnightTransactionTimes();
   },
 
@@ -172,7 +195,8 @@ export const indexedDbAppDataRepository: AppDataRepository = {
       // User-facing snapshots must never expose the administrator's system
       // templates. Those are read separately by the admin dictionary panels;
       // regular pages should only operate on the user's independent copies.
-      categories: categories.filter((category) => category.isSystem !== true),
+      categories: categories.filter((category) => category.isSystem !== true && category.domain !== "account" && category.domain !== "bank")
+        .concat(categories.filter((category) => category.isSystem === true && (category.domain === "account" || category.domain === "bank"))),
     };
   },
 };

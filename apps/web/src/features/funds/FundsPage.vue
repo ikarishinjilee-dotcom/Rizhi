@@ -387,6 +387,7 @@ import type { AccountFlowRecord, AccountType, CategoryRecord, MoneyAccountRecord
 import { accountService } from "@/services/accountService";
 import { transactionService } from "@/services/transactionService";
 import { loadSystemBankCategories, resolveBankIcon, resolveBankIconKey } from "@/services/bankIconService";
+import { getIconDefinition } from "@/domain/iconLibrary";
 import { useAppDataStore } from "@/stores/appDataStore";
 import { formatAmount, formatDateTime } from "@/utils/formatters";
 
@@ -394,6 +395,7 @@ type AccountTypeItem = {
   key: string;
   label: string;
   icon: string;
+  iconUrl?: string;
   color: string;
   type: AccountType;
   direction: MoneyAccountRecord["direction"];
@@ -472,6 +474,7 @@ const accountTypeSections = computed(() => {
       key: item.id,
       label: item.name,
       icon: item.icon || item.name.slice(0, 1),
+      iconUrl: item.iconUrl || getIconDefinition(item.iconKey)?.assetUrl,
       color: item.color || "#3B82F6",
       type: (item.type || "other") as AccountType,
       direction: item.accountDirection || (item.accountGroup === "credit" ? "liability" : "asset"),
@@ -518,7 +521,7 @@ const repaymentErrors = reactive({ fromAccountId: "", liabilityAccountId: "", am
 
 const accountWithBankIcon = (account: MoneyAccountRecord) => ({
   ...account,
-  iconUrl: resolveBankIcon(account, systemBankItems.value) ?? account.iconUrl,
+  iconUrl: accountTypeIconUrl(account) ?? resolveBankIcon(account, systemBankItems.value) ?? account.iconUrl,
   iconKey: resolveBankIconKey(account, systemBankItems.value) ?? account.iconKey,
 });
 const assetAccounts = computed(() => store.assetAccounts.map(accountWithBankIcon));
@@ -538,7 +541,14 @@ function bankIconUrl(bank: CategoryRecord) {
   return resolveBankIcon(bank, systemBankItems.value);
 }
 function accountIconUrl(account: MoneyAccountRecord) {
-  return resolveBankIcon(account, systemBankItems.value);
+  return accountTypeIconUrl(account) ?? resolveBankIcon(account, systemBankItems.value) ?? account.iconUrl;
+}
+function accountTypeIconUrl(account: MoneyAccountRecord) {
+  const category = store.categories.find((item) => item.domain === "account" && (
+    item.id === account.accountTypeId
+    || (item.type === account.type && (item.accountDirection || (item.accountGroup === "credit" ? "liability" : "asset")) === account.direction)
+  ));
+  return category?.iconUrl || getIconDefinition(category?.iconKey)?.assetUrl;
 }
 const selectedBank = computed(() => {
   const bank = bankItems.value.find((item) => item.id === accountDraft.bankId);

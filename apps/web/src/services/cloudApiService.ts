@@ -35,8 +35,31 @@ export function isCloudDataSource() {
   return isUniCloudDataSource();
 }
 
-export function uploadImageDataUrl(dataUrl: string, purpose: "asset" | "addon" | "avatar" | "category_icon" | "site_icon") {
+export function uploadImageDataUrl(dataUrl: string, purpose: "asset" | "addon" | "avatar" | "category_icon" | "site_icon" | "icon_library") {
   return request<{ fileId: string; url: string }>("/files/images", "POST", { dataUrl, purpose });
+}
+
+export type CloudIconLibrary = {
+  categories: Array<{ id: string; label: string; sort: number }>;
+  aliases?: Record<string, string>;
+  groups: Array<{ id: string; label: string; kind: string }>;
+  icons: Array<{
+    key: string;
+    label: string;
+    kind: string;
+    groupId: string;
+    assetFileId?: string;
+    assetUrl?: string;
+    platforms?: Partial<Record<"web" | "mp" | "android" | "ios", string>>;
+  }>;
+};
+
+export function getCloudIconLibrary() {
+  return request<CloudIconLibrary>("/icon-library", "GET");
+}
+
+export function saveCloudIconLibrary(library: CloudIconLibrary) {
+  return request<CloudIconLibrary>("/icon-library", "PATCH", library);
 }
 
 export type CloudSiteBranding = {
@@ -76,4 +99,23 @@ export function getCloudUserProfile() {
 
 export function updateCloudUserProfile(input: { displayName: string; avatarFileId?: string }) {
   return request<CloudUserProfile>("/profile", "PATCH", input);
+}
+
+export type CloudUserSettings = {
+  currency: "CNY";
+  locale: "zh-CN";
+  theme: "light" | "dark" | "system";
+  notificationReadIds: string[];
+  notificationIgnoredIds: string[];
+  warrantyReminderDays: number;
+  repaymentReminderDays: number;
+  idleReminderDays: number;
+};
+
+export function getCloudUserSettings() {
+  return request<CloudUserSettings | null>("/settings", "GET");
+}
+
+export function updateCloudUserSettings(input: Partial<CloudUserSettings>) {
+  return request<CloudUserSettings>("/settings", "PATCH", input);
 }

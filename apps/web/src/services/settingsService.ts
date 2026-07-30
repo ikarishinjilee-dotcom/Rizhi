@@ -3,8 +3,10 @@ import type { UserSettingsRecord } from "@/domain/models";
 import { authSession, isUniCloudMode } from "@/services/authService";
 import {
   getCloudUserProfile,
+  getCloudUserSettings,
   isCloudDataSource,
   updateCloudUserProfile,
+  updateCloudUserSettings,
   uploadImageDataUrl,
 } from "@/services/cloudApiService";
 
@@ -58,8 +60,19 @@ export const settingsService = {
         avatarFileId,
       });
     }
+    const remoteSettings = await getCloudUserSettings() || await updateCloudUserSettings({
+      currency: local.currency,
+      locale: local.locale,
+      theme: local.theme,
+      notificationReadIds: local.notificationReadIds,
+      notificationIgnoredIds: local.notificationIgnoredIds,
+      warrantyReminderDays: local.warrantyReminderDays,
+      repaymentReminderDays: local.repaymentReminderDays,
+      idleReminderDays: local.idleReminderDays,
+    });
     const next = {
       ...local,
+      ...remoteSettings,
       displayName: profile.displayName,
       avatarDataUrl: profile.avatarUrl || undefined,
       avatarFileId: profile.avatarFileId,
@@ -98,6 +111,19 @@ export const settingsService = {
         avatarDataUrl: profile.avatarUrl || avatarUrl,
         avatarFileId: profile.avatarFileId,
       };
+    }
+    if (isCloudDataSource()) {
+      const remoteSettings = await updateCloudUserSettings({
+        currency: next.currency,
+        locale: next.locale,
+        theme: next.theme,
+        notificationReadIds: next.notificationReadIds,
+        notificationIgnoredIds: next.notificationIgnoredIds,
+        warrantyReminderDays: next.warrantyReminderDays,
+        repaymentReminderDays: next.repaymentReminderDays,
+        idleReminderDays: next.idleReminderDays,
+      });
+      next = { ...next, ...remoteSettings };
     }
     await rizhiDb.settings.put(next);
     if (typeof window !== "undefined") {

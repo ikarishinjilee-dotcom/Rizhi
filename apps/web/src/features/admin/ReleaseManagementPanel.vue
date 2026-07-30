@@ -29,10 +29,11 @@
       <article v-for="note in notes" :key="note.id" class="release-row">
         <div><strong>v{{ note.version }}</strong><small>{{ platformLabel(note.platform) }} · {{ note.date }}</small></div>
         <span class="status" :class="`status--${note.status}`">{{ note.status === "published" ? "已发布" : "草稿" }}</span>
-        <div class="release-row__actions"><RButton variant="secondary" @click="edit(note)">编辑</RButton><RButton variant="danger" @click="remove(note.id)">删除</RButton></div>
+        <div class="release-row__actions"><RButton variant="secondary" @click="edit(note)">编辑</RButton><RButton variant="danger" :loading="deletingId === note.id" :disabled="Boolean(deletingId)" @click="requestRemove(note.id)">删除</RButton></div>
       </article>
     </div>
   </section>
+  <DeleteConfirmModal v-model:show="deleteVisible" eyebrow="版本记录删除" title="确认删除这条版本记录？" description="删除后该版本记录将从管理中心和帮助页中移除。" confirm-text="确认删除" :loading="Boolean(deletingId)" @confirm="confirmRemove" />
 </template>
 
 <script setup lang="ts">
@@ -40,6 +41,7 @@ import { onMounted, reactive, ref } from "vue";
 import RButton from "@/components/ui/RButton.vue";
 import RInlineFeedback from "@/components/ui/RInlineFeedback.vue";
 import RInput from "@/components/ui/RInput.vue";
+import DeleteConfirmModal from "@/components/business/DeleteConfirmModal.vue";
 import { deleteReleaseNote, listReleaseNotes, releasePlatforms, saveReleaseNote, type ManagedReleaseNote, type ReleasePlatform, type ReleaseStatus } from "@/services/releaseService";
 import type { ReleaseGroup, ReleaseGroupType } from "@/features/help/releaseNotes";
 
@@ -51,13 +53,15 @@ const blankGroups = (): ReleaseGroup[] => [
 const form = reactive({ platform: "web" as ReleasePlatform, version: "", date: new Date().toISOString().slice(0, 10), status: "draft" as ReleaseStatus, forceUpdate: false, minSupportedVersion: "", groups: blankGroups() });
 const groupText = reactive<Record<ReleaseGroupType, string>>({ new: "", improved: "", fixed: "" });
 const notes = ref<ManagedReleaseNote[]>([]), loading = ref(false), saving = ref(false), editingId = ref("");
+const deleteVisible = ref(false), deletingId = ref("");
 const message = ref(""), messageTone = ref<"success" | "danger">("success");
 function platformLabel(platform: ReleasePlatform) { return releasePlatforms.find((item) => item.value === platform)?.label || platform; }
 function resetForm() { Object.assign(form, { platform: "web", version: "", date: new Date().toISOString().slice(0, 10), status: "draft", forceUpdate: false, minSupportedVersion: "", groups: blankGroups() }); Object.assign(groupText, { new: "", improved: "", fixed: "" }); editingId.value = ""; }
 function edit(note: ManagedReleaseNote) { editingId.value = note.id; Object.assign(form, { platform: note.platform, version: note.version, date: note.date, status: note.status, forceUpdate: note.forceUpdate, minSupportedVersion: note.minSupportedVersion, groups: note.groups.map((group) => ({ ...group, items: [...group.items] })) }); for (const group of form.groups) groupText[group.type] = group.items.join("\n"); window.scrollTo({ top: 0, behavior: "smooth" }); }
 async function load() { loading.value = true; try { notes.value = await listReleaseNotes(undefined, false, true); } catch (error) { messageTone.value = "danger"; message.value = error instanceof Error ? error.message : "版本记录加载失败"; } finally { loading.value = false; } }
 async function save() { if (!form.version.trim()) { messageTone.value = "danger"; message.value = "请输入版本号"; return; } saving.value = true; try { await saveReleaseNote({ id: editingId.value || undefined, platform: form.platform, version: form.version.trim(), date: form.date, status: form.status, forceUpdate: form.forceUpdate, minSupportedVersion: form.minSupportedVersion.trim(), groups: form.groups.map((group) => ({ ...group, items: groupText[group.type].split("\n").map((item) => item.trim()).filter(Boolean) })) }); messageTone.value = "success"; message.value = "版本记录已保存"; resetForm(); await load(); } catch (error) { messageTone.value = "danger"; message.value = error instanceof Error ? error.message : "版本记录保存失败"; } finally { saving.value = false; } }
-async function remove(id: string) { if (!window.confirm("确定删除这条版本记录吗？")) return; try { await deleteReleaseNote(id); messageTone.value = "success"; message.value = "版本记录已删除"; await load(); } catch (error) { messageTone.value = "danger"; message.value = error instanceof Error ? error.message : "版本记录删除失败"; } }
+function requestRemove(id: string) { if (deletingId.value) return; deletingId.value = id; deleteVisible.value = true; }
+async function confirmRemove() { if (!deletingId.value) return; try { await deleteReleaseNote(deletingId.value); messageTone.value = "success"; message.value = "版本记录已删除"; deleteVisible.value = false; await load(); } catch (error) { messageTone.value = "danger"; message.value = error instanceof Error ? error.message : "版本记录删除失败"; } finally { deletingId.value = ""; } }
 onMounted(load);
 </script>
 

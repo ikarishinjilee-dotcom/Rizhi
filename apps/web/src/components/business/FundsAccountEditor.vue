@@ -15,7 +15,7 @@
           <h4>{{ group.title }}</h4>
           <div class="type-grid">
             <button v-for="item in group.items" :key="item.key" :class="{ active: selectedAccountType.key === item.key }" type="button" :disabled="isAccountTypeDisabled(item)" :title="accountTypeDisabledTitle(item)" @click="$emit('select-type', item)">
-              <span :style="{ background: item.color }">{{ item.icon }}</span>
+              <span class="type-icon" :class="{ 'type-icon--image': item.iconUrl }" :style="item.iconUrl ? undefined : { background: item.color }"><img v-if="item.iconUrl" :src="item.iconUrl" :alt="`${item.label}图标`" /><b v-else>{{ item.icon }}</b></span>
               <small>{{ item.label }}</small>
             </button>
           </div>
@@ -49,7 +49,7 @@ import RInput from "@/components/ui/RInput.vue";
 import RSelect from "@/components/ui/RSelect.vue";
 import type { AccountType, MoneyAccountRecord } from "@/domain/models";
 
-type AccountTypeItem = { key: string; label: string; icon: string; color: string; direction: MoneyAccountRecord["direction"]; requiresBank?: boolean; type: AccountType; group?: "asset" | "credit" | "stored_value" };
+type AccountTypeItem = { key: string; label: string; icon: string; iconUrl?: string; color: string; direction: MoneyAccountRecord["direction"]; requiresBank?: boolean; type: AccountType; group?: "asset" | "credit" | "stored_value" };
 type AccountTypeGroup = { title: string; items: AccountTypeItem[] };
 type BankItem = { name: string; color?: string; icon?: string; iconUrl?: string; iconKey?: string };
 
@@ -86,6 +86,9 @@ defineEmits<{ close: []; submit: []; "select-type": [item: AccountTypeItem]; "op
 .type-grid button.active { background: #eef5ff; border-color: var(--color-primary); }
 .type-grid button:disabled { cursor: not-allowed; opacity: .72; }
 .type-grid span { display: grid; width: 32px; height: 32px; place-items: center; color: #fff; border-radius: 50%; font-size: 11px; font-weight: 800; }
+.type-grid span.type-icon--image { box-sizing: border-box; width: 40px; height: 40px; padding: 5px; background: #fff; border: 1px solid #e5e7eb; border-radius: 50%; }
+.type-grid span.type-icon--image img { width: 100%; height: 100%; object-fit: contain; border-radius: 0; }
+.type-grid span.type-icon--image b { display: none; }
 .account-form { padding: var(--space-5); }
 .account-form .form-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--space-4); }
 .account-form .form-grid label { display: grid; grid-template-rows: auto auto 16px; gap: var(--space-2); color: var(--color-text-secondary); font-size: var(--font-caption); font-weight: 700; }

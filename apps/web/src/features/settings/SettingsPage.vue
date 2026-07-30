@@ -420,7 +420,14 @@ onMounted(initializeData);
 
 async function initializeData() {
   await store.init().catch(() => undefined);
-  if (store.initialized) await loadProfile();
+  if (store.initialized) {
+    try {
+      await loadProfile();
+    } catch (error) {
+      profileMessageTone.value = "danger";
+      profileMessage.value = error instanceof Error ? error.message : "读取个人设置失败，请稍后重试。";
+    }
+  }
 }
 
 watch(categoryDomain, () => {

@@ -23,7 +23,6 @@
         <label v-if="domain === 'asset' && draft.parentId"><span>所属一级分类 *</span><RSelect v-model="draft.parentId" :options="parentOptions" /></label>
         <label><span>名称 *</span><RInput v-model="draft.name" placeholder="请输入名称" /></label>
         <label v-if="domain === 'bank'"><span>备注</span><RInput v-model="draft.note" placeholder="例如：美国分行、国际账户" /></label>
-        <label v-if="domain === 'account'"><span>账户方向 *</span><RSelect v-model="draft.accountDirection" :options="directionOptions" /></label>
         <label v-if="domain === 'account'"><span>账户分组 *</span><RSelect v-model="draft.accountGroup" :options="accountGroupOptions" /></label>
         <label v-if="domain === 'account'" class="enabled-row"><input v-model="draft.requiresBank" type="checkbox" /> 需要选择银行</label>
         <div v-if="domain === 'asset'" class="scope-field">
@@ -40,6 +39,7 @@
         <IconLibraryPicker
           v-model="draft.iconKey"
           :kind="domain === 'bank' ? 'bank' : 'standard'"
+          all-categories
           compact
           @select="$emit('select-icon-key', $event)"
         />
@@ -72,7 +72,6 @@ defineProps<{
     name: string;
     note: string;
     parentId: string;
-    accountDirection: string;
     accountGroup: string;
     requiresBank: boolean;
     iconUrl: string;
@@ -81,7 +80,6 @@ defineProps<{
     enabled: boolean;
   };
   parentOptions: Array<{ label: string; value: string }>;
-  directionOptions: Array<{ label: string; value: string }>;
   accountGroupOptions: Array<{ label: string; value: string }>;
   uploading: boolean;
   message: string;

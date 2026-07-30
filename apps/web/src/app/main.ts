@@ -7,6 +7,10 @@ import { hasActiveSession } from "@/services/authService";
 import "@/styles/tokens.css";
 import "@/styles/global.css";
 
+document.title = import.meta.env.VITE_APP_ENV === "test"
+	? "Rizhi - 测试环境"
+	: "Rizhi";
+
 const pinia = createPinia();
 const app = createApp(App);
 

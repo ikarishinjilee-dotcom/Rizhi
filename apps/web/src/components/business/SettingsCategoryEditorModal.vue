@@ -43,6 +43,7 @@
         <IconLibraryPicker
           v-model="categoryDraft.iconKey"
           kind="standard"
+          all-categories
           compact
           @select="(key) => $emit('select-icon-key', key)"
         />

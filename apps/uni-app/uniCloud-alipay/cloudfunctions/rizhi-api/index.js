@@ -9,1633 +9,2596 @@ const siteBranding = db.collection("rizhi-site-branding");
 const systemCategoryState = db.collection("rizhi-system-category-state");
 const userCategoryState = db.collection("rizhi-user-category-state");
 const releaseNotes = db.collection("rizhi-release-notes");
+const iconLibrary = db.collection("rizhi-icon-library");
+const userSettings = db.collection("rizhi-user-settings");
 const {
-  hasInitializedState,
-  shouldInitializeSystemTemplates,
-  shouldCopyUserCategories,
-  buildUserCategoryCopies,
-  shouldDeleteSystemChildren,
+	hasInitializedState,
+	shouldInitializeSystemTemplates,
+	shouldCopyUserCategories,
+	buildUserCategoryCopies,
+	shouldDeleteSystemChildren,
 } = require("./categoryState");
 const permissions = db.collection("rizhi-permissions");
 const {
-  DEFAULT_PERMISSION_MATRIX,
-  clone: clonePermissionMatrix,
-  normalizePermissionMatrix,
-  hasPermission,
+	DEFAULT_PERMISSION_MATRIX,
+	clone: clonePermissionMatrix,
+	normalizePermissionMatrix,
+	hasPermission,
 } = require("./permissions");
 
 const collections = {
-  assets: db.collection("rizhi-assets"),
-  assetAddons: db.collection("rizhi-asset-addons"),
-  accounts: db.collection("rizhi-accounts"),
-  transactions: db.collection("rizhi-transactions"),
-  accountFlows: db.collection("rizhi-account-flows"),
-  categories: db.collection("rizhi-categories"),
+	assets: db.collection("rizhi-assets"),
+	assetAddons: db.collection("rizhi-asset-addons"),
+	accounts: db.collection("rizhi-accounts"),
+	transactions: db.collection("rizhi-transactions"),
+	accountFlows: db.collection("rizhi-account-flows"),
+	categories: db.collection("rizhi-categories"),
 };
 
 const collectionNames = Object.keys(collections);
 const SYSTEM_USER_ID = "__system__";
+
 function categoryScopes(category) {
-  if (Array.isArray(category.scopes) && category.scopes.length) return [...new Set(category.scopes)];
-  if (category.domain === "asset") return ["asset", "expense"];
-  if (category.domain === "transaction" && category.type === "income") return ["income"];
-  if (category.domain === "transaction" && category.type === "refund") return ["income"];
-  if (category.domain === "transaction") return ["expense"];
-  return [];
+	if (Array.isArray(category.scopes) && category.scopes.length) return [...new Set(category.scopes)];
+	if (category.domain === "asset") return ["asset", "expense"];
+	if (category.domain === "transaction" && category.type === "income") return ["income"];
+	if (category.domain === "transaction" && category.type === "refund") return ["income"];
+	if (category.domain === "transaction") return ["expense"];
+	return [];
 }
 
 function categoryHasScope(category, scope) {
-  return categoryScopes(category).includes(scope);
+	return categoryScopes(category).includes(scope);
 }
 
 function normalizeCategory(record) {
-  return { ...record, scopes: categoryScopes(record) };
+	const normalized = {
+		...record,
+		scopes: categoryScopes(record)
+	};
+	if (normalized.domain === "account" && ["asset", "credit", "stored_value"].includes(normalized.accountGroup)) {
+		normalized.accountDirection = normalized.accountGroup === "credit" ? "liability" : "asset";
+	}
+	return normalized;
 }
 
-const systemCategoryDefaults = [
-  { id: "asset-digital", domain: "asset", type: "digital", name: "数码设备", sort: 10, color: "#1677FF" },
-  { id: "asset-clothing", domain: "asset", type: "clothing", name: "衣物鞋子", sort: 20, color: "#8B5CF6" },
-  { id: "asset-home", domain: "asset", type: "home", name: "家居用品", sort: 30, color: "#F59E0B" },
-  { id: "asset-sports", domain: "asset", type: "sports", name: "运动器材", sort: 40, color: "#16A36A" },
-  { id: "asset-subscription", domain: "asset", type: "subscription", name: "订阅服务", sort: 50, color: "#111827" },
-  { id: "asset-other", domain: "asset", type: "other", name: "其他物品", sort: 90, color: "#64748B" },
-  { id: "tx-meals", domain: "transaction", type: "expense", name: "三餐", sort: 110, color: "#F04438" },
-  { id: "tx-snacks", domain: "transaction", type: "expense", name: "零食", sort: 120, color: "#F59E0B" },
-  { id: "tx-clothing", domain: "transaction", type: "expense", name: "衣服", sort: 130, color: "#8B5CF6" },
-  { id: "tx-transport-default", domain: "transaction", type: "expense", name: "交通", sort: 140, color: "#1677FF" },
-  { id: "tx-travel", domain: "transaction", type: "expense", name: "旅行", sort: 150, color: "#16A36A" },
-  { id: "tx-children", domain: "transaction", type: "expense", name: "孩子", sort: 160, color: "#F97316" },
-  { id: "tx-pets", domain: "transaction", type: "expense", name: "宠物", sort: 170, color: "#A855F7" },
-  { id: "tx-phone-network", domain: "transaction", type: "expense", name: "话费网费", sort: 180, color: "#0EA5E9" },
-  { id: "tx-tobacco-alcohol", domain: "transaction", type: "expense", name: "烟酒", sort: 190, color: "#64748B" },
-  { id: "tx-study", domain: "transaction", type: "expense", name: "学习", sort: 200, color: "#14B8A6" },
-  { id: "tx-daily-default", domain: "transaction", type: "expense", name: "日用品", sort: 210, color: "#06B6D4" },
-  { id: "tx-housing", domain: "transaction", type: "expense", name: "住房", sort: 220, color: "#0F766E" },
-  { id: "tx-beauty", domain: "transaction", type: "expense", name: "美妆", sort: 230, color: "#EC4899" },
-  { id: "tx-medical", domain: "transaction", type: "expense", name: "医疗", sort: 240, color: "#EF4444" },
-  { id: "tx-red-envelope", domain: "transaction", type: "expense", name: "发红包", sort: 250, color: "#F43F5E" },
-  { id: "tx-auto-fuel", domain: "transaction", type: "expense", name: "汽车/加油", sort: 260, color: "#475569" },
-  { id: "tx-entertainment", domain: "transaction", type: "expense", name: "娱乐", sort: 270, color: "#7C3AED" },
-  { id: "tx-gifts", domain: "transaction", type: "expense", name: "请客送礼", sort: 280, color: "#DB2777" },
-  { id: "tx-electronics", domain: "transaction", type: "expense", name: "电器数码", sort: 290, color: "#2563EB" },
-  { id: "tx-sports-default", domain: "transaction", type: "expense", name: "运动", sort: 300, color: "#16A34A" },
-  { id: "tx-other-expense", domain: "transaction", type: "expense", name: "其它", sort: 390, color: "#94A3B8" },
-  { id: "tx-salary-default", domain: "transaction", type: "income", name: "工资", sort: 510, color: "#16A36A" },
-  { id: "tx-living-expense", domain: "transaction", type: "income", name: "生活费", sort: 520, color: "#22C55E" },
-  { id: "tx-income-red-envelope", domain: "transaction", type: "income", name: "收红包", sort: 530, color: "#F43F5E" },
-  { id: "tx-windfall", domain: "transaction", type: "income", name: "外快", sort: 540, color: "#0EA5E9" },
-  { id: "tx-stocks-funds", domain: "transaction", type: "income", name: "股票基金", sort: 550, color: "#7C3AED" },
-  { id: "tx-other-income", domain: "transaction", type: "income", name: "其它", sort: 590, color: "#94A3B8" },
-  { id: "bank-icbc", domain: "bank", name: "中国工商银行", sort: 10, color: "#E60012", icon: "工" },
-  { id: "bank-abc", domain: "bank", name: "中国农业银行", sort: 20, color: "#009882", icon: "农" },
-  { id: "bank-boc", domain: "bank", name: "中国银行", sort: 30, color: "#B40A19", icon: "中" },
-  { id: "bank-ccb", domain: "bank", name: "中国建设银行", sort: 40, color: "#0066B3", icon: "建" },
-  { id: "bank-bocom", domain: "bank", name: "交通银行", sort: 50, color: "#003B7C", icon: "交" },
-  { id: "bank-cmb", domain: "bank", name: "招商银行", sort: 60, color: "#D71920", icon: "招" },
-  { id: "bank-psbc", domain: "bank", name: "中国邮政储蓄银行", sort: 70, color: "#008A45", icon: "邮" },
-  { id: "bank-other", domain: "bank", name: "其他银行", sort: 999, color: "#64748B", icon: "银" },
-  { id: "account-cash", domain: "account", type: "cash", name: "现金", icon: "现", color: "#3B82F6", sort: 510, accountGroup: "asset", accountDirection: "asset" },
-  { id: "account-wechat", domain: "account", type: "wallet", name: "微信", icon: "微", color: "#22C55E", sort: 520, accountGroup: "asset", accountDirection: "asset" },
-  { id: "account-alipay", domain: "account", type: "wallet", name: "支付宝", icon: "支", color: "#1677FF", sort: 530, accountGroup: "asset", accountDirection: "asset" },
-  { id: "account-bank-card", domain: "account", type: "debit_card", name: "银行卡", icon: "卡", color: "#38BDF8", sort: 540, accountGroup: "asset", accountDirection: "asset" },
-  { id: "account-other-asset", domain: "account", type: "other", name: "其他", icon: "其", color: "#94A3B8", sort: 590, accountGroup: "asset", accountDirection: "asset" },
-  { id: "account-credit-card", domain: "account", type: "credit_card", name: "信用卡", icon: "信", color: "#F97316", sort: 610, accountGroup: "credit", accountDirection: "liability" },
-  { id: "account-huabei", domain: "account", type: "consumer_credit", name: "花呗", icon: "花", color: "#3B82F6", sort: 620, accountGroup: "credit", accountDirection: "liability" },
-  { id: "account-jiebei", domain: "account", type: "consumer_credit", name: "借呗", icon: "借", color: "#0EA5E9", sort: 630, accountGroup: "credit", accountDirection: "liability" },
-  { id: "account-jd", domain: "account", type: "consumer_credit", name: "京东白条", icon: "京", color: "#EF4444", sort: 640, accountGroup: "credit", accountDirection: "liability" },
-  { id: "account-mobile", domain: "account", type: "wallet", name: "话费充值", icon: "话", color: "#06B6D4", sort: 710, accountGroup: "stored_value", accountDirection: "asset" },
-  { id: "account-food", domain: "account", type: "wallet", name: "餐饮卡", icon: "餐", color: "#14B8A6", sort: 720, accountGroup: "stored_value", accountDirection: "asset" },
-  { id: "account-transport", domain: "account", type: "wallet", name: "交通卡", icon: "交", color: "#0EA5E9", sort: 730, accountGroup: "stored_value", accountDirection: "asset" },
+const systemCategoryDefaults = [{
+		id: "asset-digital",
+		domain: "asset",
+		type: "digital",
+		name: "数码设备",
+		sort: 10,
+		color: "#1677FF"
+	},
+	{
+		id: "asset-clothing",
+		domain: "asset",
+		type: "clothing",
+		name: "衣物鞋子",
+		sort: 20,
+		color: "#8B5CF6"
+	},
+	{
+		id: "asset-home",
+		domain: "asset",
+		type: "home",
+		name: "家居用品",
+		sort: 30,
+		color: "#F59E0B"
+	},
+	{
+		id: "asset-sports",
+		domain: "asset",
+		type: "sports",
+		name: "运动器材",
+		sort: 40,
+		color: "#16A36A"
+	},
+	{
+		id: "asset-subscription",
+		domain: "asset",
+		type: "subscription",
+		name: "订阅服务",
+		sort: 50,
+		color: "#111827"
+	},
+	{
+		id: "asset-other",
+		domain: "asset",
+		type: "other",
+		name: "其他物品",
+		sort: 90,
+		color: "#64748B"
+	},
+	{
+		id: "tx-meals",
+		domain: "transaction",
+		type: "expense",
+		name: "三餐",
+		sort: 110,
+		color: "#F04438"
+	},
+	{
+		id: "tx-snacks",
+		domain: "transaction",
+		type: "expense",
+		name: "零食",
+		sort: 120,
+		color: "#F59E0B"
+	},
+	{
+		id: "tx-clothing",
+		domain: "transaction",
+		type: "expense",
+		name: "衣服",
+		sort: 130,
+		color: "#8B5CF6"
+	},
+	{
+		id: "tx-transport-default",
+		domain: "transaction",
+		type: "expense",
+		name: "交通",
+		sort: 140,
+		color: "#1677FF"
+	},
+	{
+		id: "tx-travel",
+		domain: "transaction",
+		type: "expense",
+		name: "旅行",
+		sort: 150,
+		color: "#16A36A"
+	},
+	{
+		id: "tx-children",
+		domain: "transaction",
+		type: "expense",
+		name: "孩子",
+		sort: 160,
+		color: "#F97316"
+	},
+	{
+		id: "tx-pets",
+		domain: "transaction",
+		type: "expense",
+		name: "宠物",
+		sort: 170,
+		color: "#A855F7"
+	},
+	{
+		id: "tx-phone-network",
+		domain: "transaction",
+		type: "expense",
+		name: "话费网费",
+		sort: 180,
+		color: "#0EA5E9"
+	},
+	{
+		id: "tx-tobacco-alcohol",
+		domain: "transaction",
+		type: "expense",
+		name: "烟酒",
+		sort: 190,
+		color: "#64748B"
+	},
+	{
+		id: "tx-study",
+		domain: "transaction",
+		type: "expense",
+		name: "学习",
+		sort: 200,
+		color: "#14B8A6"
+	},
+	{
+		id: "tx-daily-default",
+		domain: "transaction",
+		type: "expense",
+		name: "日用品",
+		sort: 210,
+		color: "#06B6D4"
+	},
+	{
+		id: "tx-housing",
+		domain: "transaction",
+		type: "expense",
+		name: "住房",
+		sort: 220,
+		color: "#0F766E"
+	},
+	{
+		id: "tx-beauty",
+		domain: "transaction",
+		type: "expense",
+		name: "美妆",
+		sort: 230,
+		color: "#EC4899"
+	},
+	{
+		id: "tx-medical",
+		domain: "transaction",
+		type: "expense",
+		name: "医疗",
+		sort: 240,
+		color: "#EF4444"
+	},
+	{
+		id: "tx-red-envelope",
+		domain: "transaction",
+		type: "expense",
+		name: "发红包",
+		sort: 250,
+		color: "#F43F5E"
+	},
+	{
+		id: "tx-auto-fuel",
+		domain: "transaction",
+		type: "expense",
+		name: "汽车/加油",
+		sort: 260,
+		color: "#475569"
+	},
+	{
+		id: "tx-entertainment",
+		domain: "transaction",
+		type: "expense",
+		name: "娱乐",
+		sort: 270,
+		color: "#7C3AED"
+	},
+	{
+		id: "tx-gifts",
+		domain: "transaction",
+		type: "expense",
+		name: "请客送礼",
+		sort: 280,
+		color: "#DB2777"
+	},
+	{
+		id: "tx-electronics",
+		domain: "transaction",
+		type: "expense",
+		name: "电器数码",
+		sort: 290,
+		color: "#2563EB"
+	},
+	{
+		id: "tx-sports-default",
+		domain: "transaction",
+		type: "expense",
+		name: "运动",
+		sort: 300,
+		color: "#16A34A"
+	},
+	{
+		id: "tx-other-expense",
+		domain: "transaction",
+		type: "expense",
+		name: "其它",
+		sort: 390,
+		color: "#94A3B8"
+	},
+	{
+		id: "tx-salary-default",
+		domain: "transaction",
+		type: "income",
+		name: "工资",
+		sort: 510,
+		color: "#16A36A"
+	},
+	{
+		id: "tx-living-expense",
+		domain: "transaction",
+		type: "income",
+		name: "生活费",
+		sort: 520,
+		color: "#22C55E"
+	},
+	{
+		id: "tx-income-red-envelope",
+		domain: "transaction",
+		type: "income",
+		name: "收红包",
+		sort: 530,
+		color: "#F43F5E"
+	},
+	{
+		id: "tx-windfall",
+		domain: "transaction",
+		type: "income",
+		name: "外快",
+		sort: 540,
+		color: "#0EA5E9"
+	},
+	{
+		id: "tx-stocks-funds",
+		domain: "transaction",
+		type: "income",
+		name: "股票基金",
+		sort: 550,
+		color: "#7C3AED"
+	},
+	{
+		id: "tx-other-income",
+		domain: "transaction",
+		type: "income",
+		name: "其它",
+		sort: 590,
+		color: "#94A3B8"
+	},
+	{
+		id: "bank-icbc",
+		domain: "bank",
+		name: "中国工商银行",
+		sort: 10,
+		color: "#E60012",
+		icon: "工"
+	},
+	{
+		id: "bank-abc",
+		domain: "bank",
+		name: "中国农业银行",
+		sort: 20,
+		color: "#009882",
+		icon: "农"
+	},
+	{
+		id: "bank-boc",
+		domain: "bank",
+		name: "中国银行",
+		sort: 30,
+		color: "#B40A19",
+		icon: "中"
+	},
+	{
+		id: "bank-ccb",
+		domain: "bank",
+		name: "中国建设银行",
+		sort: 40,
+		color: "#0066B3",
+		icon: "建"
+	},
+	{
+		id: "bank-bocom",
+		domain: "bank",
+		name: "交通银行",
+		sort: 50,
+		color: "#003B7C",
+		icon: "交"
+	},
+	{
+		id: "bank-cmb",
+		domain: "bank",
+		name: "招商银行",
+		sort: 60,
+		color: "#D71920",
+		icon: "招"
+	},
+	{
+		id: "bank-psbc",
+		domain: "bank",
+		name: "中国邮政储蓄银行",
+		sort: 70,
+		color: "#008A45",
+		icon: "邮"
+	},
+	{
+		id: "bank-other",
+		domain: "bank",
+		name: "其他银行",
+		sort: 999,
+		color: "#64748B",
+		icon: "银"
+	},
+	{
+		id: "account-cash",
+		domain: "account",
+		type: "cash",
+		name: "现金",
+		icon: "现",
+		color: "#3B82F6",
+		sort: 510,
+		accountGroup: "asset",
+		accountDirection: "asset"
+	},
+	{
+		id: "account-wechat",
+		domain: "account",
+		type: "wallet",
+		name: "微信",
+		icon: "微",
+		color: "#22C55E",
+		sort: 520,
+		accountGroup: "asset",
+		accountDirection: "asset"
+	},
+	{
+		id: "account-alipay",
+		domain: "account",
+		type: "wallet",
+		name: "支付宝",
+		icon: "支",
+		color: "#1677FF",
+		sort: 530,
+		accountGroup: "asset",
+		accountDirection: "asset"
+	},
+	{
+		id: "account-bank-card",
+		domain: "account",
+		type: "debit_card",
+		name: "银行卡",
+		icon: "卡",
+		color: "#38BDF8",
+		sort: 540,
+		accountGroup: "asset",
+		accountDirection: "asset"
+	},
+	{
+		id: "account-other-asset",
+		domain: "account",
+		type: "other",
+		name: "其他",
+		icon: "其",
+		color: "#94A3B8",
+		sort: 590,
+		accountGroup: "asset",
+		accountDirection: "asset"
+	},
+	{
+		id: "account-credit-card",
+		domain: "account",
+		type: "credit_card",
+		name: "信用卡",
+		icon: "信",
+		color: "#F97316",
+		sort: 610,
+		accountGroup: "credit",
+		accountDirection: "liability"
+	},
+	{
+		id: "account-huabei",
+		domain: "account",
+		type: "consumer_credit",
+		name: "花呗",
+		icon: "花",
+		color: "#3B82F6",
+		sort: 620,
+		accountGroup: "credit",
+		accountDirection: "liability"
+	},
+	{
+		id: "account-jiebei",
+		domain: "account",
+		type: "consumer_credit",
+		name: "借呗",
+		icon: "借",
+		color: "#0EA5E9",
+		sort: 630,
+		accountGroup: "credit",
+		accountDirection: "liability"
+	},
+	{
+		id: "account-jd",
+		domain: "account",
+		type: "consumer_credit",
+		name: "京东白条",
+		icon: "京",
+		color: "#EF4444",
+		sort: 640,
+		accountGroup: "credit",
+		accountDirection: "liability"
+	},
+	{
+		id: "account-mobile",
+		domain: "account",
+		type: "wallet",
+		name: "话费充值",
+		icon: "话",
+		color: "#06B6D4",
+		sort: 710,
+		accountGroup: "stored_value",
+		accountDirection: "asset"
+	},
+	{
+		id: "account-food",
+		domain: "account",
+		type: "wallet",
+		name: "餐饮卡",
+		icon: "餐",
+		color: "#14B8A6",
+		sort: 720,
+		accountGroup: "stored_value",
+		accountDirection: "asset"
+	},
+	{
+		id: "account-transport",
+		domain: "account",
+		type: "wallet",
+		name: "交通卡",
+		icon: "交",
+		color: "#0EA5E9",
+		sort: 730,
+		accountGroup: "stored_value",
+		accountDirection: "asset"
+	},
 ];
 
 let ensureSystemCategoriesPromise = null;
 const ensureUserCategoriesPromises = new Map();
 
 async function ensureSystemCategories() {
-  if (ensureSystemCategoriesPromise) return ensureSystemCategoriesPromise;
-  ensureSystemCategoriesPromise = (async () => {
-    try {
-      const state = await systemCategoryState.where({ key: "initialized" }).limit(1).get();
-      if (!shouldInitializeSystemTemplates(state)) return;
+	if (ensureSystemCategoriesPromise) return ensureSystemCategoriesPromise;
+	ensureSystemCategoriesPromise = (async () => {
+		try {
+			const state = await systemCategoryState.where({
+				key: "initialized"
+			}).limit(1).get();
+			if (!shouldInitializeSystemTemplates(state)) return;
 
-      // Reading categories must never recreate defaults. Defaults are created
-      // only by an explicit import/initialization action in the admin center.
-      // This is important because an administrator may intentionally remove
-      // every default category.
-      await systemCategoryState.add({ key: "initialized", initializedAt: now() });
-    } finally {
-      ensureSystemCategoriesPromise = null;
-    }
-  })();
-  return ensureSystemCategoriesPromise;
+			// Reading categories must never recreate defaults. Defaults are created
+			// only by an explicit import/initialization action in the admin center.
+			// This is important because an administrator may intentionally remove
+			// every default category.
+			await systemCategoryState.add({
+				key: "initialized",
+				initializedAt: now()
+			});
+		} finally {
+			ensureSystemCategoriesPromise = null;
+		}
+	})();
+	return ensureSystemCategoriesPromise;
 }
 
 async function ensureUserCategories(userId) {
-  if (ensureUserCategoriesPromises.has(userId)) return ensureUserCategoriesPromises.get(userId);
-  const promise = (async () => {
-    await ensureSystemCategories();
-    const initialized = await userCategoryState.where({ userId, key: "initialized" }).limit(1).get();
-    const [systemResult, userResult] = await Promise.all([
-      collections.categories.where({ userId: SYSTEM_USER_ID }).get(),
-      collections.categories.where({ userId }).get(),
-    ]);
-    const systemCategories = systemResult.data || [];
-    const userCategories = userResult.data || [];
+	if (ensureUserCategoriesPromises.has(userId)) return ensureUserCategoriesPromises.get(userId);
+	const promise = (async () => {
+		await ensureSystemCategories();
+		const initialized = await userCategoryState.where({
+			userId,
+			key: "initialized"
+		}).limit(1).get();
+		const [systemResult, userResult] = await Promise.all([
+			collections.categories.where({
+				userId: SYSTEM_USER_ID
+			}).get(),
+			collections.categories.where({
+				userId
+			}).get(),
+		]);
+		const systemCategories = systemResult.data || [];
+		const userCategories = userResult.data || [];
 
-    // A user's categories are a one-time copy of the system defaults. Once
-    // initialized, never re-sync missing records: deleting or editing a user
-    // category must remain independent from later admin template changes.
-    if (hasInitializedState(initialized)) return userCategories;
+		// Account types and banks are global dictionaries. Older releases copied
+		// them into each user; migrate those references back to the system IDs so
+		// later administrator changes are immediately visible to every user.
+		const legacyGlobalIds = new Map(userCategories
+			.filter((item) => (item.domain === "account" || item.domain === "bank") && item.sourceCategoryId)
+			.map((item) => [item.id, item.sourceCategoryId]));
+		if (legacyGlobalIds.size) {
+			const accounts = (await collections.accounts.where({ userId }).get()).data || [];
+			await Promise.all(accounts.map((account) => {
+				const patch = {};
+				if (legacyGlobalIds.has(account.accountTypeId)) patch.accountTypeId = legacyGlobalIds.get(account.accountTypeId);
+				if (legacyGlobalIds.has(account.bankId)) patch.bankId = legacyGlobalIds.get(account.bankId);
+				return Object.keys(patch).length ? collections.accounts.doc(account._id).update(patch) : null;
+			}));
+		}
 
-    // Users created before the initialization marker was introduced already
-    // have their own category records. Treat those records as initialized
-    // instead of backfilling from the current admin template (which could
-    // resurrect a category the user intentionally deleted).
-    if (userCategories.length) {
-      await userCategoryState.add({ userId, key: "initialized", initializedAt: now() });
-      return userCategories;
-    }
+		// A user's categories are a one-time copy of the system defaults. Once
+		// initialized, never re-sync missing records: deleting or editing a user
+		// category must remain independent from later admin template changes.
+		if (hasInitializedState(initialized)) return userCategories;
 
-    if (!shouldCopyUserCategories(initialized, userCategories)) return userCategories;
-    const copies = buildUserCategoryCopies({
-      systemCategories,
-      userId,
-      idFactory: newId,
-      normalize: normalizeCategory,
-      strip: withoutInternalFields,
-      timestamp: now,
-    });
-    for (const { source, copy } of copies) {
-      await collections.categories.add(copy);
-    }
+		// Users created before the initialization marker was introduced already
+		// have their own category records. Treat those records as initialized
+		// instead of backfilling from the current admin template (which could
+		// resurrect a category the user intentionally deleted).
+		if (userCategories.length) {
+			await userCategoryState.add({
+				userId,
+				key: "initialized",
+				initializedAt: now()
+			});
+			return userCategories;
+		}
 
-    // Existing records may still point to the old shared system category IDs.
-    for (const { source, copy } of copies) {
-      const targetId = copy.id;
-      await Promise.all([
-        collections.assets.where({ userId, categoryId: source.id }).update({ categoryId: targetId }),
-        collections.accounts.where({ userId, accountTypeId: source.id }).update({ accountTypeId: targetId }),
-        collections.accounts.where({ userId, bankId: source.id }).update({ bankId: targetId }),
-        collections.transactions.where({ userId, categoryId: source.id }).update({ categoryId: targetId }),
-        collections.transactions.where({ userId, subCategoryId: source.id }).update({ subCategoryId: targetId }),
-      ]);
-    }
-    await userCategoryState.add({ userId, key: "initialized", initializedAt: now() });
-    return [...userCategories, ...copies.map(({ copy }) => copy)];
-  })();
-  ensureUserCategoriesPromises.set(userId, promise);
-  try {
-    return await promise;
-  } finally {
-    ensureUserCategoriesPromises.delete(userId);
-  }
+		if (!shouldCopyUserCategories(initialized, userCategories)) return userCategories;
+		const copies = buildUserCategoryCopies({
+			systemCategories: systemCategories.filter((item) => item.domain === "asset" || item.domain === "transaction"),
+			userId,
+			idFactory: newId,
+			normalize: normalizeCategory,
+			strip: withoutInternalFields,
+			timestamp: now,
+		});
+		for (const {
+				source,
+				copy
+			}
+			of copies) {
+			await collections.categories.add(copy);
+		}
+
+		// Existing records may still point to the old shared system category IDs.
+		for (const {
+				source,
+				copy
+			}
+			of copies) {
+			const targetId = copy.id;
+			await Promise.all([
+				collections.assets.where({
+					userId,
+					categoryId: source.id
+				}).update({
+					categoryId: targetId
+				}),
+				collections.accounts.where({
+					userId,
+					accountTypeId: source.id
+				}).update({
+					accountTypeId: targetId
+				}),
+				collections.accounts.where({
+					userId,
+					bankId: source.id
+				}).update({
+					bankId: targetId
+				}),
+				collections.transactions.where({
+					userId,
+					categoryId: source.id
+				}).update({
+					categoryId: targetId
+				}),
+				collections.transactions.where({
+					userId,
+					subCategoryId: source.id
+				}).update({
+					subCategoryId: targetId
+				}),
+			]);
+		}
+		await userCategoryState.add({
+			userId,
+			key: "initialized",
+			initializedAt: now()
+		});
+		return [...userCategories, ...copies.map(({
+			copy
+		}) => copy)];
+	})();
+	ensureUserCategoriesPromises.set(userId, promise);
+	try {
+		return await promise;
+	} finally {
+		ensureUserCategoriesPromises.delete(userId);
+	}
 }
 
 async function clearUserBusinessData(userId) {
-  const [assetResult, addonResult] = await Promise.all([
-    collections.assets.where({ userId }).get(),
-    collections.assetAddons.where({ userId }).get(),
-  ]);
-  const records = [...(assetResult.data || []), ...(addonResult.data || [])];
-  const fileIds = [...new Set(records.flatMap((record) =>
-    (record.attachments || [])
-      .map((attachment) => attachment.storageFileId)
-      .filter(Boolean)))];
+	const [assetResult, addonResult] = await Promise.all([
+		collections.assets.where({
+			userId
+		}).get(),
+		collections.assetAddons.where({
+			userId
+		}).get(),
+	]);
+	const records = [...(assetResult.data || []), ...(addonResult.data || [])];
+	const fileIds = [...new Set(records.flatMap((record) =>
+		(record.attachments || [])
+		.map((attachment) => attachment.storageFileId)
+		.filter(Boolean)))];
 
-  if (fileIds.length) {
-    await uniCloud.deleteFile({ fileList: fileIds });
-  }
+	if (fileIds.length) {
+		await uniCloud.deleteFile({
+			fileList: fileIds
+		});
+	}
 
-  const deleted = {};
-  for (const name of collectionNames) {
-    const result = await collections[name].where({ userId }).remove();
-    deleted[name] = result.deleted || 0;
-  }
+	const deleted = {};
+	for (const name of collectionNames) {
+		const result = await collections[name].where({
+			userId
+		}).remove();
+		deleted[name] = result.deleted || 0;
+	}
 
-  return {
-    deleted,
-    deletedFiles: fileIds.length,
-  };
+	return {
+		deleted,
+		deletedFiles: fileIds.length,
+	};
 }
 
 function response(statusCode, body) {
-  return {
-    mpserverlessComposedResponse: true,
-    isBase64Encoded: false,
-    statusCode,
-    headers: {
-      "Content-Type": "application/json; charset=utf-8",
-      "Access-Control-Allow-Origin": "*",
-      "Access-Control-Allow-Headers": "Content-Type, X-Rizhi-User-ID",
-      "Access-Control-Allow-Methods": "GET, POST, PATCH, DELETE, OPTIONS",
-    },
-    body: JSON.stringify(body),
-  };
+	return {
+		mpserverlessComposedResponse: true,
+		isBase64Encoded: false,
+		statusCode,
+		headers: {
+			"Content-Type": "application/json; charset=utf-8",
+			"Access-Control-Allow-Origin": "*",
+			"Access-Control-Allow-Headers": "Content-Type, X-Rizhi-User-ID",
+			"Access-Control-Allow-Methods": "GET, POST, PATCH, DELETE, OPTIONS",
+		},
+		body: JSON.stringify(body),
+	};
 }
 
 function ok(data, statusCode = 200) {
-  return response(statusCode, { data });
+	return response(statusCode, {
+		data
+	});
 }
 
 function fail(statusCode, code, message, details) {
-  return response(statusCode, { error: { code, message, details } });
+	return response(statusCode, {
+		error: {
+			code,
+			message,
+			details
+		}
+	});
 }
 
 function parseBody(event) {
-  if (!event.body) return {};
-  const raw = event.isBase64Encoded
-    ? Buffer.from(event.body, "base64").toString("utf8")
-    : event.body;
-  if (typeof raw === "object") return raw;
-  try {
-    return JSON.parse(raw);
-  } catch {
-    throw new Error("请求体必须是有效的 JSON");
-  }
+	if (!event.body) return {};
+	const raw = event.isBase64Encoded ?
+		Buffer.from(event.body, "base64").toString("utf8") :
+		event.body;
+	if (typeof raw === "object") return raw;
+	try {
+		return JSON.parse(raw);
+	} catch {
+		throw new Error("请求体必须是有效的 JSON");
+	}
 }
 
 function parseTransportRequest(event) {
-  const query = event.queryStringParameters || {};
-  const rawBody = parseBody(event);
-  if (rawBody && rawBody.__rizhiTransport === true) {
-    return {
-      method: String(rawBody.method || "GET").toUpperCase(),
-      body: rawBody.payload || {},
-      token: String(rawBody.token || ""),
-      query,
-    };
-  }
-  return {
-    method: String(query.__method || event.httpMethod || "GET").toUpperCase(),
-    body: rawBody,
-    token: String(query.__token || ""),
-    query,
-  };
+	const query = event.queryStringParameters || {};
+	const rawBody = parseBody(event);
+	if (rawBody && rawBody.__rizhiTransport === true) {
+		return {
+			method: String(rawBody.method || "GET").toUpperCase(),
+			body: rawBody.payload || {},
+			token: String(rawBody.token || ""),
+			query,
+		};
+	}
+	return {
+		method: String(query.__method || event.httpMethod || "GET").toUpperCase(),
+		body: rawBody,
+		token: String(query.__token || ""),
+		query,
+	};
 }
 
 async function authenticate(event, token) {
-  if (!token) {
-    const error = new Error("请先登录");
-    error.statusCode = 401;
-    error.code = "UNAUTHORIZED";
-    throw error;
-  }
-  const headers = event.headers || {};
-  const uniId = uniIdCommon.createInstance({
-    clientInfo: {
-      appId: "__UNI__2A67492",
-      uniPlatform: "web",
-      locale: "zh-Hans",
-      clientIP: headers["x-forwarded-for"] || headers["x-real-ip"] || "",
-      userAgent: headers["user-agent"] || "",
-    },
-  });
-  const result = await uniId.checkToken(token);
-  if (!result || result.errCode) {
-    const error = new Error(result?.errMsg || "登录状态已失效");
-    error.statusCode = 401;
-    error.code = result?.errCode || "UNAUTHORIZED";
-    throw error;
-  }
-  // Token 中的 role 可能是在授予管理员身份前签发的旧值。
-  // 每次请求都从用户表读取实时角色，避免前端已显示管理员但写操作仍被拒绝。
-  const userResult = await uniIdUsers.doc(result.uid).field({ status: true, role: true }).get();
-  const user = userResult.data?.[0];
-  if (!user || Number(user.status || 0) !== 0) {
-    const error = new Error(Number(user?.status) === 1 ? "账户已被停用" : "账户当前不可用");
-    error.statusCode = 401;
-    error.code = Number(user?.status) === 1 ? "ACCOUNT_DISABLED" : "ACCOUNT_UNAVAILABLE";
-    throw error;
-  }
-  return { ...result, role: Array.isArray(user.role) ? user.role : [] };
+	if (!token) {
+		const error = new Error("请先登录");
+		error.statusCode = 401;
+		error.code = "UNAUTHORIZED";
+		throw error;
+	}
+	const headers = event.headers || {};
+	const uniId = uniIdCommon.createInstance({
+		clientInfo: {
+			appId: "__UNI__2A67492",
+			uniPlatform: "web",
+			locale: "zh-Hans",
+			clientIP: headers["x-forwarded-for"] || headers["x-real-ip"] || "",
+			userAgent: headers["user-agent"] || "",
+		},
+	});
+	const result = await uniId.checkToken(token);
+	if (!result || result.errCode) {
+		const error = new Error(result?.errMsg || "登录状态已失效");
+		error.statusCode = 401;
+		error.code = result?.errCode || "UNAUTHORIZED";
+		throw error;
+	}
+	// Token 中的 role 可能是在授予管理员身份前签发的旧值。
+	// 每次请求都从用户表读取实时角色，避免前端已显示管理员但写操作仍被拒绝。
+	const userResult = await uniIdUsers.doc(result.uid).field({
+		status: true,
+		role: true
+	}).get();
+	const user = userResult.data?.[0];
+	if (!user || Number(user.status || 0) !== 0) {
+		const error = new Error(Number(user?.status) === 1 ? "账户已被停用" : "账户当前不可用");
+		error.statusCode = 401;
+		error.code = Number(user?.status) === 1 ? "ACCOUNT_DISABLED" : "ACCOUNT_UNAVAILABLE";
+		throw error;
+	}
+	return {
+		...result,
+		role: Array.isArray(user.role) ? user.role : []
+	};
 }
 
 async function invokeUniId(event, method, params, deviceId) {
-  const headers = event.headers || {};
-  const bridgeClientInfo = {
-    deviceId: String(deviceId || ""),
-    clientIP: headers["x-forwarded-for"] || headers["x-real-ip"] || "",
-    userAgent: headers["user-agent"] || "",
-  };
-  const invocation = await uniCloud.callFunction({
-    name: "uni-id-co",
-    data: {
-      method,
-      params: [
-        {
-          ...params,
-          __rizhiClientInfo: bridgeClientInfo,
-        },
-        {
-          __rizhiClientInfo: bridgeClientInfo,
-        },
-      ],
-    },
-  });
-  const result = invocation.result;
-  if (!result || result.errCode) {
-    const error = new Error(result?.errMsg || "账户服务请求失败");
-    error.statusCode = method === "login" ? 401 : 400;
-    error.code = result?.errCode || "AUTH_REQUEST_FAILED";
-    throw error;
-  }
-  return result;
+	const headers = event.headers || {};
+	const bridgeClientInfo = {
+		deviceId: String(deviceId || ""),
+		clientIP: headers["x-forwarded-for"] || headers["x-real-ip"] || "",
+		userAgent: headers["user-agent"] || "",
+	};
+	const invocation = await uniCloud.callFunction({
+		name: "uni-id-co",
+		data: {
+			method,
+			params: [{
+					...params,
+					__rizhiClientInfo: bridgeClientInfo,
+				},
+				{
+					__rizhiClientInfo: bridgeClientInfo,
+				},
+			],
+		},
+	});
+	const result = invocation.result;
+	if (!result || result.errCode) {
+		const error = new Error(result?.errMsg || "账户服务请求失败");
+		error.statusCode = method === "login" ? 401 : 400;
+		error.code = result?.errCode || "AUTH_REQUEST_FAILED";
+		throw error;
+	}
+	return result;
 }
 
 async function loginWithPassword(event, body) {
-  const username = String(body.username || "").trim();
-  const password = String(body.password || "");
-  if (!username || !password) throw new Error("请输入用户名和密码");
-  return invokeUniId(event, "login", { username, password }, body.deviceId);
+	const username = String(body.username || "").trim();
+	const password = String(body.password || "");
+	if (!username || !password) throw new Error("请输入用户名和密码");
+	return invokeUniId(event, "login", {
+		username,
+		password
+	}, body.deviceId);
 }
 
 async function createRegisterCaptcha(event, body) {
-  if (!body.deviceId) throw new Error("缺少客户端设备标识");
-  return invokeUniId(event, "createCaptcha", { scene: "register" }, body.deviceId);
+	if (!body.deviceId) throw new Error("缺少客户端设备标识");
+	return invokeUniId(event, "createCaptcha", {
+		scene: "register"
+	}, body.deviceId);
 }
 
 async function registerWithPassword(event, body) {
-  const username = String(body.username || "").trim();
-  const nickname = String(body.nickname || "").trim();
-  const password = String(body.password || "");
-  const captcha = String(body.captcha || "").trim();
-  if (!username || !password || !captcha || !body.deviceId) throw new Error("请完整填写注册信息");
-  assertValidUsername(username);
-  return invokeUniId(event, "registerUser", {
-    username,
-    nickname,
-    password,
-    captcha,
-  }, body.deviceId);
+	const username = String(body.username || "").trim();
+	const nickname = String(body.nickname || "").trim();
+	const password = String(body.password || "");
+	const captcha = String(body.captcha || "").trim();
+	if (!username || !password || !captcha || !body.deviceId) throw new Error("请完整填写注册信息");
+	assertValidUsername(username);
+	return invokeUniId(event, "registerUser", {
+		username,
+		nickname,
+		password,
+		captcha,
+	}, body.deviceId);
 }
 
 function assertValidUsername(username) {
-  if (!/^[A-Za-z0-9_]{3,32}$/.test(username)) {
-    throw new Error("用户名仅支持 3-32 位英文字母、数字或下划线，不支持中文、空格和其他符号");
-  }
+	if (!/^[A-Za-z0-9_]{3,32}$/.test(username)) {
+		throw new Error("用户名仅支持 3-32 位英文字母、数字或下划线，不支持中文、空格和其他符号");
+	}
 }
 
 async function claimLocalData(userId) {
-  let claimed = 0;
-  for (const name of collectionNames) {
-    const ownCount = await collections[name].where({ userId }).count();
-    if (ownCount.total > 0) continue;
-    const result = await collections[name].where({ userId: "user-local" }).update({ userId });
-    claimed += result.updated || result.affectedDocs || 0;
-  }
-  return { claimed };
+	let claimed = 0;
+	for (const name of collectionNames) {
+		const ownCount = await collections[name].where({
+			userId
+		}).count();
+		if (ownCount.total > 0) continue;
+		const result = await collections[name].where({
+			userId: "user-local"
+		}).update({
+			userId
+		});
+		claimed += result.updated || result.affectedDocs || 0;
+	}
+	return {
+		claimed
+	};
 }
 
 function newId(prefix) {
-  return `${prefix}-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
+	return `${prefix}-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
 }
 
 function now() {
-  return new Date().toISOString();
+	return new Date().toISOString();
 }
 
 function requireAdmin(auth) {
-  if (Array.isArray(auth?.role) && (auth.role.includes("admin") || auth.role.includes("super_admin"))) return;
-  const error = new Error("需要管理员权限");
-  error.statusCode = 403;
-  error.code = "FORBIDDEN";
-  throw error;
+	if (Array.isArray(auth?.role) && (auth.role.includes("admin") || auth.role.includes("super_admin"))) return;
+	const error = new Error("需要管理员权限");
+	error.statusCode = 403;
+	error.code = "FORBIDDEN";
+	throw error;
 }
 
 function requireSuperAdmin(auth) {
-  if (Array.isArray(auth?.role) && auth.role.includes("super_admin")) return;
-  const error = new Error("需要超级管理员权限");
-  error.statusCode = 403;
-  error.code = "SUPER_ADMIN_REQUIRED";
-  throw error;
+	if (Array.isArray(auth?.role) && auth.role.includes("super_admin")) return;
+	const error = new Error("需要超级管理员权限");
+	error.statusCode = 403;
+	error.code = "SUPER_ADMIN_REQUIRED";
+	throw error;
 }
 
 async function getPermissionMatrix() {
-  const result = await permissions.where({ key: "default" }).limit(1).get();
-  return normalizePermissionMatrix(result.data?.[0]?.matrix || DEFAULT_PERMISSION_MATRIX);
+	const result = await permissions.where({
+		key: "default"
+	}).limit(1).get();
+	return normalizePermissionMatrix(result.data?.[0]?.matrix || DEFAULT_PERMISSION_MATRIX);
 }
 
 function requireFeaturePermission(auth, matrix, permission) {
-  if (hasPermission(auth, matrix, permission)) return;
-  const error = new Error("当前管理员没有执行此功能的权限");
-  error.statusCode = 403;
-  error.code = "FEATURE_FORBIDDEN";
-  error.details = { permission };
-  throw error;
+	if (hasPermission(auth, matrix, permission)) return;
+	const error = new Error("当前管理员没有执行此功能的权限");
+	error.statusCode = 403;
+	error.code = "FEATURE_FORBIDDEN";
+	error.details = {
+		permission
+	};
+	throw error;
 }
 
 async function listPermissionMatrix(auth) {
-  requireAdmin(auth);
-  return getPermissionMatrix();
+	requireAdmin(auth);
+	return getPermissionMatrix();
 }
 
 async function updatePermissionMatrix(auth, body) {
-  requireSuperAdmin(auth);
-  const matrix = normalizePermissionMatrix(body?.matrix);
-  const existingResult = await permissions.where({ key: "default" }).limit(1).get();
-  const existing = existingResult.data?.[0];
-  const record = {
-    key: "default",
-    version: matrix.version,
-    matrix: clonePermissionMatrix(matrix),
-    updatedAt: now(),
-    updatedBy: auth.uid,
-  };
-  if (existing) await permissions.doc(existing._id).set(record);
-  else await permissions.add(record);
-  return matrix;
+	requireSuperAdmin(auth);
+	const matrix = normalizePermissionMatrix(body?.matrix);
+	const existingResult = await permissions.where({
+		key: "default"
+	}).limit(1).get();
+	const existing = existingResult.data?.[0];
+	const record = {
+		key: "default",
+		version: matrix.version,
+		matrix: clonePermissionMatrix(matrix),
+		updatedAt: now(),
+		updatedBy: auth.uid,
+	};
+	if (existing) await permissions.doc(existing._id).set(record);
+	else await permissions.add(record);
+	return matrix;
 }
 
 async function listAdminUsers(auth, matrix) {
-  requireFeaturePermission(auth, matrix, "system_users");
-  const [result, profileResult] = await Promise.all([uniIdUsers
-    .field({ username: true, nickname: true, avatar: true, role: true, status: true, register_date: true })
-    .orderBy("register_date", "desc")
-    .limit(200)
-    .get(), userProfiles.limit(200).get()]);
-  const profileByUserId = new Map(profileResult.data.map((profile) => [profile.userId, profile]));
-  const avatarUrls = await getTemporaryFileUrls(profileResult.data.map((profile) => profile.avatarFileId).filter(Boolean));
-  return result.data.map((user) => {
-    const profile = profileByUserId.get(user._id);
-    return ({
-    id: user._id,
-    username: user.username || "",
-    nickname: profile?.displayName || user.nickname || "",
-    avatar: avatarUrls.get(profile?.avatarFileId) || user.avatar || "",
-    roles: Array.isArray(user.role) ? user.role : [],
-    status: user.status,
-    isCurrent: user._id === auth.uid,
-    registeredAt: user.register_date,
-    });
-  });
+	requireFeaturePermission(auth, matrix, "system_users");
+	const [result, profileResult] = await Promise.all([uniIdUsers
+		.field({
+			username: true,
+			nickname: true,
+			avatar: true,
+			role: true,
+			status: true,
+			register_date: true
+		})
+		.orderBy("register_date", "desc")
+		.limit(200)
+		.get(), userProfiles.limit(200).get()
+	]);
+	const profileByUserId = new Map(profileResult.data.map((profile) => [profile.userId, profile]));
+	const avatarUrls = await getTemporaryFileUrls(profileResult.data.map((profile) => profile.avatarFileId).filter(
+		Boolean));
+	return result.data.map((user) => {
+		const profile = profileByUserId.get(user._id);
+		return ({
+			id: user._id,
+			username: user.username || "",
+			nickname: profile?.displayName || user.nickname || "",
+			avatar: avatarUrls.get(profile?.avatarFileId) || user.avatar || "",
+			roles: Array.isArray(user.role) ? user.role : [],
+			status: user.status,
+			isCurrent: user._id === auth.uid,
+			registeredAt: user.register_date,
+		});
+	});
 }
 
 async function findAdminUserByUsername(auth, username, matrix) {
-  requireFeaturePermission(auth, matrix, "system_users");
-  const normalizedUsername = String(username || "").trim();
-  if (!normalizedUsername) throw new Error("请输入用户名");
-  const result = await uniIdUsers.where({ username: normalizedUsername })
-    .field({ username: true, nickname: true, avatar: true, role: true, status: true, register_date: true })
-    .limit(1)
-    .get();
-  const user = result.data?.[0];
-  if (!user) throw new Error("未找到该用户名对应的用户");
-  const profileResult = await userProfiles.where({ userId: user._id }).limit(1).get();
-  const profile = profileResult.data?.[0];
-  const avatarUrls = await getTemporaryFileUrls(profile?.avatarFileId ? [profile.avatarFileId] : []);
-  return {
-    id: user._id,
-    username: user.username || "",
-    nickname: profile?.displayName || user.nickname || "",
-    avatar: avatarUrls.get(profile?.avatarFileId) || user.avatar || "",
-    roles: Array.isArray(user.role) ? user.role : [],
-    status: user.status,
-    isCurrent: user._id === auth.uid,
-    registeredAt: user.register_date,
-  };
+	requireFeaturePermission(auth, matrix, "system_users");
+	const normalizedUsername = String(username || "").trim();
+	if (!normalizedUsername) throw new Error("请输入用户名");
+	const result = await uniIdUsers.where({
+			username: normalizedUsername
+		})
+		.field({
+			username: true,
+			nickname: true,
+			avatar: true,
+			role: true,
+			status: true,
+			register_date: true
+		})
+		.limit(1)
+		.get();
+	const user = result.data?.[0];
+	if (!user) throw new Error("未找到该用户名对应的用户");
+	const profileResult = await userProfiles.where({
+		userId: user._id
+	}).limit(1).get();
+	const profile = profileResult.data?.[0];
+	const avatarUrls = await getTemporaryFileUrls(profile?.avatarFileId ? [profile.avatarFileId] : []);
+	return {
+		id: user._id,
+		username: user.username || "",
+		nickname: profile?.displayName || user.nickname || "",
+		avatar: avatarUrls.get(profile?.avatarFileId) || user.avatar || "",
+		roles: Array.isArray(user.role) ? user.role : [],
+		status: user.status,
+		isCurrent: user._id === auth.uid,
+		registeredAt: user.register_date,
+	};
 }
 
 async function updateUserStatus(auth, targetUserId, enabled, matrix) {
-  requireFeaturePermission(auth, matrix, "system_users");
-  if (!targetUserId) throw new Error("缺少用户 ID");
-  if (targetUserId === auth.uid) throw new Error("不能停用自己的账户");
-  const targetResult = await uniIdUsers.doc(targetUserId).get();
-  const target = targetResult.data?.[0];
-  if (!target) throw new Error("用户不存在");
-  const targetRoles = Array.isArray(target.role) ? target.role : [];
-  if (targetRoles.includes("super_admin")) throw new Error("超级管理员账户不能被停用");
-  const operatorIsSuperAdmin = Array.isArray(auth.role) && auth.role.includes("super_admin");
-  if (targetRoles.includes("admin") && !operatorIsSuperAdmin) {
-    throw new Error("只有超级管理员可以停用管理员账户");
-  }
-  const status = enabled ? 0 : 1;
-  await uniIdUsers.doc(targetUserId).update({ status });
-  return { id: targetUserId, status };
+	requireFeaturePermission(auth, matrix, "system_users");
+	if (!targetUserId) throw new Error("缺少用户 ID");
+	if (targetUserId === auth.uid) throw new Error("不能停用自己的账户");
+	const targetResult = await uniIdUsers.doc(targetUserId).get();
+	const target = targetResult.data?.[0];
+	if (!target) throw new Error("用户不存在");
+	const targetRoles = Array.isArray(target.role) ? target.role : [];
+	if (targetRoles.includes("super_admin")) throw new Error("超级管理员账户不能被停用");
+	const operatorIsSuperAdmin = Array.isArray(auth.role) && auth.role.includes("super_admin");
+	if (targetRoles.includes("admin") && !operatorIsSuperAdmin) {
+		throw new Error("只有超级管理员可以停用管理员账户");
+	}
+	const status = enabled ? 0 : 1;
+	await uniIdUsers.doc(targetUserId).update({
+		status
+	});
+	return {
+		id: targetUserId,
+		status
+	};
 }
 
 async function updateAdminRole(auth, targetUserId, enabled, matrix) {
-  requireFeaturePermission(auth, matrix, "system_users");
-  requireSuperAdmin(auth);
-  if (!targetUserId) throw new Error("缺少用户 ID");
-  if (!enabled && targetUserId === auth.uid) throw new Error("不能取消自己的管理员身份");
-  const targetResult = await uniIdUsers.doc(targetUserId).get();
-  const target = targetResult.data?.[0];
-  if (!target) throw new Error("用户不存在");
-  const roles = Array.isArray(target.role) ? target.role.filter(Boolean) : [];
-  if (roles.includes("super_admin")) throw new Error("超级管理员身份不能在此页面修改");
-  const nextRoles = enabled
-    ? [...new Set([...roles, "admin"])]
-    : roles.filter((role) => role !== "admin");
-  if (!enabled) {
-    const privilegedUsers = await uniIdUsers.field({ role: true }).limit(500).get();
-    const managerCount = privilegedUsers.data.filter((user) => {
-      const userRoles = Array.isArray(user.role) ? user.role : [];
-      return userRoles.includes("admin") || userRoles.includes("super_admin");
-    }).length;
-    if (managerCount <= 1) throw new Error("系统必须至少保留一名管理员或超级管理员");
-  }
-  await uniIdUsers.doc(targetUserId).update({ role: nextRoles });
-  return { id: targetUserId, roles: nextRoles };
+	requireFeaturePermission(auth, matrix, "system_users");
+	requireSuperAdmin(auth);
+	if (!targetUserId) throw new Error("缺少用户 ID");
+	if (!enabled && targetUserId === auth.uid) throw new Error("不能取消自己的管理员身份");
+	const targetResult = await uniIdUsers.doc(targetUserId).get();
+	const target = targetResult.data?.[0];
+	if (!target) throw new Error("用户不存在");
+	const roles = Array.isArray(target.role) ? target.role.filter(Boolean) : [];
+	if (roles.includes("super_admin")) throw new Error("超级管理员身份不能在此页面修改");
+	const nextRoles = enabled ? [...new Set([...roles, "admin"])] :
+		roles.filter((role) => role !== "admin");
+	if (!enabled) {
+		const privilegedUsers = await uniIdUsers.field({
+			role: true
+		}).limit(500).get();
+		const managerCount = privilegedUsers.data.filter((user) => {
+			const userRoles = Array.isArray(user.role) ? user.role : [];
+			return userRoles.includes("admin") || userRoles.includes("super_admin");
+		}).length;
+		if (managerCount <= 1) throw new Error("系统必须至少保留一名管理员或超级管理员");
+	}
+	await uniIdUsers.doc(targetUserId).update({
+		role: nextRoles
+	});
+	return {
+		id: targetUserId,
+		roles: nextRoles
+	};
 }
 
 async function getTemporaryFileUrls(fileIds) {
-  const uniqueIds = [...new Set((fileIds || []).filter(Boolean))];
-  if (!uniqueIds.length) return new Map();
-  const result = await uniCloud.getTempFileURL({ fileList: uniqueIds });
-  const files = result.fileList || result.files || [];
-  return new Map(files.map((item) => [
-    item.fileID || item.fileId,
-    item.tempFileURL || item.fileURL || item.download_url || item.fileID || item.fileId,
-  ]));
+	const uniqueIds = [...new Set((fileIds || []).filter(Boolean))];
+
+	if (!uniqueIds.length) {
+		return new Map();
+	}
+
+	// uniCloud limits each getTempFileURL request to 50 file IDs.
+	// The icon library can contain more than 50 assets, so split the
+	// request and merge the responses instead of losing every URL.
+	const files = [];
+	for (let index = 0; index < uniqueIds.length; index += 50) {
+		const result = await uniCloud.getTempFileURL({
+			fileList: uniqueIds.slice(index, index + 50),
+		});
+		files.push(...(result.fileList || result.files || []));
+	}
+
+	const urlMap = new Map(
+		files
+		.filter((item) => item)
+		.map((item) => [
+			item.fileID || item.fileId,
+			item.tempFileURL ||
+			item.fileURL ||
+			item.download_url ||
+			"",
+		]),
+	);
+
+	return urlMap;
 }
 
 async function resolveRecordAttachmentUrls(records) {
-  const fileIds = records.flatMap((record) =>
-    (record.attachments || []).map((attachment) => attachment.storageFileId).filter(Boolean));
-  const urls = await getTemporaryFileUrls(fileIds);
-  return records.map((record) => ({
-    ...record,
-    attachments: (record.attachments || []).map((attachment) => ({
-      ...attachment,
-      url: urls.get(attachment.storageFileId) || attachment.url,
-    })),
-  }));
+	const fileIds = records.flatMap((record) =>
+		(record.attachments || []).map((attachment) => attachment.storageFileId).filter(Boolean));
+	const urls = await getTemporaryFileUrls(fileIds);
+	return records.map((record) => ({
+		...record,
+		attachments: (record.attachments || []).map((attachment) => ({
+			...attachment,
+			url: urls.get(attachment.storageFileId) || attachment.url,
+		})),
+	}));
 }
 
 async function resolveCategoryIconUrls(records) {
-  const urls = await getTemporaryFileUrls(records.map((record) => record.iconFileId).filter(Boolean));
-  return records.map((record) => ({
-    ...record,
-    iconUrl: urls.get(record.iconFileId) || record.iconUrl,
-  }));
+	const libraryResult = await iconLibrary.where({
+		key: "default"
+	}).limit(1).get();
+	const libraryIcons = libraryResult.data?.[0]?.icons || [];
+	const libraryByKey = new Map(libraryIcons.map((item) => [item.key, item]));
+	const fileIds = records.flatMap((record) => [
+		record.iconFileId,
+		libraryByKey.get(record.iconKey)?.assetFileId,
+	]).filter(Boolean);
+	const urls = await getTemporaryFileUrls(fileIds);
+	return records.map((record) => ({
+		...record,
+		iconUrl: urls.get(record.iconFileId) || urls.get(libraryByKey.get(record.iconKey)?.assetFileId) || record.iconUrl,
+	}));
 }
 
 async function uploadImage(userId, body) {
-  const dataUrl = String(body.dataUrl || "");
-  const match = dataUrl.match(/^data:(image\/(?:jpeg|png|webp));base64,([A-Za-z0-9+/=]+)$/);
-  if (!match) throw new Error("仅支持 JPEG、PNG 或 WebP 图片");
-  const fileContent = Buffer.from(match[2], "base64");
-  if (!fileContent.length || fileContent.length > 1536 * 1024) {
-    throw new Error("图片压缩后不能超过 1.5 MB");
-  }
-  const extension = {
-    "image/jpeg": "jpg",
-    "image/png": "png",
-    "image/webp": "webp",
-  }[match[1]];
-  const purpose = ["asset", "addon", "avatar", "category_icon", "site_icon"].includes(body.purpose) ? body.purpose : "asset";
-  const cloudPath = `rizhi/${userId}/${purpose}/${Date.now()}-${Math.random().toString(36).slice(2, 10)}.${extension}`;
-  const uploaded = await uniCloud.uploadFile({ cloudPath, fileContent });
-  const fileId = uploaded.fileID || uploaded.fileId;
-  const urls = await getTemporaryFileUrls([fileId]);
-  return { fileId, url: urls.get(fileId) || fileId };
+	const dataUrl = String(body.dataUrl || "");
+	const match = dataUrl.match(/^data:(image\/(?:jpeg|png|webp|svg\+xml));base64,([A-Za-z0-9+/=]+)$/);
+	if (!match) throw new Error("仅支持 JPEG、PNG、SVG 或 WebP 图片");
+	const fileContent = Buffer.from(match[2], "base64");
+	if (!fileContent.length || fileContent.length > 1536 * 1024) {
+		throw new Error("图片压缩后不能超过 1.5 MB");
+	}
+	const extension = {
+		"image/jpeg": "jpg",
+		"image/png": "png",
+		"image/webp": "webp",
+		"image/svg+xml": "svg",
+	} [match[1]];
+	const purpose = ["asset", "addon", "avatar", "category_icon", "site_icon", "icon_library"].includes(body
+		.purpose) ? body.purpose : "asset";
+	const cloudPath =
+		`rizhi/${userId}/${purpose}/${Date.now()}-${Math.random().toString(36).slice(2, 10)}.${extension}`;
+	const uploaded = await uniCloud.uploadFile({
+		cloudPath,
+		fileContent
+	});
+	const fileId = uploaded.fileID || uploaded.fileId;
+	const urls = await getTemporaryFileUrls([fileId]);
+	return {
+		fileId,
+		url: urls.get(fileId) || fileId
+	};
 }
 
 async function migrateLegacyImages(userId) {
-  let migrated = 0;
-  let failed = 0;
-  for (const name of ["assets", "assetAddons"]) {
-    const result = await collections[name].where({ userId }).limit(1000).get();
-    for (const record of result.data) {
-      let changed = false;
-      const attachments = [];
-      for (const attachment of record.attachments || []) {
-        if (!attachment.storageFileId && String(attachment.url || "").startsWith("data:image/")) {
-          try {
-            const uploaded = await uploadImage(userId, {
-              dataUrl: attachment.url,
-              purpose: name === "assets" ? "asset" : "addon",
-            });
-            attachments.push({
-              ...attachment,
-              url: uploaded.url,
-              storageFileId: uploaded.fileId,
-            });
-            migrated += 1;
-            changed = true;
-          } catch {
-            attachments.push(attachment);
-            failed += 1;
-          }
-        } else {
-          attachments.push(attachment);
-        }
-      }
-      if (changed) {
-        await collections[name].doc(record._id).update({ attachments, updatedAt: now() });
-      }
-    }
-  }
-  return { migrated, failed };
+	let migrated = 0;
+	let failed = 0;
+	for (const name of ["assets", "assetAddons"]) {
+		const result = await collections[name].where({
+			userId
+		}).limit(1000).get();
+		for (const record of result.data) {
+			let changed = false;
+			const attachments = [];
+			for (const attachment of record.attachments || []) {
+				if (!attachment.storageFileId && String(attachment.url || "").startsWith("data:image/")) {
+					try {
+						const uploaded = await uploadImage(userId, {
+							dataUrl: attachment.url,
+							purpose: name === "assets" ? "asset" : "addon",
+						});
+						attachments.push({
+							...attachment,
+							url: uploaded.url,
+							storageFileId: uploaded.fileId,
+						});
+						migrated += 1;
+						changed = true;
+					} catch {
+						attachments.push(attachment);
+						failed += 1;
+					}
+				} else {
+					attachments.push(attachment);
+				}
+			}
+			if (changed) {
+				await collections[name].doc(record._id).update({
+					attachments,
+					updatedAt: now()
+				});
+			}
+		}
+	}
+	return {
+		migrated,
+		failed
+	};
 }
 
 async function getUserProfile(userId) {
-  const result = await userProfiles.where({ userId }).limit(1).get();
-  const profile = result.data[0];
-  if (!profile) return null;
-  const urls = await getTemporaryFileUrls([profile.avatarFileId]);
-  return {
-    displayName: profile.displayName,
-    avatarFileId: profile.avatarFileId,
-    avatarUrl: urls.get(profile.avatarFileId) || "",
-  };
+	const result = await userProfiles.where({
+		userId
+	}).limit(1).get();
+	const profile = result.data[0];
+	if (!profile) return null;
+	const urls = await getTemporaryFileUrls([profile.avatarFileId]);
+	return {
+		displayName: profile.displayName,
+		avatarFileId: profile.avatarFileId,
+		avatarUrl: urls.get(profile.avatarFileId) || "",
+	};
 }
 
 async function updateUserProfile(userId, body) {
-  const displayName = String(body.displayName || "").trim();
-  if (!displayName || displayName.length > 64) throw new Error("显示名称长度应为 1 至 64 个字符");
-  const avatarFileId = body.avatarFileId ? String(body.avatarFileId) : undefined;
-  const existingResult = await userProfiles.where({ userId }).limit(1).get();
-  const existing = existingResult.data[0];
-  const record = {
-    userId,
-    displayName,
-    createdAt: existing?.createdAt || now(),
-    updatedAt: now(),
-  };
-  if (avatarFileId) record.avatarFileId = avatarFileId;
-  if (existing) await userProfiles.doc(existing._id).set(record);
-  else await userProfiles.add(record);
-  return getUserProfile(userId);
+	const displayName = String(body.displayName || "").trim();
+	if (!displayName || displayName.length > 64) throw new Error("显示名称长度应为 1 至 64 个字符");
+	const avatarFileId = body.avatarFileId ? String(body.avatarFileId) : undefined;
+	const existingResult = await userProfiles.where({
+		userId
+	}).limit(1).get();
+	const existing = existingResult.data[0];
+	const record = {
+		userId,
+		displayName,
+		createdAt: existing?.createdAt || now(),
+		updatedAt: now(),
+	};
+	if (avatarFileId) record.avatarFileId = avatarFileId;
+	if (existing) await userProfiles.doc(existing._id).set(record);
+	else await userProfiles.add(record);
+	return getUserProfile(userId);
 }
 
 async function getSiteBranding() {
-  const result = await siteBranding.where({ key: "default" }).limit(1).get();
-  const record = result.data[0] || {};
-  const urls = await getTemporaryFileUrls([record.logoFileId, record.mainLogoFileId, record.faviconFileId, record.homeLogoFileId, record.homeHeroFileId].filter(Boolean));
-  return {
-    logoFileId: record.logoFileId,
-    mainLogoFileId: record.mainLogoFileId,
-    faviconFileId: record.faviconFileId,
-    homeLogoFileId: record.homeLogoFileId,
-    homeHeroFileId: record.homeHeroFileId,
-    logoUrl: urls.get(record.logoFileId) || "",
-    mainLogoUrl: urls.get(record.mainLogoFileId) || "",
-    faviconUrl: urls.get(record.faviconFileId) || "",
-    homeLogoUrl: urls.get(record.homeLogoFileId) || "",
-    homeHeroUrl: urls.get(record.homeHeroFileId) || "",
-    homeTitle: record.homeTitle || "",
-    homeDescription: record.homeDescription || "",
-  };
+	const result = await siteBranding.where({
+		key: "default"
+	}).limit(1).get();
+	const record = result.data[0] || {};
+	const urls = await getTemporaryFileUrls([record.logoFileId, record.mainLogoFileId, record.faviconFileId, record
+		.homeLogoFileId, record.homeHeroFileId
+	].filter(Boolean));
+	return {
+		logoFileId: record.logoFileId,
+		mainLogoFileId: record.mainLogoFileId,
+		faviconFileId: record.faviconFileId,
+		homeLogoFileId: record.homeLogoFileId,
+		homeHeroFileId: record.homeHeroFileId,
+		logoUrl: urls.get(record.logoFileId) || "",
+		mainLogoUrl: urls.get(record.mainLogoFileId) || "",
+		faviconUrl: urls.get(record.faviconFileId) || "",
+		homeLogoUrl: urls.get(record.homeLogoFileId) || "",
+		homeHeroUrl: urls.get(record.homeHeroFileId) || "",
+		homeTitle: record.homeTitle || "",
+		homeDescription: record.homeDescription || "",
+	};
 }
 
 async function updateSiteBranding(auth, body, matrix) {
-  requireFeaturePermission(auth, matrix, "branding");
-  const existingResult = await siteBranding.where({ key: "default" }).limit(1).get();
-  const existing = existingResult.data[0];
-  const record = {
-    key: "default",
-    logoFileId: body.logoFileId ? String(body.logoFileId) : undefined,
-    mainLogoFileId: body.mainLogoFileId ? String(body.mainLogoFileId) : undefined,
-    faviconFileId: body.faviconFileId ? String(body.faviconFileId) : undefined,
-    homeLogoFileId: body.homeLogoFileId ? String(body.homeLogoFileId) : undefined,
-    homeHeroFileId: body.homeHeroFileId ? String(body.homeHeroFileId) : undefined,
-    homeTitle: String(body.homeTitle || "").trim(),
-    homeDescription: String(body.homeDescription || "").trim(),
-    createdAt: existing?.createdAt || now(),
-    updatedAt: now(),
-  };
-  if (existing) await siteBranding.doc(existing._id).set(record);
-  else await siteBranding.add(record);
-  return getSiteBranding();
+	requireFeaturePermission(auth, matrix, "branding");
+	const existingResult = await siteBranding.where({
+		key: "default"
+	}).limit(1).get();
+	const existing = existingResult.data[0];
+	const record = {
+		key: "default",
+		logoFileId: body.logoFileId ? String(body.logoFileId) : undefined,
+		mainLogoFileId: body.mainLogoFileId ? String(body.mainLogoFileId) : undefined,
+		faviconFileId: body.faviconFileId ? String(body.faviconFileId) : undefined,
+		homeLogoFileId: body.homeLogoFileId ? String(body.homeLogoFileId) : undefined,
+		homeHeroFileId: body.homeHeroFileId ? String(body.homeHeroFileId) : undefined,
+		homeTitle: String(body.homeTitle || "").trim(),
+		homeDescription: String(body.homeDescription || "").trim(),
+		createdAt: existing?.createdAt || now(),
+		updatedAt: now(),
+	};
+	if (existing) await siteBranding.doc(existing._id).set(record);
+	else await siteBranding.add(record);
+	return getSiteBranding();
 }
 
 function withoutInternalFields(record) {
-  if (!record) return record;
-  const { _id, userId, ...result } = record;
-  return result;
+	if (!record) return record;
+	const {
+		_id,
+		userId,
+		...result
+	} = record;
+	return result;
 }
 
 async function findAll(name, userId, orderBy = "createdAt", direction = "desc") {
-  const result = await collections[name]
-    .where({ userId })
-    .orderBy(orderBy, direction)
-    .limit(1000)
-    .get();
-  return result.data.map(withoutInternalFields);
+	const result = await collections[name]
+		.where({
+			userId
+		})
+		.orderBy(orderBy, direction)
+		.limit(1000)
+		.get();
+	return result.data.map(withoutInternalFields);
 }
 
 async function findOne(name, userId, id) {
-  const result = await collections[name].where({ userId, id }).limit(1).get();
-  return result.data[0];
+	const result = await collections[name].where({
+		userId,
+		id
+	}).limit(1).get();
+	return result.data[0];
 }
 
 async function insert(name, userId, record) {
-  await collections[name].add({ ...record, userId });
-  return record;
+	await collections[name].add({
+		...record,
+		userId
+	});
+	return record;
 }
 
 async function replace(name, userId, id, record) {
-  const existing = await findOne(name, userId, id);
-  if (!existing) throw new Error("记录不存在");
-  await collections[name].doc(existing._id).set({ ...record, id, userId });
-  return record;
+	const existing = await findOne(name, userId, id);
+	if (!existing) throw new Error("记录不存在");
+	await collections[name].doc(existing._id).set({
+		...record,
+		id,
+		userId
+	});
+	return record;
 }
 
 async function remove(name, userId, id) {
-  const result = await collections[name].where({ userId, id }).get();
-  if (!result.data.length) throw new Error("记录不存在");
-  await Promise.all(result.data.map((record) => collections[name].doc(record._id).remove()));
-  return withoutInternalFields(result.data[0]);
+	const result = await collections[name].where({
+		userId,
+		id
+	}).get();
+	if (!result.data.length) throw new Error("记录不存在");
+	await Promise.all(result.data.map((record) => collections[name].doc(record._id).remove()));
+	return withoutInternalFields(result.data[0]);
+}
+
+function normalizeUserSettings(input, existing = {}) {
+	const days = (value, fallback) => Math.max(0, Math.min(3650, Number.isFinite(Number(value)) ? Number(value) :
+		fallback));
+	return {
+		currency: String(input.currency ?? existing.currency ?? "CNY").trim() || "CNY",
+		locale: String(input.locale ?? existing.locale ?? "zh-CN").trim() || "zh-CN",
+		theme: ["light", "dark", "system"].includes(input.theme ?? existing.theme) ? (input.theme ?? existing.theme) :
+			"light",
+		notificationReadIds: Array.isArray(input.notificationReadIds ?? existing.notificationReadIds) ? [...new Set(
+			input.notificationReadIds ?? existing.notificationReadIds)].map(String).slice(-500) : [],
+		notificationIgnoredIds: Array.isArray(input.notificationIgnoredIds ?? existing.notificationIgnoredIds) ? [...
+			new Set(input.notificationIgnoredIds ?? existing.notificationIgnoredIds)
+		].map(String).slice(-500) : [],
+		warrantyReminderDays: days(input.warrantyReminderDays ?? existing.warrantyReminderDays, 90),
+		repaymentReminderDays: days(input.repaymentReminderDays ?? existing.repaymentReminderDays, 30),
+		idleReminderDays: days(input.idleReminderDays ?? existing.idleReminderDays, 30),
+	};
+}
+
+async function getUserSettings(userId) {
+	const result = await userSettings.where({
+		userId
+	}).limit(1).get();
+	const record = result.data?.[0];
+	if (!record) return null;
+	return normalizeUserSettings(record, record);
+}
+
+async function updateUserSettings(userId, body) {
+	const result = await userSettings.where({
+		userId
+	}).limit(1).get();
+	const existing = result.data?.[0];
+	const record = {
+		userId,
+		...normalizeUserSettings(body, existing),
+		createdAt: existing?.createdAt || now(),
+		updatedAt: now(),
+	};
+	if (existing) await userSettings.doc(existing._id).set(record);
+	else await userSettings.add(record);
+	return normalizeUserSettings(record, record);
+}
+
+function normalizeIconLibrary(input) {
+	const categories = Array.isArray(input?.categories) ? input.categories : [];
+	const groups = Array.isArray(input?.groups) ? input.groups : [];
+	const icons = Array.isArray(input?.icons) ? input.icons : [];
+	const aliases = input?.aliases && typeof input.aliases === "object" ? { ...input.aliases } : {};
+	const normalizedCategories = categories
+		.filter((item) => item && item.id && item.label)
+		.map((item, index) => ({
+			id: String(item.id),
+			label: String(item.label).trim(),
+			sort: Number(item.sort) || (index + 1) * 10
+		}));
+	for (const legacy of [{ id: "standard", label: "普通图标", sort: 10 }, { id: "bank", label: "银行图标", sort: 20 }]) {
+		if (!normalizedCategories.some((item) => item.id === legacy.id)) normalizedCategories.push(legacy);
+	}
+	const categoryIds = new Set(normalizedCategories.map((item) => item.id));
+	const normalizedGroups = groups
+		.filter((item) => item && item.id && item.label && item.kind && categoryIds.has(String(item.kind)))
+		.map((item) => ({
+			id: String(item.id),
+			label: String(item.label).trim(),
+			kind: String(item.kind)
+		}));
+	for (const category of normalizedCategories) {
+		if (!normalizedGroups.some((item) => item.kind === category.id)) {
+			normalizedGroups.push({ id: `${category.id}-default`, label: "未分类", kind: category.id });
+		}
+	}
+	const groupIds = new Set(normalizedGroups.map((item) => item.id));
+	const normalizedIcons = icons
+		.filter((item) => item && item.key && item.label && item.kind && categoryIds.has(String(item.kind)))
+		.map((item) => ({
+			key: String(item.key),
+			label: String(item.label).trim(),
+			kind: String(item.kind),
+			groupId: groupIds.has(String(item.groupId)) ? String(item.groupId) : `${String(item.kind)}-default`,
+			...(item.assetFileId ? {
+				assetFileId: String(item.assetFileId)
+			} : {}),
+			...(item.platforms && typeof item.platforms === "object" ? {
+				platforms: item.platforms
+			} : {}),
+		}));
+	const usedKeys = new Set(normalizedIcons.map((item) => item.key));
+	for (const icon of normalizedIcons) {
+		if (!icon.key.startsWith("bank-")) continue;
+		let nextKey = `icon-${Date.now().toString(36)}${Math.random().toString(36).slice(2, 10)}`;
+		while (usedKeys.has(nextKey)) nextKey = `icon-${Date.now().toString(36)}${Math.random().toString(36).slice(2, 10)}`;
+		usedKeys.add(nextKey);
+		aliases[icon.key] = nextKey;
+		icon.key = nextKey;
+	}
+	return {
+		categories: normalizedCategories,
+		groups: normalizedGroups,
+		aliases,
+		icons: normalizedIcons,
+	};
+}
+
+async function migrateIconKeyReferences(aliases) {
+	for (const [from, to] of Object.entries(aliases || {})) {
+		if (!from || !to || from === to) continue;
+		const [categoryResult, accountResult] = await Promise.all([
+			collections.categories.where({ iconKey: from }).get(),
+			collections.accounts.where({ iconKey: from }).get(),
+		]);
+		await Promise.all([
+			...(categoryResult.data || []).map((record) => collections.categories.doc(record._id).update({ iconKey: to })),
+			...(accountResult.data || []).map((record) => collections.accounts.doc(record._id).update({ iconKey: to })),
+		]);
+	}
+}
+
+async function getIconLibrary(auth, matrix) {
+	requireFeaturePermission(auth, matrix, "default_categories");
+	const result = await iconLibrary.where({
+		key: "default"
+	}).limit(1).get();
+	const record = result.data?.[0];
+	const library = record ? {
+		categories: record.categories || [],
+		aliases: record.aliases || {},
+		groups: record.groups || [],
+		icons: record.icons || []
+	} : {
+		categories: [],
+		aliases: {},
+		groups: [],
+		icons: []
+	};
+	const urls = await getTemporaryFileUrls(library.icons.map((item) => item.assetFileId).filter(Boolean));
+	return {
+		categories: library.categories,
+		aliases: library.aliases,
+		groups: library.groups,
+		icons: library.icons.map((item) => ({
+			...item,
+			assetUrl: urls.get(item.assetFileId) || undefined
+		})),
+	};
+}
+
+async function saveIconLibrary(auth, matrix, body) {
+	requireFeaturePermission(auth, matrix, "default_categories");
+	const library = normalizeIconLibrary(body);
+	await migrateIconKeyReferences(library.aliases);
+	const existingResult = await iconLibrary.where({
+		key: "default"
+	}).limit(1).get();
+	const existing = existingResult.data?.[0];
+	const record = {
+		key: "default",
+		...library,
+		updatedAt: now(),
+		updatedBy: auth.uid
+	};
+	if (existing) await iconLibrary.doc(existing._id).set(record);
+	else await iconLibrary.add(record);
+	// The browser already has the current preview URLs after upload. Do not
+	// resolve temporary URLs for every library asset again on PATCH; that made
+	// editing one icon wait on all icons in the library. GET resolves URLs when
+	// the library is initially loaded or refreshed.
+	return library;
 }
 
 function normalizeReleaseNote(body, existing = {}) {
-  const groups = Array.isArray(body.groups) ? body.groups : existing.groups;
-  return {
-    id: String(body.id || existing.id || newId("release")),
-    platform: ["web", "mini-program", "android", "ios"].includes(body.platform) ? body.platform : (existing.platform || "web"),
-    version: String(body.version || existing.version || "").trim(),
-    date: String(body.date || existing.date || "").trim(),
-    status: body.status === "published" ? "published" : "draft",
-    forceUpdate: body.forceUpdate === true,
-    minSupportedVersion: String(body.minSupportedVersion || "").trim(),
-    groups: ["new", "improved", "fixed"].map((type) => ({
-      label: type === "new" ? "新增" : type === "improved" ? "优化" : "修复",
-      type,
-      items: Array.isArray(groups?.find((group) => group.type === type)?.items)
-        ? groups.find((group) => group.type === type)?.items.map((item) => String(item).trim()).filter(Boolean)
-        : [],
-    })),
-    createdAt: existing.createdAt || now(),
-    updatedAt: now(),
-  };
+	const groups = Array.isArray(body.groups) ? body.groups : existing.groups;
+	return {
+		id: String(body.id || existing.id || newId("release")),
+		platform: ["web", "mini-program", "android", "ios"].includes(body.platform) ? body.platform : (existing
+			.platform || "web"),
+		version: String(body.version || existing.version || "").trim(),
+		date: String(body.date || existing.date || "").trim(),
+		status: body.status === "published" ? "published" : "draft",
+		forceUpdate: body.forceUpdate === true,
+		minSupportedVersion: String(body.minSupportedVersion || "").trim(),
+		groups: ["new", "improved", "fixed"].map((type) => ({
+			label: type === "new" ? "新增" : type === "improved" ? "优化" : "修复",
+			type,
+			items: Array.isArray(groups?.find((group) => group.type === type)?.items) ?
+				groups.find((group) => group.type === type)?.items.map((item) => String(item).trim())
+				.filter(Boolean) : [],
+		})),
+		createdAt: existing.createdAt || now(),
+		updatedAt: now(),
+	};
 }
 
 async function listReleaseNotes(query = {}, admin = false) {
-  const condition = {};
-  if (query.platform) condition.platform = String(query.platform);
-  if (!admin || String(query.publishedOnly) === "true") condition.status = "published";
-  const result = await releaseNotes.where(condition).orderBy("date", "desc").limit(1000).get();
-  return result.data.map(withoutInternalFields);
+	const condition = {};
+	if (query.platform) condition.platform = String(query.platform);
+	if (!admin || String(query.publishedOnly) === "true") condition.status = "published";
+	const result = await releaseNotes.where(condition).orderBy("date", "desc").limit(1000).get();
+	return result.data.map(withoutInternalFields);
 }
 
 async function handleReleaseNotes(method, path, body, query, auth, matrix) {
-  if (method === "GET" && path === "/release-notes") return ok(await listReleaseNotes(query));
-  if (!path.startsWith("/admin/release-notes")) return null;
-  requireFeaturePermission(auth, matrix, "release_notes");
-  if (method === "GET" && path === "/admin/release-notes") return ok(await listReleaseNotes(query, true));
-  if (method === "POST" && path === "/admin/release-notes") {
-    const record = normalizeReleaseNote(body);
-    if (!record.version || !record.date) throw new Error("版本号和发布日期不能为空");
-    await releaseNotes.add(record);
-    return ok(record, 201);
-  }
-  const match = path.match(/^\/admin\/release-notes\/([^/]+)$/);
-  if (!match) return null;
-  const id = decodeURIComponent(match[1]);
-  const existingResult = await releaseNotes.where({ id }).limit(1).get();
-  const existing = existingResult.data[0];
-  if (!existing) throw new Error("版本记录不存在");
-  if (method === "PATCH") {
-    const record = normalizeReleaseNote({ ...body, id }, existing);
-    if (!record.version || !record.date) throw new Error("版本号和发布日期不能为空");
-    await releaseNotes.doc(existing._id).set(record);
-    return ok(record);
-  }
-  if (method === "DELETE") {
-    await releaseNotes.doc(existing._id).remove();
-    return ok(null);
-  }
-  return null;
+	if (method === "GET" && path === "/release-notes") return ok(await listReleaseNotes(query));
+	if (!path.startsWith("/admin/release-notes")) return null;
+	requireFeaturePermission(auth, matrix, "release_notes");
+	if (method === "GET" && path === "/admin/release-notes") return ok(await listReleaseNotes(query, true));
+	if (method === "POST" && path === "/admin/release-notes") {
+		const record = normalizeReleaseNote(body);
+		if (!record.version || !record.date) throw new Error("版本号和发布日期不能为空");
+		await releaseNotes.add(record);
+		return ok(record, 201);
+	}
+	const match = path.match(/^\/admin\/release-notes\/([^/]+)$/);
+	if (!match) return null;
+	const id = decodeURIComponent(match[1]);
+	const existingResult = await releaseNotes.where({
+		id
+	}).limit(1).get();
+	const existing = existingResult.data[0];
+	if (!existing) throw new Error("版本记录不存在");
+	if (method === "PATCH") {
+		const record = normalizeReleaseNote({
+			...body,
+			id
+		}, existing);
+		if (!record.version || !record.date) throw new Error("版本号和发布日期不能为空");
+		await releaseNotes.doc(existing._id).set(record);
+		return ok(record);
+	}
+	if (method === "DELETE") {
+		await releaseNotes.doc(existing._id).remove();
+		return ok(null);
+	}
+	return null;
 }
 
 async function getSnapshot(userId) {
-  await ensureUserCategories(userId);
-  const [rawAssets, rawAssetAddons, accounts, transactions, accountFlows, categories] = await Promise.all([
-    findAll("assets", userId),
-    findAll("assetAddons", userId),
-    findAll("accounts", userId, "createdAt", "asc"),
-    findAll("transactions", userId, "occurredAt", "desc"),
-    findAll("accountFlows", userId, "occurredAt", "desc"),
-    findAll("categories", userId, "sort", "asc"),
-  ]);
-  const [assets, assetAddons] = await Promise.all([
-    resolveRecordAttachmentUrls(rawAssets),
-    resolveRecordAttachmentUrls(rawAssetAddons),
-  ]);
-  return { assets, assetAddons, accounts, transactions, accountFlows, categories: await resolveCategoryIconUrls(categories.map(normalizeCategory)) };
+	await ensureUserCategories(userId);
+	const [rawAssets, rawAssetAddons, accounts, transactions, accountFlows, userCategories, systemCategories] = await Promise.all([
+		findAll("assets", userId),
+		findAll("assetAddons", userId),
+		findAll("accounts", userId, "createdAt", "asc"),
+		findAll("transactions", userId, "occurredAt", "desc"),
+		findAll("accountFlows", userId, "occurredAt", "desc"),
+		findAll("categories", userId, "sort", "asc"),
+		findAll("categories", SYSTEM_USER_ID, "sort", "asc"),
+	]);
+	const [assets, assetAddons] = await Promise.all([
+		resolveRecordAttachmentUrls(rawAssets),
+		resolveRecordAttachmentUrls(rawAssetAddons),
+	]);
+	return {
+		assets,
+		assetAddons,
+		accounts,
+		transactions,
+		accountFlows,
+		categories: await resolveCategoryIconUrls([
+			...userCategories.filter((item) => item.domain === "asset" || item.domain === "transaction"),
+			...systemCategories.filter((item) => item.domain === "account" || item.domain === "bank"),
+		].map(normalizeCategory))
+	};
 }
 
 async function importSnapshot(userId, snapshot) {
-  const source = snapshot && snapshot.data ? snapshot.data : snapshot;
-  for (const name of collectionNames) {
-    if (!Array.isArray(source[name])) throw new Error(`缺少数据集合：${name}`);
-  }
+	const source = snapshot && snapshot.data ? snapshot.data : snapshot;
+	for (const name of collectionNames) {
+		if (!Array.isArray(source[name])) throw new Error(`缺少数据集合：${name}`);
+	}
 
-  await Promise.all(collectionNames.map(async (name) => {
-    await collections[name].where({ userId }).remove();
-    const records = source[name];
-    for (let index = 0; index < records.length; index += 100) {
-      const batch = records.slice(index, index + 100).map((record) => ({ ...record, userId }));
-      if (batch.length) await collections[name].add(batch);
-    }
-  }));
-  return getSnapshot(userId);
+	await Promise.all(collectionNames.map(async (name) => {
+		await collections[name].where({
+			userId
+		}).remove();
+		const records = source[name];
+		for (let index = 0; index < records.length; index += 100) {
+			const batch = records.slice(index, index + 100).map((record) => ({
+				...record,
+				userId
+			}));
+			if (batch.length) await collections[name].add(batch);
+		}
+	}));
+	return getSnapshot(userId);
 }
 
 async function exportBackup(userId) {
-  const snapshot = await getSnapshot(userId);
-  return {
-    format: "rizhi-local-backup",
-    version: 1,
-    exportedAt: now(),
-    app: "rizhi",
-    data: {
-      ...snapshot,
-      assetPartEvents: [],
-      settings: [],
-      metadata: [],
-    },
-  };
+	const snapshot = await getSnapshot(userId);
+	return {
+		format: "rizhi-local-backup",
+		version: 1,
+		exportedAt: now(),
+		app: "rizhi",
+		data: {
+			...snapshot,
+			assetPartEvents: [],
+			settings: [],
+			metadata: [],
+		},
+	};
 }
 
 async function updateAccountBalance(userId, accountId, delta, transactionId, occurredAt, note) {
-  const account = await findOne("accounts", userId, accountId);
-  if (!account) throw new Error("账户不存在");
-  const balanceAfter = Number(account.balance || 0) + delta;
-  await collections.accounts.doc(account._id).update({ balance: balanceAfter, updatedAt: now() });
-  const flow = {
-    id: newId("flow"),
-    accountId,
-    transactionId,
-    direction: delta >= 0 ? "in" : "out",
-    amount: Math.abs(delta),
-    occurredAt,
-    balanceAfter,
-    note,
-    createdAt: now(),
-    updatedAt: now(),
-  };
-  await insert("accountFlows", userId, flow);
-  return flow;
+	const account = await findOne("accounts", userId, accountId);
+	if (!account) throw new Error("账户不存在");
+	const balanceAfter = Number(account.balance || 0) + delta;
+	await collections.accounts.doc(account._id).update({
+		balance: balanceAfter,
+		updatedAt: now()
+	});
+	const flow = {
+		id: newId("flow"),
+		accountId,
+		transactionId,
+		direction: delta >= 0 ? "in" : "out",
+		amount: Math.abs(delta),
+		occurredAt,
+		balanceAfter,
+		note,
+		createdAt: now(),
+		updatedAt: now(),
+	};
+	await insert("accountFlows", userId, flow);
+	return flow;
 }
 
 async function createTransaction(userId, body, type) {
-  const amount = Number(body.amount);
-  if (!Number.isFinite(amount) || amount <= 0) throw new Error("金额必须大于 0");
-  const timestamp = now();
-  const transaction = {
-    ...body,
-    id: newId("txn"),
-    type,
-    businessType: body.businessType || "normal",
-    amount,
-    occurredAt: body.occurredAt || timestamp,
-    createdAt: timestamp,
-    updatedAt: timestamp,
-  };
-  await insert("transactions", userId, transaction);
-  if (transaction.accountId) {
-    await updateAccountBalance(userId, transaction.accountId, type === "income" ? amount : -amount, transaction.id, transaction.occurredAt, transaction.note);
-  }
-  return transaction;
+	const amount = Number(body.amount);
+	if (!Number.isFinite(amount) || amount <= 0) throw new Error("金额必须大于 0");
+	const timestamp = now();
+	const transaction = {
+		...body,
+		id: newId("txn"),
+		type,
+		businessType: body.businessType || "normal",
+		amount,
+		occurredAt: body.occurredAt || timestamp,
+		createdAt: timestamp,
+		updatedAt: timestamp,
+	};
+	await insert("transactions", userId, transaction);
+	if (transaction.accountId) {
+		await updateAccountBalance(userId, transaction.accountId, type === "income" ? amount : -amount, transaction
+			.id, transaction.occurredAt, transaction.note);
+	}
+	return transaction;
 }
 
 async function updateTransaction(userId, id, body) {
-  const existing = await findOne("transactions", userId, id);
-  if (!existing) throw new Error("交易不存在");
-  if (existing.businessType && existing.businessType !== "normal") {
-    throw new Error("联动交易请在对应业务入口修改");
-  }
+	const existing = await findOne("transactions", userId, id);
+	if (!existing) throw new Error("交易不存在");
+	if (existing.businessType && existing.businessType !== "normal") {
+		throw new Error("联动交易请在对应业务入口修改");
+	}
 
-  const oldDelta = existing.type === "income" ? Number(existing.amount) : -Number(existing.amount);
-  if (existing.accountId) await updateAccountBalance(userId, existing.accountId, -oldDelta, id, now(), "撤销交易原值");
+	const oldDelta = existing.type === "income" ? Number(existing.amount) : -Number(existing.amount);
+	if (existing.accountId) await updateAccountBalance(userId, existing.accountId, -oldDelta, id, now(), "撤销交易原值");
 
-  const updated = {
-    ...withoutInternalFields(existing),
-    ...body,
-    id,
-    amount: Number(body.amount),
-    updatedAt: now(),
-  };
-  if (!Number.isFinite(updated.amount) || updated.amount <= 0) throw new Error("金额必须大于 0");
-  await replace("transactions", userId, id, updated);
-  const newDelta = updated.type === "income" ? updated.amount : -updated.amount;
-  if (updated.accountId) await updateAccountBalance(userId, updated.accountId, newDelta, id, updated.occurredAt, updated.note);
-  return updated;
+	const updated = {
+		...withoutInternalFields(existing),
+		...body,
+		id,
+		amount: Number(body.amount),
+		updatedAt: now(),
+	};
+	if (!Number.isFinite(updated.amount) || updated.amount <= 0) throw new Error("金额必须大于 0");
+	await replace("transactions", userId, id, updated);
+	const newDelta = updated.type === "income" ? updated.amount : -updated.amount;
+	if (updated.accountId) await updateAccountBalance(userId, updated.accountId, newDelta, id, updated.occurredAt,
+		updated.note);
+	return updated;
 }
 
 async function deleteTransaction(userId, id) {
-  const existing = await findOne("transactions", userId, id);
-  if (!existing) throw new Error("交易不存在");
-  if (existing.businessType && existing.businessType !== "normal") {
-    throw new Error("联动交易请在对应业务入口删除");
-  }
-  const delta = existing.type === "income" ? -Number(existing.amount) : Number(existing.amount);
-  if (existing.accountId) await updateAccountBalance(userId, existing.accountId, delta, id, now(), "删除交易回滚");
-  await collections.accountFlows.where({ userId, transactionId: id }).remove();
-  await collections.transactions.doc(existing._id).remove();
-  return null;
+	const existing = await findOne("transactions", userId, id);
+	if (!existing) throw new Error("交易不存在");
+	if (existing.businessType && existing.businessType !== "normal") {
+		throw new Error("联动交易请在对应业务入口删除");
+	}
+	const delta = existing.type === "income" ? -Number(existing.amount) : Number(existing.amount);
+	if (existing.accountId) await updateAccountBalance(userId, existing.accountId, delta, id, now(), "删除交易回滚");
+	await collections.accountFlows.where({
+		userId,
+		transactionId: id
+	}).remove();
+	await collections.transactions.doc(existing._id).remove();
+	return null;
 }
 
 async function createAccount(userId, body) {
-  if (!String(body.name || "").trim()) throw new Error("账户名称不能为空");
-  const timestamp = now();
-  return insert("accounts", userId, {
-    ...body,
-    id: newId("acc"),
-    name: String(body.name).trim(),
-    balance: Number(body.balance || 0),
-    enabled: body.enabled !== false,
-    createdAt: timestamp,
-    updatedAt: timestamp,
-  });
+	if (!String(body.name || "").trim()) throw new Error("账户名称不能为空");
+	const timestamp = now();
+	return insert("accounts", userId, {
+		...body,
+		id: newId("acc"),
+		name: String(body.name).trim(),
+		balance: Number(body.balance || 0),
+		enabled: body.enabled !== false,
+		createdAt: timestamp,
+		updatedAt: timestamp,
+	});
 }
 
 async function deleteAccount(userId, id) {
-  const flowCount = await collections.accountFlows.where({ userId, accountId: id }).count();
-  if (flowCount.total > 0) throw new Error("该账户已有资金流水，不能删除");
-  await remove("accounts", userId, id);
-  return null;
+	const flowCount = await collections.accountFlows.where({
+		userId,
+		accountId: id
+	}).count();
+	if (flowCount.total > 0) throw new Error("该账户已有资金流水，不能删除");
+	await remove("accounts", userId, id);
+	return null;
 }
 
 async function transferFunds(userId, body) {
-  const amount = Number(body.amount);
-  if (!Number.isFinite(amount) || amount <= 0) throw new Error("转账金额必须大于 0");
-  if (!body.fromAccountId || !body.toAccountId || body.fromAccountId === body.toAccountId) {
-    throw new Error("请选择不同的转出和转入账户");
-  }
-  const timestamp = now();
-  const transaction = {
-    id: newId("txn"),
-    type: "transfer",
-    categoryId: "cat-transfer",
-    businessType: "account_transfer",
-    amount,
-    occurredAt: body.occurredAt || timestamp,
-    accountId: body.fromAccountId,
-    relatedAccountId: body.toAccountId,
-    note: body.note,
-    createdAt: timestamp,
-    updatedAt: timestamp,
-  };
-  await insert("transactions", userId, transaction);
-  await updateAccountBalance(userId, body.fromAccountId, -amount, transaction.id, transaction.occurredAt, body.note);
-  await updateAccountBalance(userId, body.toAccountId, amount, transaction.id, transaction.occurredAt, body.note);
-  return transaction;
+	const amount = Number(body.amount);
+	if (!Number.isFinite(amount) || amount <= 0) throw new Error("转账金额必须大于 0");
+	if (!body.fromAccountId || !body.toAccountId || body.fromAccountId === body.toAccountId) {
+		throw new Error("请选择不同的转出和转入账户");
+	}
+	const timestamp = now();
+	const transaction = {
+		id: newId("txn"),
+		type: "transfer",
+		categoryId: "cat-transfer",
+		businessType: "account_transfer",
+		amount,
+		occurredAt: body.occurredAt || timestamp,
+		accountId: body.fromAccountId,
+		relatedAccountId: body.toAccountId,
+		note: body.note,
+		createdAt: timestamp,
+		updatedAt: timestamp,
+	};
+	await insert("transactions", userId, transaction);
+	await updateAccountBalance(userId, body.fromAccountId, -amount, transaction.id, transaction.occurredAt, body
+		.note);
+	await updateAccountBalance(userId, body.toAccountId, amount, transaction.id, transaction.occurredAt, body.note);
+	return transaction;
 }
 
 async function repayDebt(userId, body) {
-  const amount = Number(body.amount);
-  if (!Number.isFinite(amount) || amount <= 0) throw new Error("还款金额必须大于 0");
-  const source = await findOne("accounts", userId, body.fromAccountId);
-  const liability = await findOne("accounts", userId, body.liabilityAccountId);
-  if (!source || !liability) throw new Error("还款账户不存在");
-  if (liability.direction !== "liability") throw new Error("目标账户不是负债账户");
-  const timestamp = now();
-  const transaction = {
-    id: newId("txn"),
-    type: "repayment",
-    categoryId: "cat-repayment",
-    businessType: "debt_repayment",
-    amount,
-    occurredAt: body.occurredAt || timestamp,
-    accountId: source.id,
-    relatedAccountId: liability.id,
-    note: body.note,
-    createdAt: timestamp,
-    updatedAt: timestamp,
-  };
-  await insert("transactions", userId, transaction);
-  await updateAccountBalance(userId, source.id, -amount, transaction.id, transaction.occurredAt, body.note);
-  await updateAccountBalance(userId, liability.id, -amount, transaction.id, transaction.occurredAt, body.note);
-  return transaction;
+	const amount = Number(body.amount);
+	if (!Number.isFinite(amount) || amount <= 0) throw new Error("还款金额必须大于 0");
+	const source = await findOne("accounts", userId, body.fromAccountId);
+	const liability = await findOne("accounts", userId, body.liabilityAccountId);
+	if (!source || !liability) throw new Error("还款账户不存在");
+	if (liability.direction !== "liability") throw new Error("目标账户不是负债账户");
+	const timestamp = now();
+	const transaction = {
+		id: newId("txn"),
+		type: "repayment",
+		categoryId: "cat-repayment",
+		businessType: "debt_repayment",
+		amount,
+		occurredAt: body.occurredAt || timestamp,
+		accountId: source.id,
+		relatedAccountId: liability.id,
+		note: body.note,
+		createdAt: timestamp,
+		updatedAt: timestamp,
+	};
+	await insert("transactions", userId, transaction);
+	await updateAccountBalance(userId, source.id, -amount, transaction.id, transaction.occurredAt, body.note);
+	await updateAccountBalance(userId, liability.id, -amount, transaction.id, transaction.occurredAt, body.note);
+	return transaction;
 }
 
 async function categorySnapshot(userId, categoryId, subCategoryId) {
-  const category = await findOne("categories", userId, categoryId);
-  const subCategory = subCategoryId ? await findOne("categories", userId, subCategoryId) : null;
-  return {
-    categoryName: category ? category.name : "未分类",
-    subCategoryName: subCategory ? subCategory.name : undefined,
-  };
+	const category = await findOne("categories", userId, categoryId);
+	const subCategory = subCategoryId ? await findOne("categories", userId, subCategoryId) : null;
+	return {
+		categoryName: category ? category.name : "未分类",
+		subCategoryName: subCategory ? subCategory.name : undefined,
+	};
 }
 
 async function createAsset(userId, body) {
-  if (!String(body.name || "").trim()) throw new Error("资产名称不能为空");
-  const cost = Number(body.originalCost);
-  if (!Number.isFinite(cost) || cost < 0) throw new Error("购入价格不能小于 0");
-  const timestamp = now();
-  const asset = {
-    ...body,
-    id: newId("ast"),
-    userId,
-    name: String(body.name).trim(),
-    status: body.status || "using",
-    originalCost: cost,
-    currency: body.currency || "CNY",
-    createdAt: timestamp,
-    updatedAt: timestamp,
-  };
-  delete asset.userId;
+	if (!String(body.name || "").trim()) throw new Error("资产名称不能为空");
+	const cost = Number(body.originalCost);
+	if (!Number.isFinite(cost) || cost < 0) throw new Error("购入价格不能小于 0");
+	const timestamp = now();
+	const asset = {
+		...body,
+		id: newId("ast"),
+		userId,
+		name: String(body.name).trim(),
+		status: body.status || "using",
+		originalCost: cost,
+		currency: body.currency || "CNY",
+		createdAt: timestamp,
+		updatedAt: timestamp,
+	};
+	delete asset.userId;
 
-  if (body.paymentAccountId && cost > 0) {
-    const transaction = {
-      id: newId("txn"),
-      type: "asset_purchase",
-      categoryId: asset.categoryId,
-      businessType: "asset_purchase",
-      amount: cost,
-      occurredAt: body.purchaseDate || timestamp,
-      accountId: body.paymentAccountId,
-      assetId: asset.id,
-      assetSnapshot: { id: asset.id, name: asset.name },
-      merchant: body.merchant,
-      createdAt: timestamp,
-      updatedAt: timestamp,
-    };
-    asset.purchaseTransactionId = transaction.id;
-    await insert("transactions", userId, transaction);
-    await updateAccountBalance(userId, body.paymentAccountId, -cost, transaction.id, transaction.occurredAt, asset.name);
-  }
+	if (body.paymentAccountId && cost > 0) {
+		const transaction = {
+			id: newId("txn"),
+			type: "asset_purchase",
+			categoryId: asset.categoryId,
+			businessType: "asset_purchase",
+			amount: cost,
+			occurredAt: body.purchaseDate || timestamp,
+			accountId: body.paymentAccountId,
+			assetId: asset.id,
+			assetSnapshot: {
+				id: asset.id,
+				name: asset.name
+			},
+			merchant: body.merchant,
+			createdAt: timestamp,
+			updatedAt: timestamp,
+		};
+		asset.purchaseTransactionId = transaction.id;
+		await insert("transactions", userId, transaction);
+		await updateAccountBalance(userId, body.paymentAccountId, -cost, transaction.id, transaction.occurredAt,
+			asset.name);
+	}
 
-  return insert("assets", userId, asset);
+	return insert("assets", userId, asset);
 }
 
 async function createAddon(userId, assetId, body) {
-  const asset = await findOne("assets", userId, assetId);
-  if (!asset) throw new Error("资产不存在");
-  const amount = Number(body.amount);
-  if (!Number.isFinite(amount) || amount <= 0) throw new Error("附加项金额必须大于 0");
-  const direction = body.direction || "expense";
-  const timestamp = now();
-  const addon = {
-    ...body,
-    id: newId("addon"),
-    assetId,
-    direction,
-    amount,
-    currency: body.currency || "CNY",
-    createdAt: timestamp,
-    updatedAt: timestamp,
-  };
+	const asset = await findOne("assets", userId, assetId);
+	if (!asset) throw new Error("资产不存在");
+	const amount = Number(body.amount);
+	if (!Number.isFinite(amount) || amount <= 0) throw new Error("附加项金额必须大于 0");
+	const direction = body.direction || "expense";
+	const timestamp = now();
+	const addon = {
+		...body,
+		id: newId("addon"),
+		assetId,
+		direction,
+		amount,
+		currency: body.currency || "CNY",
+		createdAt: timestamp,
+		updatedAt: timestamp,
+	};
 
-  if (body.paymentAccountId) {
-    const transaction = {
-      id: newId("txn"),
-      type: direction === "income" ? "income" : "expense",
-      categoryId: direction === "income" ? "cat-asset-addon-income" : asset.categoryId,
-      businessType: "asset_addon",
-      amount,
-      occurredAt: body.purchaseDate || timestamp,
-      accountId: body.paymentAccountId,
-      assetId,
-      assetSnapshot: { id: asset.id, name: asset.name },
-      addonId: addon.id,
-      merchant: body.merchant,
-      note: body.notes,
-      createdAt: timestamp,
-      updatedAt: timestamp,
-    };
-    addon.transactionId = transaction.id;
-    await insert("transactions", userId, transaction);
-    await updateAccountBalance(
-      userId,
-      body.paymentAccountId,
-      direction === "income" ? amount : -amount,
-      transaction.id,
-      transaction.occurredAt,
-      body.notes,
-    );
-  }
-  return insert("assetAddons", userId, addon);
+	if (body.paymentAccountId) {
+		const transaction = {
+			id: newId("txn"),
+			type: direction === "income" ? "income" : "expense",
+			categoryId: direction === "income" ? "cat-asset-addon-income" : asset.categoryId,
+			businessType: "asset_addon",
+			amount,
+			occurredAt: body.purchaseDate || timestamp,
+			accountId: body.paymentAccountId,
+			assetId,
+			assetSnapshot: {
+				id: asset.id,
+				name: asset.name
+			},
+			addonId: addon.id,
+			merchant: body.merchant,
+			note: body.notes,
+			createdAt: timestamp,
+			updatedAt: timestamp,
+		};
+		addon.transactionId = transaction.id;
+		await insert("transactions", userId, transaction);
+		await updateAccountBalance(
+			userId,
+			body.paymentAccountId,
+			direction === "income" ? amount : -amount,
+			transaction.id,
+			transaction.occurredAt,
+			body.notes,
+		);
+	}
+	return insert("assetAddons", userId, addon);
 }
 
 async function deleteAddon(userId, id) {
-  const addon = await findOne("assetAddons", userId, id);
-  if (!addon) throw new Error("附加项不存在");
-  if (addon.transactionId) {
-    const transaction = await findOne("transactions", userId, addon.transactionId);
-    if (transaction) {
-      const rollback = transaction.type === "income" ? -Number(transaction.amount) : Number(transaction.amount);
-      await updateAccountBalance(userId, transaction.accountId, rollback, transaction.id, now(), "删除附加项回滚");
-      await collections.accountFlows.where({ userId, transactionId: transaction.id }).remove();
-      await collections.transactions.doc(transaction._id).remove();
-    }
-  }
-  await collections.assetAddons.doc(addon._id).remove();
-  return null;
+	const addon = await findOne("assetAddons", userId, id);
+	if (!addon) throw new Error("附加项不存在");
+	if (addon.transactionId) {
+		const transaction = await findOne("transactions", userId, addon.transactionId);
+		if (transaction) {
+			const rollback = transaction.type === "income" ? -Number(transaction.amount) : Number(transaction
+				.amount);
+			await updateAccountBalance(userId, transaction.accountId, rollback, transaction.id, now(), "删除附加项回滚");
+			await collections.accountFlows.where({
+				userId,
+				transactionId: transaction.id
+			}).remove();
+			await collections.transactions.doc(transaction._id).remove();
+		}
+	}
+	await collections.assetAddons.doc(addon._id).remove();
+	return null;
 }
 
 async function updateAddon(userId, id, body) {
-  const existing = await findOne("assetAddons", userId, id);
-  if (!existing) throw new Error("附加项不存在");
-  const amount = Number(body.amount);
-  if (!Number.isFinite(amount) || amount <= 0) throw new Error("附加项金额必须大于 0");
-  const updated = {
-    ...withoutInternalFields(existing),
-    ...body,
-    id,
-    amount,
-    updatedAt: now(),
-  };
+	const existing = await findOne("assetAddons", userId, id);
+	if (!existing) throw new Error("附加项不存在");
+	const amount = Number(body.amount);
+	if (!Number.isFinite(amount) || amount <= 0) throw new Error("附加项金额必须大于 0");
+	const updated = {
+		...withoutInternalFields(existing),
+		...body,
+		id,
+		amount,
+		updatedAt: now(),
+	};
 
-  if (existing.transactionId) {
-    const transaction = await findOne("transactions", userId, existing.transactionId);
-    if (transaction) {
-      const oldDelta = transaction.type === "income" ? Number(transaction.amount) : -Number(transaction.amount);
-      await updateAccountBalance(userId, transaction.accountId, -oldDelta, transaction.id, now(), "撤销附加项原值");
-      await collections.accountFlows.where({ userId, transactionId: transaction.id }).remove();
+	if (existing.transactionId) {
+		const transaction = await findOne("transactions", userId, existing.transactionId);
+		if (transaction) {
+			const oldDelta = transaction.type === "income" ? Number(transaction.amount) : -Number(transaction
+				.amount);
+			await updateAccountBalance(userId, transaction.accountId, -oldDelta, transaction.id, now(), "撤销附加项原值");
+			await collections.accountFlows.where({
+				userId,
+				transactionId: transaction.id
+			}).remove();
 
-      const direction = updated.direction || "expense";
-      const nextTransaction = {
-        ...withoutInternalFields(transaction),
-        type: direction === "income" ? "income" : "expense",
-        amount,
-        occurredAt: updated.purchaseDate,
-        accountId: updated.paymentAccountId,
-        merchant: updated.merchant,
-        note: updated.notes,
-        updatedAt: now(),
-      };
-      if (!nextTransaction.accountId) throw new Error("关联交易必须选择账户");
-      await replace("transactions", userId, transaction.id, nextTransaction);
-      await updateAccountBalance(
-        userId,
-        nextTransaction.accountId,
-        nextTransaction.type === "income" ? amount : -amount,
-        nextTransaction.id,
-        nextTransaction.occurredAt,
-        nextTransaction.note,
-      );
-    }
-  }
+			const direction = updated.direction || "expense";
+			const nextTransaction = {
+				...withoutInternalFields(transaction),
+				type: direction === "income" ? "income" : "expense",
+				amount,
+				occurredAt: updated.purchaseDate,
+				accountId: updated.paymentAccountId,
+				merchant: updated.merchant,
+				note: updated.notes,
+				updatedAt: now(),
+			};
+			if (!nextTransaction.accountId) throw new Error("关联交易必须选择账户");
+			await replace("transactions", userId, transaction.id, nextTransaction);
+			await updateAccountBalance(
+				userId,
+				nextTransaction.accountId,
+				nextTransaction.type === "income" ? amount : -amount,
+				nextTransaction.id,
+				nextTransaction.occurredAt,
+				nextTransaction.note,
+			);
+		}
+	}
 
-  return replace("assetAddons", userId, id, updated);
+	return replace("assetAddons", userId, id, updated);
 }
 
 async function convertTransactionToAddon(userId, body) {
-  const transaction = await findOne("transactions", userId, body.id);
-  if (!transaction) throw new Error("交易不存在");
-  if (transaction.type !== "expense") throw new Error("只有支出可以转换为资产附加项");
-  const asset = await findOne("assets", userId, body.assetId);
-  if (!asset) throw new Error("资产不存在");
-  const timestamp = now();
-  const addon = {
-    id: newId("addon"),
-    assetId: asset.id,
-    name: body.note || transaction.merchant || "资产附加项",
-    direction: "expense",
-    type: body.addonType || "other",
-    amount: Number(body.amount || transaction.amount),
-    currency: "CNY",
-    purchaseDate: body.occurredAt || transaction.occurredAt,
-    merchant: body.merchant || transaction.merchant,
-    paymentAccountId: body.accountId || transaction.accountId,
-    transactionId: transaction.id,
-    includedInCost: body.includedInCost !== false,
-    notes: body.note,
-    createdAt: timestamp,
-    updatedAt: timestamp,
-  };
-  await insert("assetAddons", userId, addon);
-  const updatedTransaction = {
-    ...withoutInternalFields(transaction),
-    businessType: "asset_addon",
-    assetId: asset.id,
-    assetSnapshot: { id: asset.id, name: asset.name },
-    addonId: addon.id,
-    updatedAt: timestamp,
-  };
-  await replace("transactions", userId, transaction.id, updatedTransaction);
-  return { addon, transaction: updatedTransaction };
+	const transaction = await findOne("transactions", userId, body.id);
+	if (!transaction) throw new Error("交易不存在");
+	if (transaction.type !== "expense") throw new Error("只有支出可以转换为资产附加项");
+	const asset = await findOne("assets", userId, body.assetId);
+	if (!asset) throw new Error("资产不存在");
+	const timestamp = now();
+	const addon = {
+		id: newId("addon"),
+		assetId: asset.id,
+		name: body.note || transaction.merchant || "资产附加项",
+		direction: "expense",
+		type: body.addonType || "other",
+		amount: Number(body.amount || transaction.amount),
+		currency: "CNY",
+		purchaseDate: body.occurredAt || transaction.occurredAt,
+		merchant: body.merchant || transaction.merchant,
+		paymentAccountId: body.accountId || transaction.accountId,
+		transactionId: transaction.id,
+		includedInCost: body.includedInCost !== false,
+		notes: body.note,
+		createdAt: timestamp,
+		updatedAt: timestamp,
+	};
+	await insert("assetAddons", userId, addon);
+	const updatedTransaction = {
+		...withoutInternalFields(transaction),
+		businessType: "asset_addon",
+		assetId: asset.id,
+		assetSnapshot: {
+			id: asset.id,
+			name: asset.name
+		},
+		addonId: addon.id,
+		updatedAt: timestamp,
+	};
+	await replace("transactions", userId, transaction.id, updatedTransaction);
+	return {
+		addon,
+		transaction: updatedTransaction
+	};
 }
 
 async function transferAsset(userId, assetId, body) {
-  const asset = await findOne("assets", userId, assetId);
-  if (!asset) throw new Error("资产不存在");
-  if (asset.status === "transferred") throw new Error("资产已经转让");
-  const amount = Number(body.amount);
-  if (!Number.isFinite(amount) || amount < 0) throw new Error("转让金额不能小于 0");
-  const timestamp = now();
-  let transactionId;
-  if (amount > 0 && body.accountId) {
-    const transaction = {
-      id: newId("txn"),
-      type: "income",
-      categoryId: "cat-asset-transfer",
-      businessType: "asset_transfer",
-      amount,
-      occurredAt: body.occurredAt || timestamp,
-      accountId: body.accountId,
-      assetId,
-      assetSnapshot: { id: asset.id, name: asset.name },
-      note: body.note,
-      createdAt: timestamp,
-      updatedAt: timestamp,
-    };
-    transactionId = transaction.id;
-    await insert("transactions", userId, transaction);
-    await updateAccountBalance(userId, body.accountId, amount, transaction.id, transaction.occurredAt, body.note);
-  }
-  const updated = {
-    ...withoutInternalFields(asset),
-    status: "transferred",
-    transferDate: body.occurredAt || timestamp,
-    transferAmount: amount,
-    transferAccountId: body.accountId,
-    transferTransactionId: transactionId,
-    updatedAt: timestamp,
-  };
-  await replace("assets", userId, assetId, updated);
-  return transactionId ? withoutInternalFields(await findOne("transactions", userId, transactionId)) : null;
+	const asset = await findOne("assets", userId, assetId);
+	if (!asset) throw new Error("资产不存在");
+	if (asset.status === "transferred") throw new Error("资产已经转让");
+	const amount = Number(body.amount);
+	if (!Number.isFinite(amount) || amount < 0) throw new Error("转让金额不能小于 0");
+	const timestamp = now();
+	let transactionId;
+	if (amount > 0 && body.accountId) {
+		const transaction = {
+			id: newId("txn"),
+			type: "income",
+			categoryId: "cat-asset-transfer",
+			businessType: "asset_transfer",
+			amount,
+			occurredAt: body.occurredAt || timestamp,
+			accountId: body.accountId,
+			assetId,
+			assetSnapshot: {
+				id: asset.id,
+				name: asset.name
+			},
+			note: body.note,
+			createdAt: timestamp,
+			updatedAt: timestamp,
+		};
+		transactionId = transaction.id;
+		await insert("transactions", userId, transaction);
+		await updateAccountBalance(userId, body.accountId, amount, transaction.id, transaction.occurredAt, body
+			.note);
+	}
+	const updated = {
+		...withoutInternalFields(asset),
+		status: "transferred",
+		transferDate: body.occurredAt || timestamp,
+		transferAmount: amount,
+		transferAccountId: body.accountId,
+		transferTransactionId: transactionId,
+		updatedAt: timestamp,
+	};
+	await replace("assets", userId, assetId, updated);
+	return transactionId ? withoutInternalFields(await findOne("transactions", userId, transactionId)) : null;
 }
 
 async function revokeAssetTransfer(userId, assetId) {
-  const asset = await findOne("assets", userId, assetId);
-  if (!asset) throw new Error("资产不存在");
-  if (asset.status !== "transferred") throw new Error("资产当前不是已转让状态");
-  if (asset.transferTransactionId) {
-    const transaction = await findOne("transactions", userId, asset.transferTransactionId);
-    if (transaction) {
-      await updateAccountBalance(userId, transaction.accountId, -Number(transaction.amount), transaction.id, now(), "撤销资产转让");
-      await collections.accountFlows.where({ userId, transactionId: transaction.id }).remove();
-      await collections.transactions.doc(transaction._id).remove();
-    }
-  }
-  await replace("assets", userId, assetId, {
-    ...withoutInternalFields(asset),
-    status: "using",
-    transferDate: undefined,
-    transferAmount: undefined,
-    transferAccountId: undefined,
-    transferTransactionId: undefined,
-    updatedAt: now(),
-  });
-  return null;
+	const asset = await findOne("assets", userId, assetId);
+	if (!asset) throw new Error("资产不存在");
+	if (asset.status !== "transferred") throw new Error("资产当前不是已转让状态");
+	if (asset.transferTransactionId) {
+		const transaction = await findOne("transactions", userId, asset.transferTransactionId);
+		if (transaction) {
+			await updateAccountBalance(userId, transaction.accountId, -Number(transaction.amount), transaction.id,
+				now(), "撤销资产转让");
+			await collections.accountFlows.where({
+				userId,
+				transactionId: transaction.id
+			}).remove();
+			await collections.transactions.doc(transaction._id).remove();
+		}
+	}
+	await replace("assets", userId, assetId, {
+		...withoutInternalFields(asset),
+		status: "using",
+		transferDate: undefined,
+		transferAmount: undefined,
+		transferAccountId: undefined,
+		transferTransactionId: undefined,
+		updatedAt: now(),
+	});
+	return null;
 }
 
 async function categoryUsage(ownerId, id) {
-  const [assets, accountTypes, banks, directTransactions, subTransactions, children] = await Promise.all([
-    collections.assets.where({ userId: ownerId, categoryId: id }).count(),
-    collections.accounts.where({ userId: ownerId, accountTypeId: id }).count(),
-    collections.accounts.where({ userId: ownerId, bankId: id }).count(),
-    collections.transactions.where({ userId: ownerId, categoryId: id }).count(),
-    collections.transactions.where({ userId: ownerId, subCategoryId: id }).count(),
-    collections.categories.where({ userId: ownerId, parentId: id }).count(),
-  ]);
-  return {
-    assets: assets.total,
-    transactions: directTransactions.total + subTransactions.total,
-    childCategories: children.total,
-    accounts: accountTypes.total,
-    banks: banks.total,
-    total: assets.total + accountTypes.total + banks.total + directTransactions.total + subTransactions.total + children.total,
-  };
+	const [assets, accountTypes, banks, directTransactions, subTransactions, children] = await Promise.all([
+		collections.assets.where({
+			userId: ownerId,
+			categoryId: id
+		}).count(),
+		collections.accounts.where({
+			userId: ownerId,
+			accountTypeId: id
+		}).count(),
+		collections.accounts.where({
+			userId: ownerId,
+			bankId: id
+		}).count(),
+		collections.transactions.where({
+			userId: ownerId,
+			categoryId: id
+		}).count(),
+		collections.transactions.where({
+			userId: ownerId,
+			subCategoryId: id
+		}).count(),
+		collections.categories.where({
+			userId: ownerId,
+			parentId: id
+		}).count(),
+	]);
+	return {
+		assets: assets.total,
+		transactions: directTransactions.total + subTransactions.total,
+		childCategories: children.total,
+		accounts: accountTypes.total,
+		banks: banks.total,
+		total: assets.total + accountTypes.total + banks.total + directTransactions.total + subTransactions.total +
+			children.total,
+	};
 }
 
 async function handleAssets(method, path, body, userId) {
-  if (method === "GET" && path === "/assets") return ok(await findAll("assets", userId));
-  if (method === "POST" && path === "/assets") return ok(await createAsset(userId, body), 201);
+	if (method === "GET" && path === "/assets") return ok(await findAll("assets", userId));
+	if (method === "POST" && path === "/assets") return ok(await createAsset(userId, body), 201);
 
-  const addonCreate = path.match(/^\/assets\/([^/]+)\/addons$/);
-  if (method === "POST" && addonCreate) {
-    return ok(await createAddon(userId, decodeURIComponent(addonCreate[1]), body), 201);
-  }
-  const transferRevoke = path.match(/^\/assets\/([^/]+)\/transfer\/revoke$/);
-  if (method === "POST" && transferRevoke) {
-    return ok(await revokeAssetTransfer(userId, decodeURIComponent(transferRevoke[1])));
-  }
-  const transfer = path.match(/^\/assets\/([^/]+)\/transfer$/);
-  if (method === "POST" && transfer) {
-    return ok(await transferAsset(userId, decodeURIComponent(transfer[1]), body), 201);
-  }
-  const match = path.match(/^\/assets\/([^/]+)$/);
-  if (!match) return null;
-  const id = decodeURIComponent(match[1]);
-  if (method === "GET") {
-    const asset = await findOne("assets", userId, id);
-    if (!asset) throw new Error("资产不存在");
-    return ok(withoutInternalFields(asset));
-  }
-  if (method === "PATCH") {
-    const existing = await findOne("assets", userId, id);
-    if (!existing) throw new Error("资产不存在");
-    return ok(await replace("assets", userId, id, {
-      ...withoutInternalFields(existing),
-      ...body,
-      id,
-      updatedAt: now(),
-    }));
-  }
-  if (method === "DELETE") {
-    await remove("assets", userId, id);
-    return ok(null);
-  }
-  return null;
+	const addonCreate = path.match(/^\/assets\/([^/]+)\/addons$/);
+	if (method === "POST" && addonCreate) {
+		return ok(await createAddon(userId, decodeURIComponent(addonCreate[1]), body), 201);
+	}
+	const transferRevoke = path.match(/^\/assets\/([^/]+)\/transfer\/revoke$/);
+	if (method === "POST" && transferRevoke) {
+		return ok(await revokeAssetTransfer(userId, decodeURIComponent(transferRevoke[1])));
+	}
+	const transfer = path.match(/^\/assets\/([^/]+)\/transfer$/);
+	if (method === "POST" && transfer) {
+		return ok(await transferAsset(userId, decodeURIComponent(transfer[1]), body), 201);
+	}
+	const match = path.match(/^\/assets\/([^/]+)$/);
+	if (!match) return null;
+	const id = decodeURIComponent(match[1]);
+	if (method === "GET") {
+		const asset = await findOne("assets", userId, id);
+		if (!asset) throw new Error("资产不存在");
+		return ok(withoutInternalFields(asset));
+	}
+	if (method === "PATCH") {
+		const existing = await findOne("assets", userId, id);
+		if (!existing) throw new Error("资产不存在");
+		return ok(await replace("assets", userId, id, {
+			...withoutInternalFields(existing),
+			...body,
+			id,
+			updatedAt: now(),
+		}));
+	}
+	if (method === "DELETE") {
+		await remove("assets", userId, id);
+		return ok(null);
+	}
+	return null;
 }
 
 async function handleAddons(method, path, body, userId) {
-  const match = path.match(/^\/addons\/([^/]+)$/);
-  if (!match) return null;
-  const id = decodeURIComponent(match[1]);
-  if (method === "PATCH") {
-    return ok(await updateAddon(userId, id, body));
-  }
-  if (method === "DELETE") return ok(await deleteAddon(userId, id));
-  return null;
+	const match = path.match(/^\/addons\/([^/]+)$/);
+	if (!match) return null;
+	const id = decodeURIComponent(match[1]);
+	if (method === "PATCH") {
+		return ok(await updateAddon(userId, id, body));
+	}
+	if (method === "DELETE") return ok(await deleteAddon(userId, id));
+	return null;
 }
 
 async function handleCategories(method, path, body, userId, query, auth, matrix) {
-  const permissionForDomain = (domain) => domain === "bank" ? "banks" : domain === "account" ? "account_types" : "default_categories";
-  if (method === "GET" && path === "/categories/defaults") {
-    requireFeaturePermission(auth, matrix, "default_categories");
-    return ok({ version: 1, exportedAt: new Date().toISOString(), categories: systemCategoryDefaults.map((item) => ({ ...item, parentId: undefined, enabled: true, isSystem: true })) });
-  }
-  if (method === "GET" && path === "/categories/export") {
-    requireFeaturePermission(auth, matrix, "default_categories");
-    await ensureSystemCategories();
-    const categories = await findAll("categories", SYSTEM_USER_ID, "sort", "asc");
-    return ok({ version: 1, exportedAt: new Date().toISOString(), categories: categories.map((item) => ({ ...item, parentId: undefined, isSystem: true })) });
-  }
-  if (method === "POST" && path === "/categories/import") {
-    requireFeaturePermission(auth, matrix, "default_categories");
-    if (!body || body.version !== 1 || !Array.isArray(body.categories)) throw new Error("默认分类备份格式无效");
-    const categories = body.categories
-      .filter((item) => item && String(item.name || "").trim())
-      .map((item, index) => ({
-        ...normalizeCategory(item),
-        id: String(item.id || newId("cat")),
-        userId: SYSTEM_USER_ID,
-        parentId: undefined,
-        sort: Number.isFinite(Number(item.sort)) ? Number(item.sort) : index * 10 + 10,
-        name: String(item.name).trim(),
-        isSystem: true,
-        enabled: item.enabled !== false,
-        createdAt: item.createdAt || now(),
-        updatedAt: now(),
-      }));
-    await collections.categories.where({ userId: SYSTEM_USER_ID }).remove();
-    if (categories.length) await collections.categories.add(categories);
-    return ok({ importedCount: categories.length });
-  }
-  if (method === "GET" && path === "/categories") {
-    // Bank metadata, including administrator-uploaded icons, is safe to read for account pickers.
-    if (query.scope === "system" && query.domain !== "bank") {
-      requireFeaturePermission(auth, matrix, permissionForDomain(query.domain));
-    }
-    const allCategories = query.scope === "system"
-      ? (await ensureSystemCategories(), await findAll("categories", SYSTEM_USER_ID, "sort", "asc"))
-      : await ensureUserCategories(userId);
-    const all = await resolveCategoryIconUrls(allCategories.map(normalizeCategory));
-    return ok(all
-      .filter((item) => !query.domain || item.domain === query.domain)
-      .filter((item) => !query.type || item.type === query.type)
-      .filter((item) => !query.scope
-        || query.scope === "system"
-        || query.scope === "user"
-        || categoryHasScope(item, query.scope))
-      .filter((item) => query.enabled === undefined || String(item.enabled !== false) === query.enabled));
-  }
-  if (method === "POST" && path === "/categories") {
-    const isSystemRequest = query.scope === "system";
-    if (isSystemRequest) requireFeaturePermission(auth, matrix, permissionForDomain(body.domain));
-    const ownerId = isSystemRequest ? SYSTEM_USER_ID : userId;
-    if (!String(body.name || "").trim()) throw new Error("分类名称不能为空");
-    return ok(await insert("categories", ownerId, {
-      ...normalizeCategory(body),
-      id: newId("cat"),
-      name: String(body.name).trim(),
-      sort: Number(body.sort || 999),
-      enabled: body.enabled !== false,
-      isSystem: isSystemRequest,
-    }), 201);
-  }
-  const usageMatch = path.match(/^\/categories\/([^/]+)\/usage$/);
-  if (method === "GET" && usageMatch) {
-    const id = decodeURIComponent(usageMatch[1]);
-    const existing = await findOne("categories", SYSTEM_USER_ID, id)
-      || await findOne("categories", userId, id);
-    if (!existing) throw new Error("分类不存在或已被删除");
-    if (existing.userId === SYSTEM_USER_ID) {
-      requireFeaturePermission(auth, matrix, permissionForDomain(existing.domain));
-    } else {
-      requireAdmin(auth);
-    }
-    return ok(await categoryUsage(existing.userId, id));
-  }
-  const migrateMatch = path.match(/^\/categories\/([^/]+)\/migrate-transactions$/);
-  if (method === "POST" && migrateMatch) {
-    const fromId = decodeURIComponent(migrateMatch[1]);
-    const categoryIds = [fromId];
-    const children = await collections.categories.where({ userId, parentId: fromId }).get();
-    categoryIds.push(...children.data.map((item) => item.id));
-    const snapshot = await categorySnapshot(userId, body.toCategoryId, body.toSubCategoryId);
-    let migratedCount = 0;
-    for (const categoryId of categoryIds) {
-      const byCategory = await collections.transactions.where({ userId, categoryId }).get();
-      const bySubCategory = await collections.transactions.where({ userId, subCategoryId: categoryId }).get();
-      const records = new Map([...byCategory.data, ...bySubCategory.data].map((item) => [item._id, item]));
-      for (const record of records.values()) {
-        await collections.transactions.doc(record._id).update({
-          categoryId: body.toCategoryId,
-          subCategoryId: body.toSubCategoryId,
-          categorySnapshot: snapshot,
-          updatedAt: now(),
-        });
-        migratedCount += 1;
-      }
-    }
-    return ok({ migratedCount });
-  }
-  const match = path.match(/^\/categories\/([^/]+)$/);
-  if (!match) return null;
-  const id = decodeURIComponent(match[1]);
-  if (method === "PATCH") {
-    const existing = await findOne("categories", SYSTEM_USER_ID, id)
-      || await findOne("categories", userId, id);
-    if (!existing) throw new Error("分类不存在");
-    const isSystemCategory = existing.userId === SYSTEM_USER_ID;
-    if (isSystemCategory) requireFeaturePermission(auth, matrix, permissionForDomain(existing.domain));
-    const ownerId = isSystemCategory ? SYSTEM_USER_ID : userId;
-    const nextCategory = normalizeCategory({ ...withoutInternalFields(existing), ...body });
-    if (nextCategory.parentId && nextCategory.enabled !== false) {
-      const parent = await findOne("categories", SYSTEM_USER_ID, nextCategory.parentId)
-        || await findOne("categories", userId, nextCategory.parentId);
-      if (parent?.enabled === false) throw new Error("一级分类已停用，不能单独启用子分类");
-    }
-    const saved = await replace("categories", ownerId, id, {
-      ...nextCategory,
-      id,
-    });
-    if (!saved.parentId && saved.enabled === false) {
-      const children = await collections.categories.where({ userId: ownerId, parentId: id }).get();
-      for (const child of children.data) {
-        if (child.enabled !== false) {
-          await collections.categories.doc(child._id).update({ enabled: false, updatedAt: now() });
-        }
-      }
-    }
-    return ok(saved);
-  }
-  if (method === "DELETE") {
-    const existing = await findOne("categories", SYSTEM_USER_ID, id)
-      || await findOne("categories", userId, id);
-    if (!existing) throw new Error("分类不存在或已被删除");
-    if (existing.userId === SYSTEM_USER_ID) requireFeaturePermission(auth, matrix, permissionForDomain(existing.domain));
-    const usage = await categoryUsage(existing.userId, id);
-    if (usage.accounts > 0) {
-      throw new Error(`该账户类型已被 ${usage.accounts} 个资金账户使用，不能删除。请先在资金页将这些账户改为其他类型或删除。`);
-    }
-    if (usage.assets > 0) throw new Error(`该分类已被 ${usage.assets} 个资产使用，不能删除。`);
-    if (usage.transactions > 0) throw new Error(`该分类已有 ${usage.transactions} 条记账记录，不能删除。`);
-    if (usage.childCategories > 0) {
-      if (!shouldDeleteSystemChildren(existing.userId, SYSTEM_USER_ID)) throw new Error(`该分类下还有 ${usage.childCategories} 个子分类，不能删除。`);
-      const children = await collections.categories.where({ userId: SYSTEM_USER_ID, parentId: id }).get();
-      await Promise.all((children.data || []).map((child) => remove("categories", SYSTEM_USER_ID, child.id)));
-    }
-    if (usage.banks > 0) throw new Error(`该银行已被 ${usage.banks} 个资金账户关联，不能删除。请先在资金页更换或移除这些账户的银行。`);
-    await remove("categories", existing.userId === SYSTEM_USER_ID ? SYSTEM_USER_ID : userId, id);
-    return ok(null);
-  }
-  return null;
+	const permissionForDomain = (domain) => domain === "bank" ? "banks" : domain === "account" ? "account_types" :
+		"default_categories";
+	if (method === "GET" && path === "/categories/defaults") {
+		requireFeaturePermission(auth, matrix, "default_categories");
+		return ok({
+			version: 1,
+			exportedAt: new Date().toISOString(),
+			categories: systemCategoryDefaults.map((item) => ({
+				...item,
+				parentId: undefined,
+				enabled: true,
+				isSystem: true
+			}))
+		});
+	}
+	if (method === "GET" && path === "/categories/export") {
+		requireFeaturePermission(auth, matrix, "default_categories");
+		await ensureSystemCategories();
+		const categories = await findAll("categories", SYSTEM_USER_ID, "sort", "asc");
+		return ok({
+			version: 1,
+			exportedAt: new Date().toISOString(),
+			categories: categories.map((item) => ({
+				...item,
+				parentId: undefined,
+				isSystem: true
+			}))
+		});
+	}
+	if (method === "POST" && path === "/categories/import") {
+		requireFeaturePermission(auth, matrix, "default_categories");
+		if (!body || body.version !== 1 || !Array.isArray(body.categories)) throw new Error("默认分类备份格式无效");
+		const categories = body.categories
+			.filter((item) => item && String(item.name || "").trim())
+			.map((item, index) => ({
+				...normalizeCategory(item),
+				id: String(item.id || newId("cat")),
+				userId: SYSTEM_USER_ID,
+				parentId: undefined,
+				sort: Number.isFinite(Number(item.sort)) ? Number(item.sort) : index * 10 + 10,
+				name: String(item.name).trim(),
+				isSystem: true,
+				enabled: item.enabled !== false,
+				createdAt: item.createdAt || now(),
+				updatedAt: now(),
+			}));
+		await collections.categories.where({
+			userId: SYSTEM_USER_ID
+		}).remove();
+		if (categories.length) await collections.categories.add(categories);
+		return ok({
+			importedCount: categories.length
+		});
+	}
+	if (method === "GET" && path === "/categories") {
+		// Bank metadata, including administrator-uploaded icons, is safe to read for account pickers.
+		if (query.scope === "system" && query.domain !== "bank" && query.domain !== "account") {
+			requireFeaturePermission(auth, matrix, permissionForDomain(query.domain));
+		}
+		const allCategories = query.scope === "system" ?
+			(await ensureSystemCategories(), await findAll("categories", SYSTEM_USER_ID, "sort", "asc")) :
+			await ensureUserCategories(userId);
+		const all = await resolveCategoryIconUrls(allCategories.map(normalizeCategory));
+		return ok(all
+			.filter((item) => !query.domain || item.domain === query.domain)
+			.filter((item) => !query.type || item.type === query.type)
+			.filter((item) => !query.scope ||
+				query.scope === "system" ||
+				query.scope === "user" ||
+				categoryHasScope(item, query.scope))
+			.filter((item) => query.enabled === undefined || String(item.enabled !== false) === query.enabled));
+	}
+	if (method === "POST" && path === "/categories") {
+		const isSystemRequest = query.scope === "system";
+		if (isSystemRequest) requireFeaturePermission(auth, matrix, permissionForDomain(body.domain));
+		const ownerId = isSystemRequest ? SYSTEM_USER_ID : userId;
+		if (!String(body.name || "").trim()) throw new Error("分类名称不能为空");
+		return ok(await insert("categories", ownerId, {
+			...normalizeCategory(body),
+			id: newId("cat"),
+			name: String(body.name).trim(),
+			sort: Number(body.sort || 999),
+			enabled: body.enabled !== false,
+			isSystem: isSystemRequest,
+		}), 201);
+	}
+	const usageMatch = path.match(/^\/categories\/([^/]+)\/usage$/);
+	if (method === "GET" && usageMatch) {
+		const id = decodeURIComponent(usageMatch[1]);
+		const existing = await findOne("categories", SYSTEM_USER_ID, id) ||
+			await findOne("categories", userId, id);
+		if (!existing) throw new Error("分类不存在或已被删除");
+		if (existing.userId === SYSTEM_USER_ID) {
+			requireFeaturePermission(auth, matrix, permissionForDomain(existing.domain));
+		} else {
+			requireAdmin(auth);
+		}
+		return ok(await categoryUsage(existing.userId, id));
+	}
+	const migrateMatch = path.match(/^\/categories\/([^/]+)\/migrate-transactions$/);
+	if (method === "POST" && migrateMatch) {
+		const fromId = decodeURIComponent(migrateMatch[1]);
+		const categoryIds = [fromId];
+		const children = await collections.categories.where({
+			userId,
+			parentId: fromId
+		}).get();
+		categoryIds.push(...children.data.map((item) => item.id));
+		const snapshot = await categorySnapshot(userId, body.toCategoryId, body.toSubCategoryId);
+		let migratedCount = 0;
+		for (const categoryId of categoryIds) {
+			const byCategory = await collections.transactions.where({
+				userId,
+				categoryId
+			}).get();
+			const bySubCategory = await collections.transactions.where({
+				userId,
+				subCategoryId: categoryId
+			}).get();
+			const records = new Map([...byCategory.data, ...bySubCategory.data].map((item) => [item._id, item]));
+			for (const record of records.values()) {
+				await collections.transactions.doc(record._id).update({
+					categoryId: body.toCategoryId,
+					subCategoryId: body.toSubCategoryId,
+					categorySnapshot: snapshot,
+					updatedAt: now(),
+				});
+				migratedCount += 1;
+			}
+		}
+		return ok({
+			migratedCount
+		});
+	}
+	const match = path.match(/^\/categories\/([^/]+)$/);
+	if (!match) return null;
+	const id = decodeURIComponent(match[1]);
+	if (method === "PATCH") {
+		const existing = await findOne("categories", SYSTEM_USER_ID, id) ||
+			await findOne("categories", userId, id);
+		if (!existing) throw new Error("分类不存在");
+		const isSystemCategory = existing.userId === SYSTEM_USER_ID;
+		if (isSystemCategory) requireFeaturePermission(auth, matrix, permissionForDomain(existing.domain));
+		const ownerId = isSystemCategory ? SYSTEM_USER_ID : userId;
+		const nextCategory = normalizeCategory({
+			...withoutInternalFields(existing),
+			...body
+		});
+		if (nextCategory.parentId && nextCategory.enabled !== false) {
+			const parent = await findOne("categories", SYSTEM_USER_ID, nextCategory.parentId) ||
+				await findOne("categories", userId, nextCategory.parentId);
+			if (parent?.enabled === false) throw new Error("一级分类已停用，不能单独启用子分类");
+		}
+		const saved = await replace("categories", ownerId, id, {
+			...nextCategory,
+			id,
+		});
+		if (!saved.parentId && saved.enabled === false) {
+			const children = await collections.categories.where({
+				userId: ownerId,
+				parentId: id
+			}).get();
+			for (const child of children.data) {
+				if (child.enabled !== false) {
+					await collections.categories.doc(child._id).update({
+						enabled: false,
+						updatedAt: now()
+					});
+				}
+			}
+		}
+		return ok(saved);
+	}
+	if (method === "DELETE") {
+		const existing = await findOne("categories", SYSTEM_USER_ID, id) ||
+			await findOne("categories", userId, id);
+		if (!existing) throw new Error("分类不存在或已被删除");
+		if (existing.userId === SYSTEM_USER_ID) requireFeaturePermission(auth, matrix, permissionForDomain(existing
+			.domain));
+		const usage = await categoryUsage(existing.userId, id);
+		if (usage.accounts > 0) {
+			throw new Error(`该账户类型已被 ${usage.accounts} 个资金账户使用，不能删除。请先在资金页将这些账户改为其他类型或删除。`);
+		}
+		if (usage.assets > 0) throw new Error(`该分类已被 ${usage.assets} 个资产使用，不能删除。`);
+		if (usage.transactions > 0) throw new Error(`该分类已有 ${usage.transactions} 条记账记录，不能删除。`);
+		if (usage.childCategories > 0) {
+			if (!shouldDeleteSystemChildren(existing.userId, SYSTEM_USER_ID)) throw new Error(
+				`该分类下还有 ${usage.childCategories} 个子分类，不能删除。`);
+			const children = await collections.categories.where({
+				userId: SYSTEM_USER_ID,
+				parentId: id
+			}).get();
+			await Promise.all((children.data || []).map((child) => remove("categories", SYSTEM_USER_ID, child.id)));
+		}
+		if (usage.banks > 0) throw new Error(`该银行已被 ${usage.banks} 个资金账户关联，不能删除。请先在资金页更换或移除这些账户的银行。`);
+		await remove("categories", existing.userId === SYSTEM_USER_ID ? SYSTEM_USER_ID : userId, id);
+		return ok(null);
+	}
+	return null;
 }
 
 async function handleAccounts(method, path, body, userId) {
-  if (method === "POST" && path === "/accounts/transfer") return ok(await transferFunds(userId, body), 201);
-  if (method === "GET" && path === "/accounts") return ok(await findAll("accounts", userId, "createdAt", "asc"));
-  if (method === "POST" && path === "/accounts") return ok(await createAccount(userId, body), 201);
+	if (method === "POST" && path === "/accounts/transfer") return ok(await transferFunds(userId, body), 201);
+	if (method === "GET" && path === "/accounts") return ok(await findAll("accounts", userId, "createdAt", "asc"));
+	if (method === "POST" && path === "/accounts") return ok(await createAccount(userId, body), 201);
 
-  const match = path.match(/^\/accounts\/([^/]+)$/);
-  if (!match) return null;
-  const id = decodeURIComponent(match[1]);
-  if (method === "PATCH") {
-    const existing = await findOne("accounts", userId, id);
-    if (!existing) throw new Error("账户不存在");
-    const updatedAccount = {
-      ...withoutInternalFields(existing),
-      ...body,
-      id,
-      updatedAt: now(),
-    };
-    if (updatedAccount.direction === "asset") {
-      delete updatedAccount.creditLimit;
-      delete updatedAccount.billDay;
-      delete updatedAccount.repaymentDay;
-    }
-    return ok(await replace("accounts", userId, id, updatedAccount));
-  }
-  if (method === "DELETE") return ok(await deleteAccount(userId, id));
-  return null;
+	const match = path.match(/^\/accounts\/([^/]+)$/);
+	if (!match) return null;
+	const id = decodeURIComponent(match[1]);
+	if (method === "PATCH") {
+		const existing = await findOne("accounts", userId, id);
+		if (!existing) throw new Error("账户不存在");
+		const updatedAccount = {
+			...withoutInternalFields(existing),
+			...body,
+			id,
+			updatedAt: now(),
+		};
+		if (updatedAccount.direction === "asset") {
+			delete updatedAccount.creditLimit;
+			delete updatedAccount.billDay;
+			delete updatedAccount.repaymentDay;
+		}
+		return ok(await replace("accounts", userId, id, updatedAccount));
+	}
+	if (method === "DELETE") return ok(await deleteAccount(userId, id));
+	return null;
 }
 
 async function handleTransactions(method, path, body, userId) {
-  if (method === "POST" && path === "/transactions/repayment") {
-    return ok(await repayDebt(userId, body), 201);
-  }
-  if (method === "POST" && path === "/transactions/convert-to-asset-addon") {
-    return ok(await convertTransactionToAddon(userId, body), 201);
-  }
-  if (method === "POST" && path === "/transactions/expense") {
-    return ok(await createTransaction(userId, body, "expense"), 201);
-  }
-  if (method === "POST" && path === "/transactions/income") {
-    return ok(await createTransaction(userId, body, "income"), 201);
-  }
-  const match = path.match(/^\/transactions\/([^/]+)$/);
-  if (!match) return null;
-  const id = decodeURIComponent(match[1]);
-  if (method === "PATCH") return ok(await updateTransaction(userId, id, body));
-  if (method === "DELETE") return ok(await deleteTransaction(userId, id));
-  return null;
+	if (method === "POST" && path === "/transactions/repayment") {
+		return ok(await repayDebt(userId, body), 201);
+	}
+	if (method === "POST" && path === "/transactions/convert-to-asset-addon") {
+		return ok(await convertTransactionToAddon(userId, body), 201);
+	}
+	if (method === "POST" && path === "/transactions/expense") {
+		return ok(await createTransaction(userId, body, "expense"), 201);
+	}
+	if (method === "POST" && path === "/transactions/income") {
+		return ok(await createTransaction(userId, body, "income"), 201);
+	}
+	const match = path.match(/^\/transactions\/([^/]+)$/);
+	if (!match) return null;
+	const id = decodeURIComponent(match[1]);
+	if (method === "PATCH") return ok(await updateTransaction(userId, id, body));
+	if (method === "DELETE") return ok(await deleteTransaction(userId, id));
+	return null;
 }
 
 async function route(event) {
-  const { method, body, token, query } = parseTransportRequest(event);
-  const path = String(event.path || "/").replace(/^.*\/api\/v1/, "") || "/";
-  if (method === "OPTIONS") return response(200, { ok: true });
+	const {
+		method,
+		body,
+		token,
+		query
+	} = parseTransportRequest(event);
+	const path = String(event.path || "/").replace(/^.*\/api\/v1/, "") || "/";
+	if (method === "OPTIONS") return response(200, {
+		ok: true
+	});
 
-  if (method === "GET" && path === "/health") {
-    return ok({ status: "ok", storage: "unicloud", timestamp: now() });
-  }
-  if (method === "POST" && path === "/auth/login") {
-    return ok(await loginWithPassword(event, body));
-  }
-  if (method === "POST" && path === "/auth/captcha") {
-    return ok(await createRegisterCaptcha(event, body));
-  }
-  if (method === "POST" && path === "/auth/register") {
-    return ok(await registerWithPassword(event, body), 201);
-  }
-  const auth = await authenticate(event, token);
-  const userId = auth.uid;
-  const permissionMatrix = await getPermissionMatrix();
-  if (method === "POST" && path === "/auth/me") {
-    return ok({ uid: userId, role: auth.role || [], permission: auth.permission || [] });
-  }
-  if (method === "GET" && path === "/admin/users") {
-    return ok(await listAdminUsers(auth, permissionMatrix));
-  }
-  if (method === "GET" && path === "/admin/users/search") {
-    return ok(await findAdminUserByUsername(auth, query.username, permissionMatrix));
-  }
-  if (method === "GET" && path === "/admin/permissions") {
-    return ok(await listPermissionMatrix(auth));
-  }
-  if (method === "PATCH" && path === "/admin/permissions") {
-    return ok(await updatePermissionMatrix(auth, body));
-  }
-  const releaseResult = await handleReleaseNotes(method, path, body, query, auth, permissionMatrix);
-  if (releaseResult) return releaseResult;
-  const adminRoleMatch = path.match(/^\/admin\/users\/([^/]+)\/admin-role$/);
-  if (method === "PATCH" && adminRoleMatch) {
-    return ok(await updateAdminRole(auth, decodeURIComponent(adminRoleMatch[1]), body.enabled === true, permissionMatrix));
-  }
-  const userStatusMatch = path.match(/^\/admin\/users\/([^/]+)\/status$/);
-  if (method === "PATCH" && userStatusMatch) {
-    return ok(await updateUserStatus(auth, decodeURIComponent(userStatusMatch[1]), body.enabled === true, permissionMatrix));
-  }
-  if (method === "POST" && path === "/files/images") {
-    return ok(await uploadImage(userId, body), 201);
-  }
-  if (method === "POST" && path === "/files/migrate-images") {
-    return ok(await migrateLegacyImages(userId));
-  }
-  if (method === "GET" && path === "/profile") {
-    return ok(await getUserProfile(userId));
-  }
-  if (method === "PATCH" && path === "/profile") {
-    return ok(await updateUserProfile(userId, body));
-  }
-  if (method === "GET" && path === "/site-branding") {
-    return ok(await getSiteBranding());
-  }
-  if (method === "PATCH" && path === "/site-branding") {
-    return ok(await updateSiteBranding(auth, body, permissionMatrix));
-  }
-  if (method === "POST" && path === "/auth/claim-local-data") {
-    return ok(await claimLocalData(userId));
-  }
-  if (method === "GET" && path === "/snapshot") return ok(await getSnapshot(userId));
-  if (method === "GET" && path === "/export") return ok(await exportBackup(userId));
-  if (method === "POST" && path === "/import") return ok(await importSnapshot(userId, body));
-  if (method === "POST" && path === "/reset") {
-    return ok(await clearUserBusinessData(userId));
-  }
+	if (method === "GET" && path === "/health") {
+		return ok({
+			status: "ok",
+			storage: "unicloud",
+			timestamp: now()
+		});
+	}
+	if (method === "POST" && path === "/auth/login") {
+		return ok(await loginWithPassword(event, body));
+	}
+	if (method === "POST" && path === "/auth/captcha") {
+		return ok(await createRegisterCaptcha(event, body));
+	}
+	if (method === "POST" && path === "/auth/register") {
+		return ok(await registerWithPassword(event, body), 201);
+	}
+	const auth = await authenticate(event, token);
+	const userId = auth.uid;
+	const permissionMatrix = await getPermissionMatrix();
+	if (method === "POST" && path === "/auth/me") {
+		return ok({
+			uid: userId,
+			role: auth.role || [],
+			permission: auth.permission || []
+		});
+	}
+	if (method === "GET" && path === "/admin/users") {
+		return ok(await listAdminUsers(auth, permissionMatrix));
+	}
+	if (method === "GET" && path === "/admin/users/search") {
+		return ok(await findAdminUserByUsername(auth, query.username, permissionMatrix));
+	}
+	if (method === "GET" && path === "/admin/permissions") {
+		return ok(await listPermissionMatrix(auth));
+	}
+	if (method === "PATCH" && path === "/admin/permissions") {
+		return ok(await updatePermissionMatrix(auth, body));
+	}
+	const releaseResult = await handleReleaseNotes(method, path, body, query, auth, permissionMatrix);
+	if (releaseResult) return releaseResult;
+	const adminRoleMatch = path.match(/^\/admin\/users\/([^/]+)\/admin-role$/);
+	if (method === "PATCH" && adminRoleMatch) {
+		return ok(await updateAdminRole(auth, decodeURIComponent(adminRoleMatch[1]), body.enabled === true,
+			permissionMatrix));
+	}
+	const userStatusMatch = path.match(/^\/admin\/users\/([^/]+)\/status$/);
+	if (method === "PATCH" && userStatusMatch) {
+		return ok(await updateUserStatus(auth, decodeURIComponent(userStatusMatch[1]), body.enabled === true,
+			permissionMatrix));
+	}
+	if (method === "POST" && path === "/files/images") {
+		return ok(await uploadImage(userId, body), 201);
+	}
+	if (method === "POST" && path === "/files/migrate-images") {
+		return ok(await migrateLegacyImages(userId));
+	}
+	if (method === "GET" && path === "/icon-library") {
+		return ok(await getIconLibrary(auth, permissionMatrix));
+	}
+	if (method === "PATCH" && path === "/icon-library") {
+		return ok(await saveIconLibrary(auth, permissionMatrix, body));
+	}
+	if (method === "GET" && path === "/profile") {
+		return ok(await getUserProfile(userId));
+	}
+	if (method === "PATCH" && path === "/profile") {
+		return ok(await updateUserProfile(userId, body));
+	}
+	if (method === "GET" && path === "/settings") {
+		return ok(await getUserSettings(userId));
+	}
+	if (method === "PATCH" && path === "/settings") {
+		return ok(await updateUserSettings(userId, body));
+	}
+	if (method === "GET" && path === "/site-branding") {
+		return ok(await getSiteBranding());
+	}
+	if (method === "PATCH" && path === "/site-branding") {
+		return ok(await updateSiteBranding(auth, body, permissionMatrix));
+	}
+	if (method === "POST" && path === "/auth/claim-local-data") {
+		return ok(await claimLocalData(userId));
+	}
+	if (method === "GET" && path === "/snapshot") return ok(await getSnapshot(userId));
+	if (method === "GET" && path === "/export") return ok(await exportBackup(userId));
+	if (method === "POST" && path === "/import") return ok(await importSnapshot(userId, body));
+	if (method === "POST" && path === "/reset") {
+		return ok(await clearUserBusinessData(userId));
+	}
 
-  const accountResult = await handleAccounts(method, path, body, userId);
-  if (accountResult) return accountResult;
-  const transactionResult = await handleTransactions(method, path, body, userId);
-  if (transactionResult) return transactionResult;
-  const assetResult = await handleAssets(method, path, body, userId);
-  if (assetResult) return assetResult;
-  const addonResult = await handleAddons(method, path, body, userId);
-  if (addonResult) return addonResult;
-  const categoryResult = await handleCategories(method, path, body, userId, query, auth, permissionMatrix);
-  if (categoryResult) return categoryResult;
+	const accountResult = await handleAccounts(method, path, body, userId);
+	if (accountResult) return accountResult;
+	const transactionResult = await handleTransactions(method, path, body, userId);
+	if (transactionResult) return transactionResult;
+	const assetResult = await handleAssets(method, path, body, userId);
+	if (assetResult) return assetResult;
+	const addonResult = await handleAddons(method, path, body, userId);
+	if (addonResult) return addonResult;
+	const categoryResult = await handleCategories(method, path, body, userId, query, auth, permissionMatrix);
+	if (categoryResult) return categoryResult;
 
-  return fail(501, "NOT_MIGRATED", "该业务接口尚未迁移到 uniCloud");
+	return fail(501, "NOT_MIGRATED", "该业务接口尚未迁移到 uniCloud");
 }
 
 exports.main = async (event) => {
-  try {
-    return await route(event);
-  } catch (error) {
-    console.error(error);
-    return fail(
-      error?.statusCode || 400,
-      error?.code || "REQUEST_FAILED",
-      error && error.message ? error.message : "请求失败",
-    );
-  }
+	try {
+		return await route(event);
+	} catch (error) {
+		console.error(error);
+		return fail(
+			error?.statusCode || 400,
+			error?.code || "REQUEST_FAILED",
+			error && error.message ? error.message : "请求失败",
+		);
+	}
 };
